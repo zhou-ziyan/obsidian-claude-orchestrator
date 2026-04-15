@@ -18,6 +18,10 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			name: "Open terminal for current project",
 			callback: () => this.activateView(),
 		});
+
+		this.addRibbonIcon("terminal", "Open terminal for current project", () => {
+			this.activateView();
+		});
 	}
 
 	async onunload() {
