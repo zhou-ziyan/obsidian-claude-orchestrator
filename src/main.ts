@@ -1,6 +1,9 @@
 import { FileSystemAdapter, Plugin } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 
+const PROJECTS_DIR = "01_Projects";
+const PROJECT_PATH_RE = new RegExp(`(?:^|/)${PROJECTS_DIR}/([^/]+)/`);
+
 export default class ClaudeOrchestratorPlugin extends Plugin {
 	async onload() {
 		const pluginDir = this.resolvePluginDir();
@@ -12,7 +15,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 		this.addCommand({
 			id: "open-terminal",
-			name: "Open terminal",
+			name: "Open terminal for current project",
 			callback: () => this.activateView(),
 		});
 	}
@@ -22,15 +25,36 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 	async activateView() {
 		const { workspace } = this.app;
-		const existing = workspace.getLeavesOfType(VIEW_TYPE_TERMINAL);
-		if (existing.length > 0) {
-			workspace.revealLeaf(existing[0]);
-			return;
+		const project = this.resolveActiveProject();
+
+		// Reveal existing terminal already bound to this project (or no project).
+		for (const leaf of workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
+			const view = leaf.view;
+			if (view instanceof TerminalView && view.getProject() === project) {
+				workspace.revealLeaf(leaf);
+				return;
+			}
 		}
+
 		const leaf = workspace.getRightLeaf(false);
 		if (!leaf) return;
-		await leaf.setViewState({ type: VIEW_TYPE_TERMINAL, active: true });
+		await leaf.setViewState({
+			type: VIEW_TYPE_TERMINAL,
+			active: true,
+		});
+
+		const view = leaf.view;
+		if (view instanceof TerminalView) {
+			view.setProject(project);
+		}
 		workspace.revealLeaf(leaf);
+	}
+
+	private resolveActiveProject(): string | null {
+		const activeFile = this.app.workspace.getActiveFile();
+		if (!activeFile) return null;
+		const match = activeFile.path.match(PROJECT_PATH_RE);
+		return match ? match[1] : null;
 	}
 
 	private resolvePluginDir(): string {
