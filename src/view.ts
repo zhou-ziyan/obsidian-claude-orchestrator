@@ -111,6 +111,7 @@ export class TerminalView extends ItemView {
 			cursorBlink: true,
 			fontFamily: "Menlo, Monaco, 'Courier New', monospace",
 			fontSize: 13,
+			lineHeight: 1.3,
 			theme: {
 				background: "#1e1e1e",
 				foreground: "#d4d4d4",
