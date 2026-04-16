@@ -28,6 +28,12 @@ Obsidian plugin that runs Claude Code sessions inside the Obsidian window — ea
   - Timestamps on all items (stored as `[YYYY-MM-DD HH:MM]`, displayed as `HH:MM`)
   - IME-friendly: Chinese input composition doesn't trigger premature submit
   - Tab switch auto-focuses terminal, green ▲ indicator shows terminal focus state
+- **Session Manager**: ✓ complete
+  - Left-sidebar panel showing all tmux sessions grouped by project
+  - Per-session cards: name, pinned note, queue count, relative last-activity time
+  - Actions: Focus (reveal terminal), Send (inject next queue item), Attach (create terminal for session), Kill (tmux kill-session)
+  - Dual refresh: workspace events + vault modify for real-time sync, 30s polling for external tmux changes
+  - Unmanaged group for sessions not matching any project pattern
 - **M3b stage 2 (auto-send)**: not started — stop hook integration, done-vs-asking detection, countdown timer
 - **M4 (task dispatch)**: not started
 - **M5 (summaries)**: not started
@@ -40,6 +46,7 @@ Obsidian plugin that runs Claude Code sessions inside the Obsidian window — ea
 | Restore all terminals for current project | Reattach all alive tmux sessions missing a tab |
 | Create new terminal for current project | Always create a fresh tmux session |
 | Toggle queue panel | Enable/disable the queue UI below the terminal |
+| Open session manager | Open the session manager panel in left sidebar |
 
 ## Dev setup
 
@@ -48,7 +55,7 @@ git clone <this repo> ~/code/obsidian-claude-orchestrator
 cd ~/code/obsidian-claude-orchestrator
 npm install
 npm run dev   # esbuild watch mode
-npm test      # 42 tests via node:test
+npm test      # 57 tests via node:test
 ```
 
 Symlink into your Obsidian vault's plugins directory:
@@ -63,12 +70,13 @@ Then in Obsidian: Settings → Community plugins → enable **Claude Orchestrato
 
 ```
 src/
-  main.ts    — plugin lifecycle, commands, settings, terminal leaf management
-  view.ts    — TerminalView (xterm.js + PTY + queue/history UI)
-  utils.ts   — pure functions (session naming, note parsing, tmux output parsing)
+  main.ts                  — plugin lifecycle, commands, settings, terminal leaf management
+  view.ts                  — TerminalView (xterm.js + PTY + queue/history UI)
+  session-manager-view.ts  — SessionManagerView (left-sidebar session dashboard)
+  utils.ts                 — pure functions (session naming, note parsing, tmux helpers, grouping)
 tests/
-  utils.test.ts — 42 tests for utils.ts (node:test, zero dependencies)
-styles.css   — xterm defaults + queue panel + focus indicators
+  utils.test.ts — 57 tests for utils.ts (node:test, zero dependencies)
+styles.css     — xterm defaults + queue panel + focus indicators + session manager
 ```
 
 ## License

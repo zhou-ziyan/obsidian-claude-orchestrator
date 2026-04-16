@@ -9,6 +9,9 @@ import {
 	createDefaultSessionNote,
 	parseSessionNote,
 	serializeSessionNote,
+	parseAllTmuxSessions,
+	projectFromSessionName,
+	groupSessionsByProject,
 } from "../src/utils.ts";
 
 // --- generateSessionName ---
@@ -436,5 +439,146 @@ describe("serializeSessionNote", () => {
 		const md = serializeSessionNote(note);
 		const parsed = parseSessionNote(md);
 		assert.deepEqual(parsed, note);
+	});
+});
+
+// --- parseAllTmuxSessions ---
+
+describe("parseAllTmuxSessions", () => {
+	it("parses format-string output into name+activity pairs", () => {
+		const output = [
+			"15_Claude_Orchestrator:1776317847",
+			"15_Claude_Orchestrator-2:1776317713",
+			"14_Mobile_Claude_Code:1776317500",
+		].join("\n");
+		const sessions = parseAllTmuxSessions(output);
+		assert.equal(sessions.length, 3);
+		assert.equal(sessions[0].name, "15_Claude_Orchestrator");
+		assert.equal(sessions[0].activity, 1776317847);
+		assert.equal(sessions[2].name, "14_Mobile_Claude_Code");
+	});
+
+	it("returns empty array for empty input", () => {
+		assert.deepEqual(parseAllTmuxSessions(""), []);
+	});
+
+	it("handles lines without activity timestamp", () => {
+		const output = "my-session: 1 windows (created Tue Apr 15 10:00:00 2026)";
+		const sessions = parseAllTmuxSessions(output);
+		assert.equal(sessions.length, 1);
+		assert.equal(sessions[0].name, "my-session");
+		assert.equal(sessions[0].activity, 0);
+	});
+
+	it("skips blank lines", () => {
+		const output = "sess-a:100\n\nsess-b:200\n";
+		const sessions = parseAllTmuxSessions(output);
+		assert.equal(sessions.length, 2);
+	});
+});
+
+// --- projectFromSessionName ---
+
+describe("projectFromSessionName", () => {
+	it("returns project for standard session name", () => {
+		assert.equal(projectFromSessionName("15_Claude_Orchestrator"), "15_Claude_Orchestrator");
+	});
+
+	it("strips -N suffix", () => {
+		assert.equal(projectFromSessionName("15_Claude_Orchestrator-2"), "15_Claude_Orchestrator");
+	});
+
+	it("strips -N for higher numbers", () => {
+		assert.equal(projectFromSessionName("15_Claude_Orchestrator-15"), "15_Claude_Orchestrator");
+	});
+
+	it("returns null for names without digit-underscore prefix", () => {
+		assert.equal(projectFromSessionName("my-random-session"), null);
+	});
+
+	it("returns null for bare word", () => {
+		assert.equal(projectFromSessionName("scratch"), null);
+	});
+
+	it("handles single-digit project number", () => {
+		assert.equal(projectFromSessionName("1_Quick"), "1_Quick");
+	});
+});
+
+// --- groupSessionsByProject ---
+
+describe("groupSessionsByProject", () => {
+	const sessions = [
+		{ name: "15_Claude_Orchestrator", activity: 100 },
+		{ name: "15_Claude_Orchestrator-2", activity: 200 },
+		{ name: "14_Mobile_Claude_Code", activity: 300 },
+		{ name: "random-session", activity: 50 },
+	];
+
+	it("groups sessions by project with Unmanaged bucket", () => {
+		const groups = groupSessionsByProject(
+			sessions,
+			new Set(["15_Claude_Orchestrator", "14_Mobile_Claude_Code"]),
+			new Map([
+				["15_Claude_Orchestrator", { pinnedNote: "note.md", queueCount: 2, lastActivity: "2026-04-15 14:30" }],
+				["14_Mobile_Claude_Code", { pinnedNote: null, queueCount: 0, lastActivity: null }],
+			]),
+		);
+
+		assert.equal(groups.length, 3); // 14_, 15_, Unmanaged
+		assert.equal(groups[0].project, "14_Mobile_Claude_Code");
+		assert.equal(groups[0].sessions.length, 1);
+		assert.equal(groups[1].project, "15_Claude_Orchestrator");
+		assert.equal(groups[1].sessions.length, 2);
+		assert.equal(groups[2].project, "Unmanaged");
+		assert.equal(groups[2].sessions.length, 1);
+	});
+
+	it("sets hasPanel correctly", () => {
+		const groups = groupSessionsByProject(
+			sessions,
+			new Set(["15_Claude_Orchestrator"]),
+			new Map(),
+		);
+		const orch = groups.find((g) => g.project === "15_Claude_Orchestrator")!;
+		assert.equal(orch.sessions[0].hasPanel, true);  // 15_Claude_Orchestrator
+		assert.equal(orch.sessions[1].hasPanel, false); // 15_Claude_Orchestrator-2
+	});
+
+	it("sets hasNote and noteData correctly", () => {
+		const groups = groupSessionsByProject(
+			sessions,
+			new Set(),
+			new Map([
+				["15_Claude_Orchestrator", { pinnedNote: "a.md", queueCount: 3, lastActivity: "2026-04-15 10:00" }],
+			]),
+		);
+		const orch = groups.find((g) => g.project === "15_Claude_Orchestrator")!;
+		assert.equal(orch.sessions[0].hasNote, true);
+		assert.equal(orch.sessions[0].pinnedNote, "a.md");
+		assert.equal(orch.sessions[0].queueCount, 3);
+		assert.equal(orch.sessions[1].hasNote, false);
+		assert.equal(orch.sessions[1].queueCount, 0);
+	});
+
+	it("returns empty array for no sessions", () => {
+		const groups = groupSessionsByProject([], new Set(), new Map());
+		assert.deepEqual(groups, []);
+	});
+
+	it("sorts projects alphabetically and sessions within project", () => {
+		const groups = groupSessionsByProject(
+			[
+				{ name: "20_Z_Project-3", activity: 0 },
+				{ name: "10_A_Project", activity: 0 },
+				{ name: "20_Z_Project", activity: 0 },
+			],
+			new Set(),
+			new Map(),
+		);
+		assert.equal(groups[0].project, "10_A_Project");
+		assert.equal(groups[1].project, "20_Z_Project");
+		assert.equal(groups[1].sessions[0].name, "20_Z_Project");
+		assert.equal(groups[1].sessions[1].name, "20_Z_Project-3");
 	});
 });

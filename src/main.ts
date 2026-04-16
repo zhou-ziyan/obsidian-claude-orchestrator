@@ -1,5 +1,6 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
+import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
 import { PROJECT_PATH_RE, generateSessionName, parseTmuxSessionsForProject, tmuxLs } from "./utils";
 
 interface OrchestratorSettings {
@@ -60,6 +61,17 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			},
 		});
 
+		// --- Session Manager ---
+		this.registerView(
+			VIEW_TYPE_SESSION_MANAGER,
+			(leaf) => new SessionManagerView(leaf, this),
+		);
+
+		this.addCommand({
+			id: "open-session-manager",
+			name: "Open session manager",
+			callback: () => this.openSessionManager(),
+		});
 
 		this.addRibbonIcon("terminal", "Open terminal for current project", () => {
 			this.openTerminal();
@@ -267,9 +279,28 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		await this.createTerminalLeaf(project, sessionName);
 	}
 
-	// --- Shared helpers ---
+	// --- "Open session manager" ---
+	async openSessionManager() {
+		const { workspace } = this.app;
 
-	// tmuxLs is now in utils.ts — use the imported tmuxLs() directly.
+		// Reveal if already open.
+		const existing = workspace.getLeavesOfType(VIEW_TYPE_SESSION_MANAGER);
+		if (existing.length > 0) {
+			workspace.revealLeaf(existing[0]);
+			return;
+		}
+
+		// Open in the left sidebar (below file explorer).
+		const leaf = workspace.getLeftLeaf(false);
+		if (!leaf) return;
+		await leaf.setViewState({
+			type: VIEW_TYPE_SESSION_MANAGER,
+			active: true,
+		});
+		workspace.revealLeaf(leaf);
+	}
+
+	// --- Shared helpers ---
 
 	private async createTerminalLeaf(
 		project: string | null,
@@ -277,9 +308,34 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 	): Promise<void> {
 		const { workspace } = this.app;
 
-		// Always create in the right sidebar.
-		const leaf = workspace.getRightLeaf(false);
-		if (!leaf) return;
+		// Find existing terminals to decide placement.
+		const terminals = workspace.getLeavesOfType(VIEW_TYPE_TERMINAL);
+
+		let leaf;
+		// Check if any existing terminal belongs to the same project.
+		const sameProject = terminals.find((l) => {
+			const v = l.view;
+			return v instanceof TerminalView && v.getProject() === project;
+		});
+
+		if (sameProject) {
+			// Same project → new tab in the same tab group.
+			workspace.setActiveLeaf(sameProject, { focus: false });
+			leaf = workspace.getLeaf("tab");
+		} else if (terminals.length > 0) {
+			// Different project → vertical split next to the last terminal group.
+			// This creates: [editor] [projectA tabs] [projectB tabs]
+			const lastTerminal = terminals[terminals.length - 1];
+			leaf = workspace.createLeafBySplit(lastTerminal, "vertical");
+		} else {
+			// No terminals at all → split the main editor to the right.
+			const mainLeaf = workspace.getMostRecentLeaf(workspace.rootSplit);
+			if (mainLeaf) {
+				leaf = workspace.createLeafBySplit(mainLeaf, "vertical");
+			} else {
+				leaf = workspace.getLeaf("split");
+			}
+		}
 
 		await leaf.setViewState({
 			type: VIEW_TYPE_TERMINAL,

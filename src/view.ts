@@ -141,7 +141,13 @@ export class TerminalView extends ItemView {
 	}
 
 	focusTerminal(): void {
-		this.term?.focus();
+		// If queue panel is active, focus the input box instead of terminal.
+		const queueInput = this.queuePanel?.querySelector(".co-queue-input:not(.co-queue-edit-input)") as HTMLElement | null;
+		if (queueInput) {
+			queueInput.focus();
+		} else {
+			this.term?.focus();
+		}
 	}
 
 	setProject(project: string | null, sessionName?: string): void {
@@ -641,59 +647,38 @@ export class TerminalView extends ItemView {
 			const row = this.queueList!.createDiv({ cls: "co-queue-item" });
 			row.dataset.idx = String(idx);
 
-			const grip = row.createSpan({ cls: "co-drag-grip", text: "⠿" });
-
-			// Mouse-based reorder (constrained to queue list)
-			grip.addEventListener("mousedown", (startE) => {
-				startE.preventDefault();
-				const list = this.queueList!;
-				const rows = Array.from(list.querySelectorAll(".co-queue-item")) as HTMLElement[];
-				const startY = startE.clientY;
-				let currentIdx = idx;
-
-				row.classList.add("co-dragging");
-
-				const onMove = (e: MouseEvent) => {
-					const delta = e.clientY - startY;
-					// Find which row the cursor is over
-					for (let i = 0; i < rows.length; i++) {
-						const rect = rows[i].getBoundingClientRect();
-						const midY = rect.top + rect.height / 2;
-						if (e.clientY < midY && i !== currentIdx) {
-							// Move item to position i
-							if (!this.sessionNote) break;
-							const [item] = this.sessionNote.queue.splice(currentIdx, 1);
-							this.sessionNote.queue.splice(i, 0, item);
-							currentIdx = i;
-							this.renderQueue();
-							// Re-grab the new row and mark it dragging
-							const newRows = Array.from(list.querySelectorAll(".co-queue-item")) as HTMLElement[];
-							newRows[i]?.classList.add("co-dragging");
-							break;
-						}
-						if (e.clientY > rect.bottom && i === rows.length - 1 && currentIdx !== i) {
-							if (!this.sessionNote) break;
-							const [item] = this.sessionNote.queue.splice(currentIdx, 1);
-							this.sessionNote.queue.splice(i, 0, item);
-							currentIdx = i;
-							this.renderQueue();
-							const newRows = Array.from(list.querySelectorAll(".co-queue-item")) as HTMLElement[];
-							newRows[i]?.classList.add("co-dragging");
-							break;
-						}
-					}
-				};
-
-				const onUp = () => {
-					document.removeEventListener("mousemove", onMove);
-					document.removeEventListener("mouseup", onUp);
-					row.classList.remove("co-dragging");
+			// Up/down reorder buttons
+			const moveGroup = row.createDiv({ cls: "co-move-group" });
+			if (idx > 0) {
+				const upBtn = moveGroup.createEl("button", {
+					cls: "co-icon-btn",
+					text: "▴",
+				});
+				upBtn.addEventListener("click", () => {
+					if (!this.sessionNote) return;
+					const [item] = this.sessionNote.queue.splice(idx, 1);
+					this.sessionNote.queue.splice(idx - 1, 0, item);
+					this.renderQueue();
 					this.saveSessionNote();
-				};
-
-				document.addEventListener("mousemove", onMove);
-				document.addEventListener("mouseup", onUp);
-			});
+				});
+			} else {
+				moveGroup.createSpan({ cls: "co-move-spacer" });
+			}
+			if (idx < this.sessionNote.queue.length - 1) {
+				const downBtn = moveGroup.createEl("button", {
+					cls: "co-icon-btn",
+					text: "▾",
+				});
+				downBtn.addEventListener("click", () => {
+					if (!this.sessionNote) return;
+					const [item] = this.sessionNote.queue.splice(idx, 1);
+					this.sessionNote.queue.splice(idx + 1, 0, item);
+					this.renderQueue();
+					this.saveSessionNote();
+				});
+			} else {
+				moveGroup.createSpan({ cls: "co-move-spacer" });
+			}
 
 			const { stamp, body } = extractTimestamp(text);
 			if (stamp) {
