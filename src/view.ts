@@ -320,9 +320,12 @@ export class TerminalView extends ItemView {
 				this.renderQueue();
 				this.saveSessionNote();
 			};
+			let composing = false;
+			input.addEventListener("compositionstart", () => { composing = true; });
+			input.addEventListener("compositionend", () => { composing = false; });
 			addBtn.addEventListener("click", doAdd);
 			input.addEventListener("keydown", (e) => {
-				if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doAdd(); }
+				if (e.key === "Enter" && !e.shiftKey && !composing && !e.isComposing) { e.preventDefault(); doAdd(); }
 			});
 
 		}
@@ -700,9 +703,12 @@ export class TerminalView extends ItemView {
 					}
 					this.renderQueue();
 				};
+				let editComposing = false;
+				input.addEventListener("compositionstart", () => { editComposing = true; });
+				input.addEventListener("compositionend", () => { editComposing = false; });
 				saveBtn.addEventListener("click", save);
 				input.addEventListener("keydown", (e) => {
-					if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(); }
+					if (e.key === "Enter" && !e.shiftKey && !editComposing && !e.isComposing) { e.preventDefault(); save(); }
 					if (e.key === "Escape") cancel();
 				});
 				input.focus();
