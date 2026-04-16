@@ -46,10 +46,17 @@ export class TerminalView extends ItemView {
 	private project: string | null = null;
 	private xtermReady = false;
 	private stateSeenPreOpen = false;
+	private host: HTMLElement | null = null;
+	private onTerminalFocus?: (project: string) => void;
 
-	constructor(leaf: WorkspaceLeaf, pluginDir: string) {
+	constructor(
+		leaf: WorkspaceLeaf,
+		pluginDir: string,
+		onTerminalFocus?: (project: string) => void,
+	) {
 		super(leaf);
 		this.pluginDir = pluginDir;
+		this.onTerminalFocus = onTerminalFocus;
 	}
 
 	getViewType(): string {
@@ -106,6 +113,12 @@ export class TerminalView extends ItemView {
 		const host = container.createDiv({ cls: "claude-orchestrator-term-host" });
 		host.style.width = "100%";
 		host.style.height = "100%";
+		host.style.overflow = "hidden";
+		host.style.minWidth = "0";
+		this.host = host;
+
+		host.addEventListener("focusin", this.onHostFocusIn);
+		host.addEventListener("focusout", this.onHostFocusOut);
 
 		this.term = new Terminal({
 			cursorBlink: true,
@@ -140,6 +153,10 @@ export class TerminalView extends ItemView {
 		});
 
 		this.resizeObserver = new ResizeObserver(() => {
+			// Skip transient near-zero sizes during layout animations —
+			// fitting at these sizes squashes the terminal to a few cols
+			// and the PTY stays narrow even after layout stabilizes.
+			if (!this.host || this.host.clientWidth < 50) return;
 			this.fitAddon?.fit();
 			if (this.term && this.ptyProcess) {
 				try {
@@ -248,7 +265,52 @@ export class TerminalView extends ItemView {
 		});
 	}
 
+	private onHostFocusIn = () => {
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
+			const view = leaf.view;
+			if (view instanceof TerminalView && view.host) {
+				view.host.classList.toggle("is-dimmed", view !== this);
+			}
+		}
+		if (this.project && this.onTerminalFocus) {
+			this.onTerminalFocus(this.project);
+		}
+	};
+
+	private onHostFocusOut = () => {
+		requestAnimationFrame(() => {
+			const active = document.activeElement;
+			const anyTerminalFocused = this.app.workspace
+				.getLeavesOfType(VIEW_TYPE_TERMINAL)
+				.some((leaf) => {
+					const view = leaf.view;
+					return (
+						view instanceof TerminalView &&
+						view.host?.contains(active)
+					);
+				});
+			if (!anyTerminalFocused) {
+				for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
+					const view = leaf.view;
+					if (view instanceof TerminalView && view.host) {
+						view.host.classList.remove("is-dimmed");
+					}
+				}
+			}
+		});
+	};
+
 	async onClose() {
+		// Clear dimming on remaining terminals when this one closes
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
+			const view = leaf.view;
+			if (view instanceof TerminalView && view !== this && view.host) {
+				view.host.classList.remove("is-dimmed");
+			}
+		}
+		this.host?.removeEventListener("focusin", this.onHostFocusIn);
+		this.host?.removeEventListener("focusout", this.onHostFocusOut);
+		this.host = null;
 		this.ptyGen++; // invalidate pending callbacks
 		this.resizeObserver?.disconnect();
 		this.resizeObserver = null;

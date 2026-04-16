@@ -219,6 +219,26 @@
     position: relative;
 }
 
+/* --- Claude Orchestrator: focus indicator --- */
+
+.claude-orchestrator-term-host {
+    position: relative;
+}
+
+.claude-orchestrator-term-host::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: transparent;
+    pointer-events: none;
+    z-index: 20;
+    transition: background 0.15s ease;
+}
+
+.claude-orchestrator-term-host.is-dimmed::after {
+    background: rgba(0, 0, 0, 0.4);
+}
+
 
 
 /* Derived from vs/base/browser/ui/scrollbar/media/scrollbar.css */
