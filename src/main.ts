@@ -96,6 +96,13 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		);
 
 		this.addSettingTab(new OrchestratorSettingTab(this.app, this));
+
+		// Auto-open Session Manager in left sidebar on startup
+		this.app.workspace.onLayoutReady(() => {
+			if (this.app.workspace.getLeavesOfType(VIEW_TYPE_SESSION_MANAGER).length === 0) {
+				this.openSessionManager();
+			}
+		});
 	}
 
 	async onunload() {}

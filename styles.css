@@ -657,17 +657,49 @@
     padding-left: 13px;
 }
 
+.co-sm-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
 .co-sm-card-actions .co-text-btn {
     padding: 1px 8px;
     font-size: 11px;
 }
 
-.co-sm-kill {
-    color: #e44 !important;
-    border-color: #e44 !important;
+/* Kill button uses .co-icon-btn .co-danger from shared styles */
+
+/* Kill confirmation portal — appears below card content */
+.co-sm-kill-portal {
+    margin-top: 6px;
+    padding: 8px;
+    background: #2a1a1a;
+    border: 1px solid #e44;
+    border-radius: 4px;
 }
-.co-sm-kill:hover {
-    background: #3a1a1a !important;
+
+.co-sm-kill-msg {
+    display: block;
+    font-size: 11px;
+    color: #e88;
+    margin-bottom: 6px;
+    line-height: 1.4;
+}
+
+.co-sm-kill-portal-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+}
+
+.co-sm-kill-confirm {
+    color: #fff !important;
+    background: #c33 !important;
+    border-color: #c33 !important;
+}
+.co-sm-kill-confirm:hover {
+    background: #e44 !important;
 }
 
 

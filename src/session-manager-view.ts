@@ -211,14 +211,26 @@ export class SessionManagerView extends ItemView {
 	private renderSessionCard(parent: HTMLElement, session: SessionInfo) {
 		const card = parent.createDiv({ cls: "co-sm-card" });
 
-		// Session name
-		const nameRow = card.createDiv({ cls: "co-sm-card-name" });
-		// Indicator dot: green if has open panel, grey if not
+		// Top row: name + kill button in top-right corner
+		const topRow = card.createDiv({ cls: "co-sm-card-top" });
+
+		const nameRow = topRow.createDiv({ cls: "co-sm-card-name" });
 		nameRow.createSpan({
 			cls: `co-sm-dot ${session.hasPanel ? "co-sm-dot-active" : ""}`,
 			text: "●",
 		});
 		nameRow.createSpan({ text: session.name.replace(/^\d+_/, "").replace(/-(\d+)$/, " #$1") });
+
+		// Kill × in top-right, far from action buttons
+		const killBtn = topRow.createEl("button", {
+			cls: "co-icon-btn co-danger",
+			text: "×",
+		});
+		killBtn.title = "Kill session";
+		killBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			this.showKillConfirm(card, session.name);
+		});
 
 		// Pinned note (if any)
 		if (session.pinnedNote) {
@@ -247,11 +259,10 @@ export class SessionManagerView extends ItemView {
 			});
 		}
 
-		// Actions
+		// Actions (bottom-left)
 		const actions = card.createDiv({ cls: "co-sm-card-actions" });
 
 		if (session.hasPanel) {
-			// Focus button — reveal existing terminal
 			const focusBtn = actions.createEl("button", {
 				cls: "co-text-btn",
 				text: "Focus",
@@ -261,7 +272,6 @@ export class SessionManagerView extends ItemView {
 				this.focusSession(session.name);
 			});
 
-			// Send next — only if queue has items
 			if (session.queueCount > 0) {
 				const sendBtn = actions.createEl("button", {
 					cls: "co-text-btn co-accent",
@@ -273,7 +283,6 @@ export class SessionManagerView extends ItemView {
 				});
 			}
 		} else {
-			// Attach button — create panel for this session
 			const attachBtn = actions.createEl("button", {
 				cls: "co-text-btn",
 				text: "Attach",
@@ -283,16 +292,40 @@ export class SessionManagerView extends ItemView {
 				this.attachSession(session);
 			});
 		}
+	}
 
-		// Kill button — always available
-		const killBtn = actions.createEl("button", {
-			cls: "co-text-btn co-sm-kill",
-			text: "Kill",
+	private showKillConfirm(card: HTMLElement, sessionName: string) {
+		// Remove any existing confirm portal
+		card.querySelector(".co-sm-kill-portal")?.remove();
+
+		const portal = card.createDiv({ cls: "co-sm-kill-portal" });
+		portal.createSpan({
+			cls: "co-sm-kill-msg",
+			text: `Kill "${sessionName}"? This will terminate all processes.`,
 		});
-		killBtn.addEventListener("click", (e) => {
+		const portalActions = portal.createDiv({ cls: "co-sm-kill-portal-actions" });
+
+		const cancelBtn = portalActions.createEl("button", {
+			cls: "co-text-btn",
+			text: "Cancel",
+		});
+		cancelBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
-			this.killSession(session.name);
+			portal.remove();
 		});
+
+		const confirmBtn = portalActions.createEl("button", {
+			cls: "co-text-btn co-sm-kill-confirm",
+			text: "Kill session",
+		});
+		confirmBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			portal.remove();
+			this.killSession(sessionName);
+		});
+
+		// Auto-dismiss after 8 seconds
+		setTimeout(() => portal.remove(), 8000);
 	}
 
 	// --- Actions ---

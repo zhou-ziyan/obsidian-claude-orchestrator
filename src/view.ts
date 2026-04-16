@@ -498,7 +498,11 @@ export class TerminalView extends ItemView {
 		let file: string;
 		let args: string[];
 		if (this.sessionName) {
-			file = "tmux";
+			// Use absolute path — Electron's PATH may not include /opt/homebrew/bin
+			const tmuxPaths = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "tmux"];
+			file = tmuxPaths.find((p) => {
+				try { require("fs").accessSync(p); return true; } catch { return false; }
+			}) ?? "tmux";
 			args = ["new-session", "-A", "-s", this.sessionName];
 		} else {
 			file = shell;
