@@ -194,11 +194,11 @@ describe("parseTmuxSessionsForProject", () => {
 	].join("\n");
 
 	it("finds base and numbered sessions for a project", () => {
-		const result = parseTmuxSessionsForProject(
+		const { names } = parseTmuxSessionsForProject(
 			SAMPLE_TMUX_LS,
 			"15_Claude_Orchestrator",
 		);
-		assert.deepEqual(result, [
+		assert.deepEqual(names, [
 			"15_Claude_Orchestrator",
 			"15_Claude_Orchestrator-2",
 			"15_Claude_Orchestrator-3",
@@ -206,46 +206,71 @@ describe("parseTmuxSessionsForProject", () => {
 	});
 
 	it("finds only the base session when no numbered ones exist", () => {
-		const result = parseTmuxSessionsForProject(
+		const { names } = parseTmuxSessionsForProject(
 			SAMPLE_TMUX_LS,
 			"14_Mobile_Claude_Code",
 		);
-		assert.deepEqual(result, ["14_Mobile_Claude_Code"]);
+		assert.deepEqual(names, ["14_Mobile_Claude_Code"]);
 	});
 
 	it("returns empty array when no sessions match", () => {
-		const result = parseTmuxSessionsForProject(
+		const { names } = parseTmuxSessionsForProject(
 			SAMPLE_TMUX_LS,
 			"nonexistent_project",
 		);
-		assert.deepEqual(result, []);
+		assert.deepEqual(names, []);
 	});
 
 	it("returns empty array for empty tmux output", () => {
-		const result = parseTmuxSessionsForProject(
+		const { names } = parseTmuxSessionsForProject(
 			"",
 			"15_Claude_Orchestrator",
 		);
-		assert.deepEqual(result, []);
+		assert.deepEqual(names, []);
 	});
 
 	it("does not match partial project name prefix", () => {
 		const output =
 			"15_Claude: 1 windows (created Tue Apr 15 10:00:00 2026)\n" +
 			"15_Claude_Orchestrator: 1 windows (created Tue Apr 15 10:01:00 2026)";
-		const result = parseTmuxSessionsForProject(output, "15_Claude");
-		assert.deepEqual(result, ["15_Claude"]);
+		const { names } = parseTmuxSessionsForProject(output, "15_Claude");
+		assert.deepEqual(names, ["15_Claude"]);
 	});
 
 	it("does not match non-numeric suffixes", () => {
 		const output =
 			"15_Claude_Orchestrator: 1 windows (created Tue Apr 15 10:00:00 2026)\n" +
 			"15_Claude_Orchestrator-beta: 1 windows (created Tue Apr 15 10:01:00 2026)";
-		const result = parseTmuxSessionsForProject(
+		const { names } = parseTmuxSessionsForProject(
 			output,
 			"15_Claude_Orchestrator",
 		);
-		assert.deepEqual(result, ["15_Claude_Orchestrator"]);
+		assert.deepEqual(names, ["15_Claude_Orchestrator"]);
+	});
+
+	it("sorts names alphabetically but tracks mostRecent by activity", () => {
+		const output = [
+			"15_Claude_Orchestrator-2:1776317713",
+			"15_Claude_Orchestrator:1776317847",
+			"15_Claude_Orchestrator-3:1776317500",
+		].join("\n");
+		const { names, mostRecent } = parseTmuxSessionsForProject(
+			output,
+			"15_Claude_Orchestrator",
+		);
+		// Alphabetical order
+		assert.deepEqual(names, [
+			"15_Claude_Orchestrator",
+			"15_Claude_Orchestrator-2",
+			"15_Claude_Orchestrator-3",
+		]);
+		// Most recent by activity
+		assert.equal(mostRecent, "15_Claude_Orchestrator");
+	});
+
+	it("returns mostRecent as null when no sessions match", () => {
+		const { mostRecent } = parseTmuxSessionsForProject("", "nope");
+		assert.equal(mostRecent, null);
 	});
 });
 

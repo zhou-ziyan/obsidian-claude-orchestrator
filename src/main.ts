@@ -52,6 +52,18 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		});
 
 		this.addCommand({
+			id: "toggle-queue-panel",
+			name: "Toggle queue panel",
+			callback: async () => {
+				this.settings.queuePanel = !this.settings.queuePanel;
+				await this.saveSettings();
+				new Notice(
+					`Queue panel: ${this.settings.queuePanel ? "on — reload plugin to apply" : "off — reload plugin to apply"}`,
+				);
+			},
+		});
+
+		this.addCommand({
 			id: "toggle-auto-reveal",
 			name: "Toggle auto-reveal note on terminal focus",
 			callback: async () => {
@@ -164,10 +176,8 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 		const openSessionNames = this.collectSessionNames();
 		const tmuxOutput = await this.tmuxLs();
-		const aliveSessions = parseTmuxSessionsForProject(
-			tmuxOutput,
-			project,
-		);
+		const { names: aliveSessions, mostRecent } =
+			parseTmuxSessionsForProject(tmuxOutput, project);
 
 		if (aliveSessions.length === 0) {
 			new Notice(
@@ -183,8 +193,20 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			return;
 		}
 
+		// Create tabs in alphabetical order (stable tab layout)
 		for (const sessionName of missing) {
 			await this.createTerminalLeaf(project, sessionName);
+		}
+
+		// Reveal the most recently active session
+		if (mostRecent && missing.includes(mostRecent)) {
+			for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
+				const view = leaf.view;
+				if (view instanceof TerminalView && view.getSessionName() === mostRecent) {
+					this.app.workspace.revealLeaf(leaf);
+					break;
+				}
+			}
 		}
 		new Notice(`Restored ${missing.length} terminal(s).`);
 	}
@@ -220,7 +242,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		return new Promise((resolve) => {
 			execFile(
 				"tmux",
-				["ls"],
+				["ls", "-F", "#{session_name}:#{session_activity}"],
 				{ env: { ...process.env, PATH: entries.join(":") } },
 				(err, stdout) => {
 					resolve(err ? "" : stdout);

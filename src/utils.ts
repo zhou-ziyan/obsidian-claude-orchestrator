@@ -65,22 +65,43 @@ export function normalizeViewState(state: unknown): {
  * Parse `tmux ls` output and return session names that belong to a project.
  * A session belongs to a project if its name equals the project name
  * or matches `<project>-<N>`.
+ *
+ * Accepts both plain `tmux ls` output and the format-string variant
+ * `tmux ls -F '#{session_name}:#{session_activity}'`.
+ *
+ * Returns `names` sorted alphabetically (for stable tab order) and
+ * `mostRecent` — the session with the highest activity timestamp
+ * (for the caller to reveal after creating all tabs).
  */
 export function parseTmuxSessionsForProject(
 	tmuxLsOutput: string,
 	project: string,
-): string[] {
+): { names: string[]; mostRecent: string | null } {
 	const re = new RegExp(`^${escapeRegExp(project)}(-\\d+)?:`);
-	const sessions: string[] = [];
+	const sessions: { name: string; activity: number }[] = [];
 	for (const line of tmuxLsOutput.split("\n")) {
 		const match = line.match(re);
 		if (match) {
-			// Session name is everything before the first ":"
-			const name = line.split(":")[0];
-			sessions.push(name);
+			const parts = line.split(":");
+			const name = parts[0];
+			const lastPart = parts[parts.length - 1]?.trim();
+			const activity =
+				lastPart && /^\d+$/.test(lastPart) ? Number(lastPart) : 0;
+			sessions.push({ name, activity });
 		}
 	}
-	return sessions;
+	// Sort alphabetically for stable tab order
+	sessions.sort((a, b) => a.name.localeCompare(b.name));
+	// Find most recently active
+	let mostRecent: string | null = null;
+	let maxActivity = -1;
+	for (const s of sessions) {
+		if (s.activity > maxActivity) {
+			maxActivity = s.activity;
+			mostRecent = s.name;
+		}
+	}
+	return { names: sessions.map((s) => s.name), mostRecent };
 }
 
 function escapeRegExp(s: string): string {

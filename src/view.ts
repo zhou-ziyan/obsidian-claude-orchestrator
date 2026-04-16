@@ -141,22 +141,8 @@ export class TerminalView extends ItemView {
 
 		const queueEnabled = this.getSettings?.().queuePanel ?? false;
 
-		// --- History panel (top, collapsible) ---
-		if (queueEnabled) {
-			this.historyPanel = container.createDiv({ cls: "co-history-panel" });
-			const header = this.historyPanel.createDiv({ cls: "co-panel-header" });
-			header.textContent = "▶ History";
-			header.addEventListener("click", () => {
-				const content = this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null;
-				if (content) {
-					const collapsed = content.style.display === "none";
-					content.style.display = collapsed ? "block" : "none";
-					header.textContent = collapsed ? "▼ History" : "▶ History";
-				}
-			});
-			const content = this.historyPanel.createDiv({ cls: "co-history-content" });
-			content.style.display = "none"; // collapsed by default
-		}
+		// History panel is disabled until stop-hook integration (M3b stage 2)
+		// can automatically mark items as completed.
 
 		// --- Terminal host (middle, flex: 1) ---
 		const host = container.createDiv({ cls: "claude-orchestrator-term-host" });
@@ -169,6 +155,45 @@ export class TerminalView extends ItemView {
 
 		host.addEventListener("focusin", this.onHostFocusIn);
 		host.addEventListener("focusout", this.onHostFocusOut);
+
+		// --- Resize handle between terminal and queue ---
+		if (queueEnabled) {
+			const resizeHandle = container.createDiv({ cls: "co-resize-handle" });
+			let startY = 0;
+			let startHeight = 0;
+
+			const onMouseMove = (e: MouseEvent) => {
+				const delta = startY - e.clientY;
+				const newHeight = Math.max(80, Math.min(400, startHeight + delta));
+				if (this.queuePanel) {
+					this.queuePanel.style.height = `${newHeight}px`;
+				}
+				// Refit terminal after resize
+				this.fitAddon?.fit();
+				if (this.term && this.ptyProcess) {
+					try {
+						this.ptyProcess.resize(this.term.cols, this.term.rows);
+					} catch { /* ignore */ }
+				}
+			};
+
+			const onMouseUp = () => {
+				document.removeEventListener("mousemove", onMouseMove);
+				document.removeEventListener("mouseup", onMouseUp);
+				document.body.style.cursor = "";
+				document.body.style.userSelect = "";
+			};
+
+			resizeHandle.addEventListener("mousedown", (e) => {
+				e.preventDefault();
+				startY = e.clientY;
+				startHeight = this.queuePanel?.offsetHeight ?? 150;
+				document.body.style.cursor = "row-resize";
+				document.body.style.userSelect = "none";
+				document.addEventListener("mousemove", onMouseMove);
+				document.addEventListener("mouseup", onMouseUp);
+			});
+		}
 
 		// --- Queue panel (bottom) ---
 		if (queueEnabled) {
@@ -430,6 +455,8 @@ export class TerminalView extends ItemView {
 		}
 	}
 
+	private dragFromIdx: number | null = null;
+
 	private renderQueue(): void {
 		if (!this.queueList || !this.sessionNote) return;
 		this.queueList.empty();
@@ -441,11 +468,84 @@ export class TerminalView extends ItemView {
 
 		this.sessionNote.queue.forEach((text, idx) => {
 			const row = this.queueList!.createDiv({ cls: "co-queue-item" });
+			row.draggable = true;
+			row.dataset.idx = String(idx);
+
+			row.addEventListener("dragstart", (e) => {
+				this.dragFromIdx = idx;
+				row.classList.add("co-dragging");
+				e.dataTransfer?.setData("text/plain", String(idx));
+			});
+			row.addEventListener("dragend", () => {
+				row.classList.remove("co-dragging");
+				this.dragFromIdx = null;
+			});
+			row.addEventListener("dragover", (e) => {
+				e.preventDefault();
+				row.classList.add("co-drag-over");
+			});
+			row.addEventListener("dragleave", () => {
+				row.classList.remove("co-drag-over");
+			});
+			row.addEventListener("drop", (e) => {
+				e.preventDefault();
+				row.classList.remove("co-drag-over");
+				if (this.dragFromIdx === null || !this.sessionNote) return;
+				const from = this.dragFromIdx;
+				const to = idx;
+				if (from === to) return;
+				const [item] = this.sessionNote.queue.splice(from, 1);
+				this.sessionNote.queue.splice(to, 0, item);
+				this.renderQueue();
+				this.saveSessionNote();
+			});
+
+			const grip = row.createSpan({ cls: "co-drag-grip", text: "⠿" });
+
 			row.createSpan({
 				cls: "co-queue-text",
-				text: `${idx + 1}. ${text.length > 60 ? text.slice(0, 60) + "…" : text}`,
+				text: `${idx + 1}. ${text}`,
 			});
-			const removeBtn = row.createEl("button", {
+
+			const actions = row.createDiv({ cls: "co-queue-actions" });
+
+			const editBtn = actions.createEl("button", {
+				cls: "co-edit-btn",
+				text: "✎",
+			});
+			editBtn.addEventListener("click", () => {
+				// Replace row content with an inline editor
+				row.empty();
+				const input = row.createEl("input", {
+					type: "text",
+					cls: "co-queue-input co-queue-edit-input",
+					value: text,
+				});
+				const saveBtn = row.createEl("button", {
+					cls: "co-add-btn",
+					text: "✓",
+				});
+				const cancel = () => {
+					this.renderQueue();
+				};
+				const save = () => {
+					const newText = input.value.trim();
+					if (newText && this.sessionNote) {
+						this.sessionNote.queue[idx] = newText;
+						this.saveSessionNote();
+					}
+					this.renderQueue();
+				};
+				saveBtn.addEventListener("click", save);
+				input.addEventListener("keydown", (e) => {
+					if (e.key === "Enter") save();
+					if (e.key === "Escape") cancel();
+				});
+				input.focus();
+				input.select();
+			});
+
+			const removeBtn = actions.createEl("button", {
 				cls: "co-remove-btn",
 				text: "×",
 			});
@@ -465,28 +565,35 @@ export class TerminalView extends ItemView {
 
 		const task = this.sessionNote.queue.shift()!;
 
-		// Move to history as in-progress
-		this.sessionNote.history.push({ text: task, completed: false });
-		this.sessionNote.status = "running";
-		this.renderHistory();
 		this.renderQueue();
 		await this.saveSessionNote();
 
-		// Inject into tmux session via send-keys
+		// Inject into tmux session via send-keys.
+		// Send text first, then Enter after a short delay so the
+		// receiving application (e.g. Claude Code) has time to
+		// process the pasted text before the newline arrives.
 		const prependPath = ["/opt/homebrew/bin", "/usr/local/bin"];
 		const existingPath = process.env.PATH || "/usr/bin:/bin";
 		const entries = existingPath.split(":");
 		for (const p of prependPath) {
 			if (!entries.includes(p)) entries.unshift(p);
 		}
+		const env = { ...process.env, PATH: entries.join(":") };
 
 		const { execFile } = require("child_process");
 		execFile(
 			"tmux",
-			["send-keys", "-t", this.sessionName, task, "Enter"],
-			{ env: { ...process.env, PATH: entries.join(":") } },
+			["send-keys", "-t", this.sessionName, task],
+			{ env },
 			() => {
-				// fire and forget
+				setTimeout(() => {
+					execFile(
+						"tmux",
+						["send-keys", "-t", this.sessionName, "Enter"],
+						{ env },
+						() => { /* fire and forget */ },
+					);
+				}, 150);
 			},
 		);
 	}
