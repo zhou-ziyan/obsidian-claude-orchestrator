@@ -63,7 +63,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 
 		this.addRibbonIcon("terminal", "Open terminal for current project", () => {
-			this.activateView();
+			this.openTerminal();
 		});
 
 		// Also handle tab switches (clicking the tab header doesn't
@@ -144,22 +144,55 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 	}
 
 	// --- "Open terminal for current project" ---
-	// Reveals an existing terminal tab for this project, or creates one
-	// (attaching to an alive tmux session if available).
+	// 1. If any terminal tabs already open for this project → reveal the first one.
+	// 2. Else check tmux for alive sessions → restore all of them.
+	// 3. Else create a fresh terminal.
 	async openTerminal() {
 		const { workspace } = this.app;
 		const project = this.resolveActiveProject();
 
-		// Reveal existing terminal for this project.
+		// Already have open tabs? Reveal the first one.
 		for (const leaf of workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
 			const view = leaf.view;
 			if (view instanceof TerminalView && view.getProject() === project) {
 				workspace.revealLeaf(leaf);
+				view.focusTerminal();
 				return;
 			}
 		}
 
-		// None open — create one (tmux -A will reattach if session exists).
+		if (!project) {
+			// No project context — just open a plain shell.
+			await this.createTerminalLeaf(null, null);
+			return;
+		}
+
+		// No open tabs — try to restore all alive tmux sessions.
+		const openSessionNames = this.collectSessionNames();
+		const tmuxOutput = await this.tmuxLs();
+		const { names: aliveSessions, mostRecent } =
+			parseTmuxSessionsForProject(tmuxOutput, project);
+
+		const missing = aliveSessions.filter((s) => !openSessionNames.has(s));
+
+		if (missing.length > 0) {
+			for (const sessionName of missing) {
+				await this.createTerminalLeaf(project, sessionName);
+			}
+			// Reveal the most recently active session
+			if (mostRecent && missing.includes(mostRecent)) {
+				for (const leaf of workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
+					const view = leaf.view;
+					if (view instanceof TerminalView && view.getSessionName() === mostRecent) {
+						workspace.revealLeaf(leaf);
+						break;
+					}
+				}
+			}
+			return;
+		}
+
+		// No alive sessions either — create fresh.
 		await this.createTerminalLeaf(project, project);
 	}
 

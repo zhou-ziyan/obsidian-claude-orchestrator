@@ -167,13 +167,14 @@ export class TerminalView extends ItemView {
 		if (queueEnabled) {
 			this.historyPanel = container.createDiv({ cls: "co-history-panel" });
 			const header = this.historyPanel.createDiv({ cls: "co-panel-header" });
-			header.textContent = "▶ History";
+			const arrow = header.createSpan({ cls: "co-panel-arrow", text: "▾" });
+			header.createSpan({ text: " History" });
 			header.addEventListener("click", () => {
 				const content = this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null;
 				if (content) {
 					const collapsed = content.style.display === "none";
 					content.style.display = collapsed ? "block" : "none";
-					header.textContent = collapsed ? "▼ History" : "▶ History";
+					arrow.textContent = collapsed ? "▾" : "▸";
 					if (collapsed) {
 						// Scroll to bottom to show most recent
 						requestAnimationFrame(() => {
@@ -183,7 +184,44 @@ export class TerminalView extends ItemView {
 				}
 			});
 			const content = this.historyPanel.createDiv({ cls: "co-history-content" });
-			content.style.display = "none"; // collapsed by default
+		}
+
+		// --- Resize handle between history and terminal ---
+		if (queueEnabled) {
+			const historyResize = container.createDiv({ cls: "co-resize-handle" });
+			let startY = 0;
+			let startHeight = 0;
+
+			const onMouseMove = (e: MouseEvent) => {
+				const delta = e.clientY - startY;
+				const newHeight = Math.max(30, Math.min(300, startHeight + delta));
+				const content = this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null;
+				if (content) {
+					content.style.maxHeight = `${newHeight}px`;
+				}
+				this.fitAddon?.fit();
+				if (this.term && this.ptyProcess) {
+					try { this.ptyProcess.resize(this.term.cols, this.term.rows); } catch { /* ignore */ }
+				}
+			};
+
+			const onMouseUp = () => {
+				document.removeEventListener("mousemove", onMouseMove);
+				document.removeEventListener("mouseup", onMouseUp);
+				document.body.style.cursor = "";
+				document.body.style.userSelect = "";
+			};
+
+			historyResize.addEventListener("mousedown", (e) => {
+				e.preventDefault();
+				startY = e.clientY;
+				const content = this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null;
+				startHeight = content?.offsetHeight ?? 120;
+				document.body.style.cursor = "row-resize";
+				document.body.style.userSelect = "none";
+				document.addEventListener("mousemove", onMouseMove);
+				document.addEventListener("mouseup", onMouseUp);
+			});
 		}
 
 		// --- Terminal host (middle, flex: 1) ---
@@ -248,7 +286,7 @@ export class TerminalView extends ItemView {
 			const headerRight = queueHeader.createDiv({ cls: "co-queue-header-right" });
 
 			// --- Terminal focus indicator ---
-			this.termFocusIndicator = headerRight.createSpan({ cls: "co-term-indicator", text: "▲" });
+			this.termFocusIndicator = headerRight.createSpan({ cls: "co-term-indicator", text: "▴" });
 			this.termFocusIndicator.style.display = "none";
 
 			// --- Pin note ---
@@ -560,9 +598,12 @@ export class TerminalView extends ItemView {
 			if (stamp) {
 				row.createSpan({ cls: "co-timestamp", text: stamp });
 			}
-			row.createSpan({
-				cls: "co-history-text",
-				text: body.length > 80 ? body.slice(0, 80) + "…" : body,
+			const textSpan = row.createSpan({
+				cls: "co-history-text co-collapsed",
+				text: body,
+			});
+			textSpan.addEventListener("click", () => {
+				textSpan.classList.toggle("co-collapsed");
 			});
 		}
 

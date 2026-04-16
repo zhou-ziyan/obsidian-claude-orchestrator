@@ -253,6 +253,11 @@
     border-bottom: 1px solid #333;
 }
 
+.co-panel-arrow {
+    font-size: 16px;
+    vertical-align: middle;
+}
+
 .co-queue-header {
     display: flex;
     justify-content: space-between;
@@ -274,12 +279,18 @@
 
 .co-history-item {
     display: flex;
-    gap: 6px;
+    gap: 4px;
     padding: 2px 0;
     font-size: 12px;
     color: #aaa;
+    align-items: flex-start;
 }
 
+.co-history-icon {
+    width: 14px;
+    text-align: center;
+    flex-shrink: 0;
+}
 .co-history-icon.co-completed { color: #4caf50; }
 .co-history-icon.co-in-progress { color: #ff9800; }
 
@@ -342,11 +353,20 @@
     line-height: 1.4;
     cursor: pointer;
 }
-.co-queue-text.co-collapsed {
+.co-queue-text.co-collapsed,
+.co-history-text.co-collapsed {
     display: -webkit-box;
     -webkit-line-clamp: 1;
     -webkit-box-orient: vertical;
     overflow: hidden;
+}
+
+.co-history-text {
+    flex: 1;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.4;
+    cursor: pointer;
 }
 
 .co-queue-actions {
@@ -433,6 +453,10 @@
     border-radius: 3px;
     white-space: nowrap;
     flex-shrink: 0;
+    width: 36px;
+    height: 16px;
+    line-height: 16px;
+    text-align: center;
 }
 
 .co-empty {
@@ -450,7 +474,7 @@
 
 .co-term-indicator {
     color: #4caf50;
-    font-size: 10px;
+    font-size: 16px;
     flex-shrink: 0;
 }
 
