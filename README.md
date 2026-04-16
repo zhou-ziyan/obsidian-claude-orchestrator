@@ -14,6 +14,8 @@ Obsidian plugin that runs Claude Code sessions inside the Obsidian window — ea
   - `tmux new-session -A -s <name>` attaches if the session exists, creates it otherwise — so closing and reopening the tab lands back in the same session with full history
   - Multiple terminals can coexist, each bound to a different project
   - Notes outside any project fall back to a plain shell in `$HOME`
+  - Focus indicator: clicking a terminal dims all others with a semi-transparent overlay; clicking away clears all dimming
+  - Resize guard: ignores transient near-zero container sizes during layout animations
 - **M3 (task dispatch)**: not started
 - **M4 (summaries)**: not started
 
