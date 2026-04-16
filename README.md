@@ -57,7 +57,7 @@ git clone <this repo> ~/code/obsidian-claude-orchestrator
 cd ~/code/obsidian-claude-orchestrator
 npm install
 npm run dev   # esbuild watch mode
-npm test      # 57 tests via node:test
+npm run check # lint + typecheck + 69 tests with coverage
 ```
 
 Symlink into your Obsidian vault's plugins directory:
@@ -77,7 +77,7 @@ src/
   session-manager-view.ts  — SessionManagerView (left-sidebar session dashboard)
   utils.ts                 — pure functions (session naming, note parsing, tmux helpers, grouping)
 tests/
-  utils.test.ts — 57 tests for utils.ts (node:test, zero dependencies)
+  utils.test.ts — 69 tests for utils.ts (node:test, zero dependencies)
 styles.css     — xterm defaults + queue panel + focus indicators + session manager
 ```
 
