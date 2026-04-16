@@ -98,9 +98,15 @@ export class TerminalView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return this.sessionName
-			? `Claude Orchestrator: ${this.sessionName}`
-			: "Claude Orchestrator";
+		if (!this.sessionName || !this.project) return "Claude Orchestrator";
+		// "15_Claude_Orchestrator" → "15_Claude_Orchestrator"
+		// "15_Claude_Orchestrator-2" → "15_Claude_Orchestrator #2"
+		const suffix = this.sessionName.slice(this.project.length);
+		const match = suffix.match(/^-(\d+)$/);
+		if (match) {
+			return `${this.project} #${match[1]}`;
+		}
+		return this.project;
 	}
 
 	getIcon(): string {
@@ -647,39 +653,6 @@ export class TerminalView extends ItemView {
 			const row = this.queueList!.createDiv({ cls: "co-queue-item" });
 			row.dataset.idx = String(idx);
 
-			// Up/down reorder buttons
-			const moveGroup = row.createDiv({ cls: "co-move-group" });
-			if (idx > 0) {
-				const upBtn = moveGroup.createEl("button", {
-					cls: "co-icon-btn",
-					text: "▴",
-				});
-				upBtn.addEventListener("click", () => {
-					if (!this.sessionNote) return;
-					const [item] = this.sessionNote.queue.splice(idx, 1);
-					this.sessionNote.queue.splice(idx - 1, 0, item);
-					this.renderQueue();
-					this.saveSessionNote();
-				});
-			} else {
-				moveGroup.createSpan({ cls: "co-move-spacer" });
-			}
-			if (idx < this.sessionNote.queue.length - 1) {
-				const downBtn = moveGroup.createEl("button", {
-					cls: "co-icon-btn",
-					text: "▾",
-				});
-				downBtn.addEventListener("click", () => {
-					if (!this.sessionNote) return;
-					const [item] = this.sessionNote.queue.splice(idx, 1);
-					this.sessionNote.queue.splice(idx + 1, 0, item);
-					this.renderQueue();
-					this.saveSessionNote();
-				});
-			} else {
-				moveGroup.createSpan({ cls: "co-move-spacer" });
-			}
-
 			const { stamp, body } = extractTimestamp(text);
 			if (stamp) {
 				row.createSpan({ cls: "co-timestamp", text: stamp });
@@ -693,6 +666,38 @@ export class TerminalView extends ItemView {
 			});
 
 			const actions = row.createDiv({ cls: "co-queue-actions" });
+
+			// Up/down reorder buttons (before edit/remove)
+			if (idx > 0) {
+				const upBtn = actions.createEl("button", {
+					cls: "co-icon-btn co-move-btn",
+					text: "▴",
+				});
+				upBtn.addEventListener("click", () => {
+					if (!this.sessionNote) return;
+					const [item] = this.sessionNote.queue.splice(idx, 1);
+					this.sessionNote.queue.splice(idx - 1, 0, item);
+					this.renderQueue();
+					this.saveSessionNote();
+				});
+			} else {
+				actions.createSpan({ cls: "co-btn-spacer" });
+			}
+			if (idx < this.sessionNote.queue.length - 1) {
+				const downBtn = actions.createEl("button", {
+					cls: "co-icon-btn co-move-btn",
+					text: "▾",
+				});
+				downBtn.addEventListener("click", () => {
+					if (!this.sessionNote) return;
+					const [item] = this.sessionNote.queue.splice(idx, 1);
+					this.sessionNote.queue.splice(idx + 1, 0, item);
+					this.renderQueue();
+					this.saveSessionNote();
+				});
+			} else {
+				actions.createSpan({ cls: "co-btn-spacer" });
+			}
 
 			const editBtn = actions.createEl("button", {
 				cls: "co-icon-btn co-success",
@@ -756,6 +761,7 @@ export class TerminalView extends ItemView {
 				this.renderQueue();
 				this.saveSessionNote();
 			});
+
 		});
 	}
 

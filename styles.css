@@ -331,23 +331,18 @@
     border-radius: 3px;
     transition: background 0.1s;
 }
-.co-move-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    flex-shrink: 0;
+.co-move-btn {
+    font-size: 14px !important;
+    color: #555 !important;
+}
+.co-move-btn:hover {
+    color: #ccc !important;
 }
 
-.co-move-group .co-icon-btn {
-    width: 16px;
-    height: 14px;
-    font-size: 12px;
-}
-
-.co-move-spacer {
-    width: 16px;
-    height: 14px;
-    display: block;
+.co-btn-spacer {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
 }
 
 .co-queue-text {
