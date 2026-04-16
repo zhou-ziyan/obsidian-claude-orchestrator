@@ -1,4 +1,5 @@
 import { FileSystemAdapter, ItemView, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { normalizeViewState } from "./utils";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { IPty } from "node-pty";
@@ -9,6 +10,7 @@ export const VIEW_TYPE_TERMINAL = "claude-orchestrator-terminal";
 
 export interface TerminalViewState {
 	project?: string;
+	sessionName?: string;
 }
 
 /**
@@ -44,6 +46,7 @@ export class TerminalView extends ItemView {
 	private ptyModule: typeof import("node-pty") | null = null;
 	private awaitingRestart = false;
 	private project: string | null = null;
+	private sessionName: string | null = null;
 	private xtermReady = false;
 	private stateSeenPreOpen = false;
 	private host: HTMLElement | null = null;
@@ -64,8 +67,8 @@ export class TerminalView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return this.project
-			? `Claude Orchestrator: ${this.project}`
+		return this.sessionName
+			? `Claude Orchestrator: ${this.sessionName}`
 			: "Claude Orchestrator";
 	}
 
@@ -77,14 +80,14 @@ export class TerminalView extends ItemView {
 		return {
 			...super.getState(),
 			project: this.project ?? undefined,
+			sessionName: this.sessionName ?? undefined,
 		};
 	}
 
 	async setState(state: unknown, result: ViewStateResult): Promise<void> {
-		if (state && typeof state === "object" && "project" in state) {
-			const p = (state as TerminalViewState).project;
-			this.project = typeof p === "string" ? p : null;
-		}
+		const normalized = normalizeViewState(state);
+		this.project = normalized.project;
+		this.sessionName = normalized.sessionName;
 		if (!this.xtermReady) {
 			this.stateSeenPreOpen = true;
 		}
@@ -98,8 +101,13 @@ export class TerminalView extends ItemView {
 		return this.project;
 	}
 
-	setProject(project: string | null): void {
+	getSessionName(): string | null {
+		return this.sessionName;
+	}
+
+	setProject(project: string | null, sessionName?: string): void {
 		this.project = project;
+		this.sessionName = sessionName ?? project;
 		if (this.xtermReady) {
 			this.spawnShell();
 		}
@@ -224,9 +232,9 @@ export class TerminalView extends ItemView {
 
 		let file: string;
 		let args: string[];
-		if (this.project) {
+		if (this.sessionName) {
 			file = "tmux";
-			args = ["new-session", "-A", "-s", this.project];
+			args = ["new-session", "-A", "-s", this.sessionName];
 		} else {
 			file = shell;
 			args = [];
@@ -244,8 +252,8 @@ export class TerminalView extends ItemView {
 		} catch (err) {
 			this.term.writeln("\x1b[31mFailed to spawn:\x1b[0m");
 			this.term.writeln(String(err));
-			if (this.project) {
-				this.term.writeln(`Tried: tmux new-session -A -s ${this.project}`);
+			if (this.sessionName) {
+				this.term.writeln(`Tried: tmux new-session -A -s ${this.sessionName}`);
 				this.term.writeln("Is tmux installed and in PATH?");
 			}
 			return;

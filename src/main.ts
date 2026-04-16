@@ -1,8 +1,7 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
-
-const PROJECTS_DIR = "01_Projects";
-const PROJECT_PATH_RE = new RegExp(`(?:^|/)${PROJECTS_DIR}/([^/]+)/`);
+import { PROJECTS_DIR, PROJECT_PATH_RE, generateSessionName, parseTmuxSessionsForProject } from "./utils";
+import { execFile } from "child_process";
 
 interface OrchestratorSettings {
 	autoRevealNote: boolean;
@@ -32,7 +31,19 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		this.addCommand({
 			id: "open-terminal",
 			name: "Open terminal for current project",
-			callback: () => this.activateView(),
+			callback: () => this.openTerminal(),
+		});
+
+		this.addCommand({
+			id: "restore-all-terminals",
+			name: "Restore all terminals for current project",
+			callback: () => this.restoreAllTerminals(),
+		});
+
+		this.addCommand({
+			id: "create-new-terminal",
+			name: "Create new terminal for current project",
+			callback: () => this.createNewTerminal(),
 		});
 
 		this.addCommand({
@@ -102,11 +113,28 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		}
 	}
 
-	async activateView() {
+	private collectSessionNames(): Set<string> {
+		const names = new Set<string>();
+		for (const leaf of this.app.workspace.getLeavesOfType(
+			VIEW_TYPE_TERMINAL,
+		)) {
+			const view = leaf.view;
+			if (view instanceof TerminalView) {
+				const name = view.getSessionName();
+				if (name) names.add(name);
+			}
+		}
+		return names;
+	}
+
+	// --- "Open terminal for current project" ---
+	// Reveals an existing terminal tab for this project, or creates one
+	// (attaching to an alive tmux session if available).
+	async openTerminal() {
 		const { workspace } = this.app;
 		const project = this.resolveActiveProject();
 
-		// Reveal existing terminal already bound to this project (or no project).
+		// Reveal existing terminal for this project.
 		for (const leaf of workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
 			const view = leaf.view;
 			if (view instanceof TerminalView && view.getProject() === project) {
@@ -115,8 +143,97 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			}
 		}
 
+		// None open — create one (tmux -A will reattach if session exists).
+		await this.createTerminalLeaf(project, project);
+	}
+
+	// --- "Restore all terminals for current project" ---
+	// Checks `tmux ls` and opens a tab for every alive session that
+	// doesn't already have one.
+	async restoreAllTerminals() {
+		const project = this.resolveActiveProject();
+		if (!project) {
+			new Notice("No project context — open a project note first.");
+			return;
+		}
+
+		const openSessionNames = this.collectSessionNames();
+		const tmuxOutput = await this.tmuxLs();
+		const aliveSessions = parseTmuxSessionsForProject(
+			tmuxOutput,
+			project,
+		);
+
+		if (aliveSessions.length === 0) {
+			new Notice(
+				`No alive tmux sessions found for ${project}. Use "Create new terminal" instead.`,
+			);
+			return;
+		}
+
+		const missing = aliveSessions.filter((s) => !openSessionNames.has(s));
+
+		if (missing.length === 0) {
+			new Notice("All sessions for this project are already open.");
+			return;
+		}
+
+		for (const sessionName of missing) {
+			await this.createTerminalLeaf(project, sessionName);
+		}
+		new Notice(`Restored ${missing.length} terminal(s).`);
+	}
+
+	// --- "Create new terminal for current project" ---
+	// Always creates a fresh tmux session with the next available name.
+	async createNewTerminal() {
+		const project = this.resolveActiveProject();
+		if (!project) {
+			new Notice("No project context — open a project note first.");
+			return;
+		}
+
+		const sessionName = generateSessionName(
+			project,
+			this.collectSessionNames(),
+		);
+		await this.createTerminalLeaf(project, sessionName);
+	}
+
+	// --- Shared helpers ---
+
+	private tmuxLs(): Promise<string> {
+		// Obsidian's Electron process may not include /opt/homebrew/bin
+		// in PATH, so we prepend common locations.
+		const prependPath = ["/opt/homebrew/bin", "/usr/local/bin"];
+		const existingPath = process.env.PATH || "/usr/bin:/bin";
+		const entries = existingPath.split(":");
+		for (const p of prependPath) {
+			if (!entries.includes(p)) entries.unshift(p);
+		}
+
+		return new Promise((resolve) => {
+			execFile(
+				"tmux",
+				["ls"],
+				{ env: { ...process.env, PATH: entries.join(":") } },
+				(err, stdout) => {
+					resolve(err ? "" : stdout);
+				},
+			);
+		});
+	}
+
+	private async createTerminalLeaf(
+		project: string | null,
+		sessionName: string | null,
+	): Promise<void> {
+		const { workspace } = this.app;
+
+		// Always create in the right sidebar.
 		const leaf = workspace.getRightLeaf(false);
 		if (!leaf) return;
+
 		await leaf.setViewState({
 			type: VIEW_TYPE_TERMINAL,
 			active: true,
@@ -124,7 +241,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 		const view = leaf.view;
 		if (view instanceof TerminalView) {
-			view.setProject(project);
+			view.setProject(project, sessionName ?? undefined);
 		}
 		workspace.revealLeaf(leaf);
 	}
