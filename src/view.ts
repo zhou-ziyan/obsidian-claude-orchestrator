@@ -6,6 +6,7 @@ import {
 	createDefaultSessionNote,
 	parseSessionNote,
 	serializeSessionNote,
+	nowStamp,
 	SessionNote,
 } from "./utils";
 import { Terminal } from "@xterm/xterm";
@@ -44,6 +45,18 @@ function loadNodePty(pluginDir: string): typeof import("node-pty") {
 	return require(path.join(ptyRoot, "lib", "index.js"));
 }
 
+const TS_RE = /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\] /;
+
+function extractTimestamp(text: string): { stamp: string | null; body: string } {
+	const m = text.match(TS_RE);
+	if (m) {
+		// Show only HH:MM, not the full date
+		const timeOnly = m[1].split(" ")[1] ?? m[1];
+		return { stamp: timeOnly, body: text.slice(m[0].length) };
+	}
+	return { stamp: null, body: text };
+}
+
 export class TerminalView extends ItemView {
 	private term: Terminal | null = null;
 	private fitAddon: FitAddon | null = null;
@@ -58,17 +71,20 @@ export class TerminalView extends ItemView {
 	private xtermReady = false;
 	private stateSeenPreOpen = false;
 	private host: HTMLElement | null = null;
-	private onTerminalFocus?: (project: string) => void;
+	private onTerminalFocus?: (project: string, sessionName: string) => void;
 	private getSettings?: () => { queuePanel: boolean };
 	private historyPanel: HTMLElement | null = null;
 	private queuePanel: HTMLElement | null = null;
 	private queueList: HTMLElement | null = null;
 	private sessionNote: SessionNote | null = null;
+	private pinnedNote: string | null = null;
+	private pinLabel: HTMLElement | null = null;
+	private termFocusIndicator: HTMLElement | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
 		pluginDir: string,
-		onTerminalFocus?: (project: string) => void,
+		onTerminalFocus?: (project: string, sessionName: string) => void,
 		getSettings?: () => { queuePanel: boolean },
 	) {
 		super(leaf);
@@ -120,14 +136,20 @@ export class TerminalView extends ItemView {
 		return this.sessionName;
 	}
 
+	getPinnedNote(): string | null {
+		return this.pinnedNote;
+	}
+
+	focusTerminal(): void {
+		this.term?.focus();
+	}
+
 	setProject(project: string | null, sessionName?: string): void {
 		this.project = project;
 		this.sessionName = sessionName ?? project;
 		if (this.xtermReady) {
 			this.spawnShell();
-			if (this.getSettings?.().queuePanel) {
-				this.loadSessionNote();
-			}
+			this.loadSessionNote();
 		}
 	}
 
@@ -141,8 +163,28 @@ export class TerminalView extends ItemView {
 
 		const queueEnabled = this.getSettings?.().queuePanel ?? false;
 
-		// History panel is disabled until stop-hook integration (M3b stage 2)
-		// can automatically mark items as completed.
+		// --- History panel (top, collapsible) ---
+		if (queueEnabled) {
+			this.historyPanel = container.createDiv({ cls: "co-history-panel" });
+			const header = this.historyPanel.createDiv({ cls: "co-panel-header" });
+			header.textContent = "▶ History";
+			header.addEventListener("click", () => {
+				const content = this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null;
+				if (content) {
+					const collapsed = content.style.display === "none";
+					content.style.display = collapsed ? "block" : "none";
+					header.textContent = collapsed ? "▼ History" : "▶ History";
+					if (collapsed) {
+						// Scroll to bottom to show most recent
+						requestAnimationFrame(() => {
+							content.scrollTop = content.scrollHeight;
+						});
+					}
+				}
+			});
+			const content = this.historyPanel.createDiv({ cls: "co-history-content" });
+			content.style.display = "none"; // collapsed by default
+		}
 
 		// --- Terminal host (middle, flex: 1) ---
 		const host = container.createDiv({ cls: "claude-orchestrator-term-host" });
@@ -203,8 +245,42 @@ export class TerminalView extends ItemView {
 			const queueTitle = queueHeader.createSpan();
 			queueTitle.textContent = "Queue";
 
-			const sendBtn = queueHeader.createEl("button", {
-				cls: "co-send-btn",
+			const headerRight = queueHeader.createDiv({ cls: "co-queue-header-right" });
+
+			// --- Terminal focus indicator ---
+			this.termFocusIndicator = headerRight.createSpan({ cls: "co-term-indicator", text: "▲" });
+			this.termFocusIndicator.style.display = "none";
+
+			// --- Pin note ---
+			const pinGroup = headerRight.createDiv({ cls: "co-pin-group" });
+			const pinBtn = pinGroup.createEl("button", {
+				cls: "co-icon-btn",
+				text: "📌",
+			});
+			this.pinLabel = pinGroup.createSpan({ cls: "co-pin-label" });
+			this.pinLabel.textContent = "No note pinned";
+
+			pinBtn.addEventListener("click", () => {
+				const mainLeaf = this.app.workspace.getMostRecentLeaf(
+					this.app.workspace.rootSplit,
+				);
+				const currentFile = (mainLeaf?.view as any)?.file as any;
+				if (currentFile?.path) {
+					this.pinnedNote = currentFile.path;
+					this.updatePinLabel();
+					this.saveSessionNote();
+				}
+			});
+			this.pinLabel.addEventListener("click", () => {
+				if (this.pinnedNote) {
+					this.pinnedNote = null;
+					this.updatePinLabel();
+					this.saveSessionNote();
+				}
+			});
+
+			const sendBtn = headerRight.createEl("button", {
+				cls: "co-text-btn co-accent",
 				text: "Send next ▶",
 			});
 			sendBtn.addEventListener("click", () => this.sendNext());
@@ -225,7 +301,7 @@ export class TerminalView extends ItemView {
 			input.addEventListener("input", autoResize);
 
 			const addBtn = addRow.createEl("button", {
-				cls: "co-add-btn",
+				cls: "co-icon-btn",
 				text: "+",
 			});
 			const doAdd = () => {
@@ -238,7 +314,7 @@ export class TerminalView extends ItemView {
 					return;
 				}
 				if (!this.sessionNote) return;
-				this.sessionNote.queue.push(text);
+				this.sessionNote.queue.push(`[${nowStamp()}] ${text}`);
 				input.value = "";
 				input.style.height = "auto";
 				this.renderQueue();
@@ -248,6 +324,7 @@ export class TerminalView extends ItemView {
 			input.addEventListener("keydown", (e) => {
 				if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doAdd(); }
 			});
+
 		}
 
 		this.term = new Terminal({
@@ -264,6 +341,14 @@ export class TerminalView extends ItemView {
 		this.term.loadAddon(this.fitAddon);
 		this.term.open(host);
 		this.fitAddon.fit();
+
+		// Show green ▲ indicator when terminal has keyboard focus
+		this.term.textarea?.addEventListener("focus", () => {
+			if (this.termFocusIndicator) this.termFocusIndicator.style.display = "";
+		});
+		this.term.textarea?.addEventListener("blur", () => {
+			if (this.termFocusIndicator) this.termFocusIndicator.style.display = "none";
+		});
 
 		try {
 			this.ptyModule = loadNodePty(this.pluginDir);
@@ -305,9 +390,7 @@ export class TerminalView extends ItemView {
 		// called immediately after and drives the spawn.
 		if (this.stateSeenPreOpen) {
 			this.spawnShell();
-			if (this.getSettings?.().queuePanel) {
-				this.loadSessionNote();
-			}
+			this.loadSessionNote();
 		}
 	}
 
@@ -417,23 +500,31 @@ export class TerminalView extends ItemView {
 		}
 	}
 
+	private sessionNoteLoaded = false;
+
 	private async loadSessionNote(): Promise<void> {
 		if (!this.project || !this.sessionName) return;
+		this.sessionNoteLoaded = false;
 		await this.ensureSessionNote();
 		const notePath = sessionNotePath(this.project, this.sessionName);
 		const file = this.app.vault.getAbstractFileByPath(notePath);
-		if (!file || !(file instanceof TFolder === false && "path" in file)) {
+		if (!file || file instanceof TFolder) {
 			this.sessionNote = parseSessionNote("", this.sessionName);
+			this.sessionNoteLoaded = true;
 			return;
 		}
 		const content = await this.app.vault.read(file as any);
 		this.sessionNote = parseSessionNote(content, this.sessionName);
+		this.pinnedNote = this.sessionNote.pinnedNote;
+		this.sessionNoteLoaded = true;
 		this.renderHistory();
 		this.renderQueue();
+		this.updatePinLabel();
 	}
 
 	private async saveSessionNote(): Promise<void> {
 		if (!this.project || !this.sessionName || !this.sessionNote) return;
+		this.sessionNote.pinnedNote = this.pinnedNote;
 		const notePath = sessionNotePath(this.project, this.sessionName);
 		const file = this.app.vault.getAbstractFileByPath(notePath);
 		if (file && "path" in file) {
@@ -456,21 +547,38 @@ export class TerminalView extends ItemView {
 			return;
 		}
 
-		// Show most recent items first, with a truncated preview
-		const items = [...this.sessionNote.history].reverse();
-		for (const item of items) {
+		// Show oldest first (top) → newest last (bottom)
+		for (const item of this.sessionNote.history) {
 			const row = content.createDiv({ cls: "co-history-item" });
 			const icon = item.completed ? "✓" : "⟳";
 			const cls = item.completed ? "co-completed" : "co-in-progress";
 			row.createSpan({ cls: `co-history-icon ${cls}`, text: icon });
+			const { stamp, body } = extractTimestamp(item.text);
+			if (stamp) {
+				row.createSpan({ cls: "co-timestamp", text: stamp });
+			}
 			row.createSpan({
 				cls: "co-history-text",
-				text: item.text.length > 80 ? item.text.slice(0, 80) + "…" : item.text,
+				text: body.length > 80 ? body.slice(0, 80) + "…" : body,
 			});
 		}
+
+		// Scroll to bottom to show the most recent item
+		content.scrollTop = content.scrollHeight;
 	}
 
-	private dragFromIdx: number | null = null;
+	private updatePinLabel(): void {
+		if (!this.pinLabel) return;
+		if (this.pinnedNote) {
+			// Show just the filename without path
+			const name = this.pinnedNote.split("/").pop()?.replace(/\.md$/, "") ?? this.pinnedNote;
+			this.pinLabel.textContent = name;
+			this.pinLabel.classList.add("co-pin-active");
+		} else {
+			this.pinLabel.textContent = "No note pinned";
+			this.pinLabel.classList.remove("co-pin-active");
+		}
+	}
 
 	private renderQueue(): void {
 		if (!this.queueList || !this.sessionNote) return;
@@ -483,61 +591,102 @@ export class TerminalView extends ItemView {
 
 		this.sessionNote.queue.forEach((text, idx) => {
 			const row = this.queueList!.createDiv({ cls: "co-queue-item" });
-			row.draggable = true;
 			row.dataset.idx = String(idx);
-
-			row.addEventListener("dragstart", (e) => {
-				this.dragFromIdx = idx;
-				row.classList.add("co-dragging");
-				e.dataTransfer?.setData("text/plain", String(idx));
-			});
-			row.addEventListener("dragend", () => {
-				row.classList.remove("co-dragging");
-				this.dragFromIdx = null;
-			});
-			row.addEventListener("dragover", (e) => {
-				e.preventDefault();
-				row.classList.add("co-drag-over");
-			});
-			row.addEventListener("dragleave", () => {
-				row.classList.remove("co-drag-over");
-			});
-			row.addEventListener("drop", (e) => {
-				e.preventDefault();
-				row.classList.remove("co-drag-over");
-				if (this.dragFromIdx === null || !this.sessionNote) return;
-				const from = this.dragFromIdx;
-				const to = idx;
-				if (from === to) return;
-				const [item] = this.sessionNote.queue.splice(from, 1);
-				this.sessionNote.queue.splice(to, 0, item);
-				this.renderQueue();
-				this.saveSessionNote();
-			});
 
 			const grip = row.createSpan({ cls: "co-drag-grip", text: "⠿" });
 
-			row.createSpan({
-				cls: "co-queue-text",
-				text: `${idx + 1}. ${text}`,
+			// Mouse-based reorder (constrained to queue list)
+			grip.addEventListener("mousedown", (startE) => {
+				startE.preventDefault();
+				const list = this.queueList!;
+				const rows = Array.from(list.querySelectorAll(".co-queue-item")) as HTMLElement[];
+				const startY = startE.clientY;
+				let currentIdx = idx;
+
+				row.classList.add("co-dragging");
+
+				const onMove = (e: MouseEvent) => {
+					const delta = e.clientY - startY;
+					// Find which row the cursor is over
+					for (let i = 0; i < rows.length; i++) {
+						const rect = rows[i].getBoundingClientRect();
+						const midY = rect.top + rect.height / 2;
+						if (e.clientY < midY && i !== currentIdx) {
+							// Move item to position i
+							if (!this.sessionNote) break;
+							const [item] = this.sessionNote.queue.splice(currentIdx, 1);
+							this.sessionNote.queue.splice(i, 0, item);
+							currentIdx = i;
+							this.renderQueue();
+							// Re-grab the new row and mark it dragging
+							const newRows = Array.from(list.querySelectorAll(".co-queue-item")) as HTMLElement[];
+							newRows[i]?.classList.add("co-dragging");
+							break;
+						}
+						if (e.clientY > rect.bottom && i === rows.length - 1 && currentIdx !== i) {
+							if (!this.sessionNote) break;
+							const [item] = this.sessionNote.queue.splice(currentIdx, 1);
+							this.sessionNote.queue.splice(i, 0, item);
+							currentIdx = i;
+							this.renderQueue();
+							const newRows = Array.from(list.querySelectorAll(".co-queue-item")) as HTMLElement[];
+							newRows[i]?.classList.add("co-dragging");
+							break;
+						}
+					}
+				};
+
+				const onUp = () => {
+					document.removeEventListener("mousemove", onMove);
+					document.removeEventListener("mouseup", onUp);
+					row.classList.remove("co-dragging");
+					this.saveSessionNote();
+				};
+
+				document.addEventListener("mousemove", onMove);
+				document.addEventListener("mouseup", onUp);
+			});
+
+			const { stamp, body } = extractTimestamp(text);
+			if (stamp) {
+				row.createSpan({ cls: "co-timestamp", text: stamp });
+			}
+			const textSpan = row.createSpan({
+				cls: "co-queue-text co-collapsed",
+				text: `${idx + 1}. ${body}`,
+			});
+			textSpan.addEventListener("click", () => {
+				textSpan.classList.toggle("co-collapsed");
 			});
 
 			const actions = row.createDiv({ cls: "co-queue-actions" });
 
 			const editBtn = actions.createEl("button", {
-				cls: "co-edit-btn",
+				cls: "co-icon-btn co-success",
 				text: "✎",
 			});
 			editBtn.addEventListener("click", () => {
 				// Replace row content with an inline editor
 				row.empty();
-				const input = row.createEl("input", {
-					type: "text",
+				// Strip timestamp for editing, preserve it for saving back
+				const tsMatch = text.match(/^(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] )/);
+				const tsPrefix = tsMatch ? tsMatch[1] : "";
+				const editableText = tsMatch ? text.slice(tsMatch[1].length) : text;
+
+				const input = row.createEl("textarea", {
 					cls: "co-queue-input co-queue-edit-input",
-					value: text,
 				});
+				input.value = editableText;
+				input.rows = 1;
+				// Auto-grow
+				const autoResize = () => {
+					input.style.height = "auto";
+					input.style.height = `${input.scrollHeight}px`;
+				};
+				input.addEventListener("input", autoResize);
+
 				const saveBtn = row.createEl("button", {
-					cls: "co-add-btn",
+					cls: "co-icon-btn co-success",
 					text: "✓",
 				});
 				const cancel = () => {
@@ -546,22 +695,24 @@ export class TerminalView extends ItemView {
 				const save = () => {
 					const newText = input.value.trim();
 					if (newText && this.sessionNote) {
-						this.sessionNote.queue[idx] = newText;
+						this.sessionNote.queue[idx] = `${tsPrefix}${newText}`;
 						this.saveSessionNote();
 					}
 					this.renderQueue();
 				};
 				saveBtn.addEventListener("click", save);
 				input.addEventListener("keydown", (e) => {
-					if (e.key === "Enter") save();
+					if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(); }
 					if (e.key === "Escape") cancel();
 				});
 				input.focus();
 				input.select();
+				// Trigger initial resize to fit content
+				requestAnimationFrame(autoResize);
 			});
 
 			const removeBtn = actions.createEl("button", {
-				cls: "co-remove-btn",
+				cls: "co-icon-btn co-danger",
 				text: "×",
 			});
 			removeBtn.addEventListener("click", () => {
@@ -580,8 +731,14 @@ export class TerminalView extends ItemView {
 
 		const task = this.sessionNote.queue.shift()!;
 
+		// Move to history as in-progress
+		this.sessionNote.history.push({ text: task, completed: false });
+		this.renderHistory();
 		this.renderQueue();
 		await this.saveSessionNote();
+
+		// Strip timestamp prefix before injecting (e.g. "[2026-04-15 23:15] actual text")
+		const taskText = task.replace(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] /, "");
 
 		// Inject into tmux session via send-keys.
 		// Send text first, then Enter after a short delay so the
@@ -598,7 +755,7 @@ export class TerminalView extends ItemView {
 		const { execFile } = require("child_process");
 		execFile(
 			"tmux",
-			["send-keys", "-t", this.sessionName, task],
+			["send-keys", "-t", this.sessionName, taskText],
 			{ env },
 			() => {
 				setTimeout(() => {
@@ -620,8 +777,20 @@ export class TerminalView extends ItemView {
 				view.host.classList.toggle("is-dimmed", view !== this);
 			}
 		}
-		if (this.project && this.onTerminalFocus) {
-			this.onTerminalFocus(this.project);
+		if (this.project && this.sessionName && this.onTerminalFocus) {
+			if (this.sessionNoteLoaded) {
+				this.onTerminalFocus(this.project, this.sessionName);
+			} else {
+				// Session note still loading — wait and retry
+				const check = () => {
+					if (this.sessionNoteLoaded && this.project && this.sessionName && this.onTerminalFocus) {
+						this.onTerminalFocus(this.project, this.sessionName);
+					} else {
+						setTimeout(check, 50);
+					}
+				};
+				setTimeout(check, 50);
+			}
 		}
 	};
 
@@ -663,6 +832,8 @@ export class TerminalView extends ItemView {
 		this.queuePanel = null;
 		this.queueList = null;
 		this.sessionNote = null;
+		this.pinLabel = null;
+		this.termFocusIndicator = null;
 		this.ptyGen++; // invalidate pending callbacks
 		this.resizeObserver?.disconnect();
 		this.resizeObserver = null;

@@ -239,6 +239,7 @@
     background: rgba(0, 0, 0, 0.4);
 }
 
+
 /* --- Claude Orchestrator: queue panels --- */
 
 .co-panel-header {
@@ -295,7 +296,7 @@
 
 .co-queue-panel {
     flex-shrink: 0;
-    height: 150px;
+    height: 200px;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -321,10 +322,7 @@
 }
 .co-queue-item.co-dragging {
     opacity: 0.4;
-}
-.co-queue-item.co-drag-over {
-    background: #333;
-    border-top: 2px solid #4caf50;
+    background: #252525;
 }
 
 .co-drag-grip {
@@ -342,6 +340,13 @@
     white-space: pre-wrap;
     word-break: break-word;
     line-height: 1.4;
+    cursor: pointer;
+}
+.co-queue-text.co-collapsed {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
 .co-queue-actions {
@@ -350,24 +355,26 @@
     flex-shrink: 0;
 }
 
-.co-edit-btn,
-.co-remove-btn {
+/* Shared icon button base — square, centered, no border */
+.co-icon-btn {
     background: none;
     border: none;
     color: #666;
     cursor: pointer;
-    font-size: 12px;
-    width: 20px;
-    height: 20px;
+    font-size: 13px;
+    width: 24px;
+    height: 24px;
     padding: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     line-height: 1;
     border-radius: 3px;
+    flex-shrink: 0;
 }
-.co-edit-btn:hover { color: #4caf50; background: #2a2a2a; }
-.co-remove-btn:hover { color: #e44; background: #2a2a2a; }
+.co-icon-btn:hover { color: #ccc; background: #2a2a2a; }
+.co-icon-btn.co-danger:hover { color: #e44; }
+.co-icon-btn.co-success:hover { color: #4caf50; }
 
 .co-queue-edit-input {
     flex: 1;
@@ -396,27 +403,36 @@
     min-height: 22px;
 }
 .co-queue-input:focus {
-    border-color: #555;
+    border-color: #4caf50;
     outline: none;
 }
 
-.co-add-btn,
-.co-send-btn {
+/* Text button — pill shape with border */
+.co-text-btn {
     background: #2a2a2a;
     border: 1px solid #444;
     color: #ccc;
-    padding: 2px 8px;
+    padding: 2px 10px;
     font-size: 12px;
     cursor: pointer;
     border-radius: 3px;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
-.co-add-btn:hover,
-.co-send-btn:hover {
-    background: #333;
-}
-.co-send-btn {
+.co-text-btn:hover { background: #333; }
+.co-text-btn.co-accent {
     color: #4caf50;
     border-color: #4caf50;
+}
+
+.co-timestamp {
+    font-size: 10px;
+    color: #666;
+    background: #252525;
+    padding: 1px 4px;
+    border-radius: 3px;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .co-empty {
@@ -424,6 +440,46 @@
     color: #666;
     padding: 4px 0;
     font-style: italic;
+}
+
+.co-queue-header-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.co-term-indicator {
+    color: #4caf50;
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+.co-pin-group {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    max-width: 200px;
+    overflow: hidden;
+}
+
+/* pin button uses .co-icon-btn */
+
+.co-pin-label {
+    color: #666;
+    font-style: italic;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.co-pin-label.co-pin-active {
+    color: #ccc;
+    font-style: normal;
+    cursor: pointer;
+}
+.co-pin-label.co-pin-active:hover {
+    text-decoration: line-through;
+    color: #e44;
 }
 
 

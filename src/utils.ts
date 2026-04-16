@@ -104,6 +104,16 @@ export function parseTmuxSessionsForProject(
 	return { names: sessions.map((s) => s.name), mostRecent };
 }
 
+/**
+ * Return a compact timestamp string for stamping queue items.
+ * Format: YYYY-MM-DD HH:MM
+ */
+export function nowStamp(): string {
+	const d = new Date();
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function escapeRegExp(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -120,6 +130,7 @@ export interface HistoryItem {
 export interface SessionNote {
 	session: string;
 	status: SessionStatus;
+	pinnedNote: string | null;
 	history: HistoryItem[];
 	queue: string[];
 }
@@ -142,6 +153,7 @@ export function createDefaultSessionNote(sessionName: string): string {
 		"---",
 		`session: ${sessionName}`,
 		"status: idle",
+		"pinnedNote: ",
 		"---",
 		"",
 		"## History",
@@ -161,6 +173,7 @@ export function parseSessionNote(
 	const note: SessionNote = {
 		session: fallbackSession,
 		status: "idle",
+		pinnedNote: null,
 		history: [],
 		queue: [],
 	};
@@ -180,6 +193,8 @@ export function parseSessionNote(
 				if (key === "session") note.session = value;
 				if (key === "status" && isSessionStatus(value))
 					note.status = value;
+				if (key === "pinnedNote" && value)
+					note.pinnedNote = value;
 			}
 			i++;
 		}
@@ -210,28 +225,43 @@ export function parseSessionNote(
 			continue;
 		}
 
-		if (currentSection === "history" && trimmed.startsWith("- ")) {
-			const checkMatch = trimmed.match(/^- \[([ xX])\] (.+)$/);
-			if (checkMatch) {
+		// Items start with "- " (optionally with checkbox for history).
+		// Continuation lines are indented (start with spaces/tabs) and
+		// belong to the previous item.
+		if ((currentSection === "history" || currentSection === "queue") && trimmed.startsWith("- ")) {
+			const content = trimmed.slice(2);
+			// Collect continuation lines (indented, not a new list item or heading)
+			const textLines = [currentSection === "history" ? parseHistoryFirstLine(content) : content];
+			while (i + 1 < lines.length) {
+				const nextRaw = lines[i + 1];
+				const nextTrimmed = nextRaw.trim();
+				// Stop at new list item, heading, or non-indented non-empty line
+				if (nextTrimmed === "" || nextTrimmed.startsWith("- ") || nextTrimmed.startsWith("## ")) break;
+				if (!nextRaw.startsWith("  ") && !nextRaw.startsWith("\t")) break;
+				textLines.push(nextTrimmed);
+				i++;
+			}
+			const fullText = textLines.join("\n");
+			if (currentSection === "history") {
+				const checkMatch = content.match(/^\[([ xX])\] /);
 				note.history.push({
-					text: checkMatch[2],
-					completed: checkMatch[1] !== " ",
+					text: fullText,
+					completed: checkMatch ? checkMatch[1] !== " " : false,
 				});
 			} else {
-				// Plain list item in history — treat as incomplete
-				note.history.push({
-					text: trimmed.slice(2),
-					completed: false,
-				});
+				note.queue.push(fullText);
 			}
-		} else if (currentSection === "queue" && trimmed.startsWith("- ")) {
-			note.queue.push(trimmed.slice(2));
 		}
 
 		i++;
 	}
 
 	return note;
+}
+
+function parseHistoryFirstLine(content: string): string {
+	// Strip checkbox prefix "[x] " or "[ ] " from the first line
+	return content.replace(/^\[([ xX])\] /, "");
 }
 
 function isSessionStatus(s: string): s is SessionStatus {
@@ -246,6 +276,7 @@ export function serializeSessionNote(note: SessionNote): string {
 		"---",
 		`session: ${note.session}`,
 		`status: ${note.status}`,
+		`pinnedNote: ${note.pinnedNote ?? ""}`,
 		"---",
 		"",
 		"## History",
@@ -253,14 +284,22 @@ export function serializeSessionNote(note: SessionNote): string {
 
 	for (const item of note.history) {
 		const mark = item.completed ? "x" : " ";
-		lines.push(`- [${mark}] ${item.text}`);
+		const itemLines = item.text.split("\n");
+		lines.push(`- [${mark}] ${itemLines[0]}`);
+		for (let j = 1; j < itemLines.length; j++) {
+			lines.push(`  ${itemLines[j]}`);
+		}
 	}
 
 	lines.push("");
 	lines.push("## Queue");
 
 	for (const item of note.queue) {
-		lines.push(`- ${item}`);
+		const itemLines = item.split("\n");
+		lines.push(`- ${itemLines[0]}`);
+		for (let j = 1; j < itemLines.length; j++) {
+			lines.push(`  ${itemLines[j]}`);
+		}
 	}
 
 	lines.push("");

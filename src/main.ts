@@ -1,21 +1,18 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
-import { PROJECTS_DIR, PROJECT_PATH_RE, generateSessionName, parseTmuxSessionsForProject } from "./utils";
+import { PROJECT_PATH_RE, generateSessionName, parseTmuxSessionsForProject } from "./utils";
 import { execFile } from "child_process";
 
 interface OrchestratorSettings {
-	autoRevealNote: boolean;
 	queuePanel: boolean;
 }
 
 const DEFAULT_SETTINGS: OrchestratorSettings = {
-	autoRevealNote: true,
 	queuePanel: false,
 };
 
 export default class ClaudeOrchestratorPlugin extends Plugin {
 	settings: OrchestratorSettings = DEFAULT_SETTINGS;
-	private lastNoteByProject = new Map<string, string>();
 
 	async onload() {
 		await this.loadSettings();
@@ -28,7 +25,8 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 				new TerminalView(
 					leaf,
 					pluginDir,
-					(project) => this.onTerminalFocus(project),
+					(project, sessionName) =>
+						this.onTerminalFocus(project, sessionName),
 					() => this.settings,
 				),
 		);
@@ -63,30 +61,25 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			},
 		});
 
-		this.addCommand({
-			id: "toggle-auto-reveal",
-			name: "Toggle auto-reveal note on terminal focus",
-			callback: async () => {
-				this.settings.autoRevealNote = !this.settings.autoRevealNote;
-				await this.saveSettings();
-				new Notice(
-					`Auto-reveal note: ${this.settings.autoRevealNote ? "on" : "off"}`,
-				);
-			},
-		});
 
 		this.addRibbonIcon("terminal", "Open terminal for current project", () => {
 			this.activateView();
 		});
 
-		// Track last-opened note per project
+		// Also handle tab switches (clicking the tab header doesn't
+		// trigger focusin on the terminal host, so we listen here).
 		this.registerEvent(
-			this.app.workspace.on("active-leaf-change", () => {
-				const file = this.app.workspace.getActiveFile();
-				if (!file) return;
-				const match = file.path.match(PROJECT_PATH_RE);
-				if (match) {
-					this.lastNoteByProject.set(match[1], file.path);
+			this.app.workspace.on("active-leaf-change", (leaf) => {
+				if (!leaf) return;
+				const view = leaf.view;
+				if (view instanceof TerminalView) {
+					// Auto-focus the terminal so the user can type immediately
+					view.focusTerminal();
+					const project = view.getProject();
+					const sessionName = view.getSessionName();
+					if (project && sessionName) {
+						this.onTerminalFocus(project, sessionName);
+					}
 				}
 			}),
 		);
@@ -108,26 +101,32 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	private async onTerminalFocus(project: string) {
-		if (!this.settings.autoRevealNote) return;
-
-		const lastPath = this.lastNoteByProject.get(project);
-		const fallbackPath = `${PROJECTS_DIR}/${project}/${project}.md`;
-
-		let file = lastPath
-			? this.app.vault.getAbstractFileByPath(lastPath)
-			: null;
-		if (!(file instanceof TFile)) {
-			file = this.app.vault.getAbstractFileByPath(fallbackPath);
+	private async onTerminalFocus(_project: string, sessionName: string) {
+		// Only jump if this session has an explicitly pinned note.
+		// No pin → do nothing.
+		let pinnedPath: string | null = null;
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
+			const view = leaf.view;
+			if (view instanceof TerminalView && view.getSessionName() === sessionName) {
+				pinnedPath = view.getPinnedNote();
+				break;
+			}
 		}
+
+		if (!pinnedPath) return;
+
+		const file = this.app.vault.getAbstractFileByPath(pinnedPath);
 		if (!(file instanceof TFile)) return;
 
 		const mainLeaf = this.app.workspace.getMostRecentLeaf(
 			this.app.workspace.rootSplit,
 		);
-		if (mainLeaf) {
-			await mainLeaf.openFile(file, { active: false });
-		}
+		if (!mainLeaf) return;
+
+		const currentFile = (mainLeaf.view as any)?.file as TFile | undefined;
+		if (currentFile?.path === file.path) return;
+
+		await mainLeaf.openFile(file, { active: false });
 	}
 
 	private collectSessionNames(): Set<string> {
@@ -305,20 +304,6 @@ class OrchestratorSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-
-		new Setting(containerEl)
-			.setName("Auto-reveal note on terminal focus")
-			.setDesc(
-				"When clicking a terminal, automatically show the last-opened note for that project in the main editor.",
-			)
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.autoRevealNote)
-					.onChange(async (value) => {
-						this.plugin.settings.autoRevealNote = value;
-						await this.plugin.saveSettings();
-					}),
-			);
 
 		new Setting(containerEl)
 			.setName("Queue panel")
