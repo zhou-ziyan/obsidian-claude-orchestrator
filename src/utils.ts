@@ -118,6 +118,135 @@ function escapeRegExp(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// --- tmux helpers ---
+
+/**
+ * Run `tmux ls` and return raw output.
+ * Prepends common Homebrew paths so the binary is found inside Electron.
+ */
+export function tmuxLs(): Promise<string> {
+	const { execFile } = require("child_process");
+	const prependPath = ["/opt/homebrew/bin", "/usr/local/bin"];
+	const existingPath = process.env.PATH || "/usr/bin:/bin";
+	const entries = existingPath.split(":");
+	for (const p of prependPath) {
+		if (!entries.includes(p)) entries.unshift(p);
+	}
+
+	return new Promise((resolve) => {
+		execFile(
+			"tmux",
+			["ls", "-F", "#{session_name}:#{session_activity}"],
+			{ env: { ...process.env, PATH: entries.join(":") } },
+			(err: Error | null, stdout: string) => {
+				resolve(err ? "" : stdout);
+			},
+		);
+	});
+}
+
+/**
+ * Parse `tmux ls -F` output into a flat list of session entries.
+ */
+export function parseAllTmuxSessions(
+	tmuxLsOutput: string,
+): { name: string; activity: number }[] {
+	const sessions: { name: string; activity: number }[] = [];
+	for (const line of tmuxLsOutput.split("\n")) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		const colonIdx = trimmed.indexOf(":");
+		if (colonIdx === -1) continue;
+		const name = trimmed.slice(0, colonIdx);
+		const rest = trimmed.slice(colonIdx + 1).trim();
+		const activity = /^\d+$/.test(rest) ? Number(rest) : 0;
+		sessions.push({ name, activity });
+	}
+	return sessions;
+}
+
+// --- Session Manager types ---
+
+export interface SessionInfo {
+	name: string;
+	hasPanel: boolean;
+	hasNote: boolean;
+	pinnedNote: string | null;
+	queueCount: number;
+	lastActivity: string | null;
+}
+
+export interface SessionGroup {
+	project: string;
+	sessions: SessionInfo[];
+}
+
+/**
+ * Derive the project name from a tmux session name.
+ * "15_Claude_Orchestrator" → "15_Claude_Orchestrator"
+ * "15_Claude_Orchestrator-2" → "15_Claude_Orchestrator"
+ * Names not matching `<NN>_<Name>` pattern → null (unmanaged).
+ */
+export function projectFromSessionName(sessionName: string): string | null {
+	// Strip -N suffix
+	const base = sessionName.replace(/-\d+$/, "");
+	// Must look like a project folder: digits + underscore + name
+	return /^\d+_/.test(base) ? base : null;
+}
+
+/**
+ * Group a list of tmux sessions by project.
+ * Sessions whose name doesn't match a project pattern go into the
+ * "Unmanaged" group at the end.
+ *
+ * `openSessionNames` — sessions that have an open TerminalView panel.
+ * `noteData` — map from session name to parsed note summary (if exists).
+ */
+export function groupSessionsByProject(
+	allSessions: { name: string; activity: number }[],
+	openSessionNames: Set<string>,
+	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null }>,
+): SessionGroup[] {
+	const projectMap = new Map<string, SessionInfo[]>();
+	const unmanaged: SessionInfo[] = [];
+
+	for (const s of allSessions) {
+		const project = projectFromSessionName(s.name);
+		const nd = noteData.get(s.name);
+		const info: SessionInfo = {
+			name: s.name,
+			hasPanel: openSessionNames.has(s.name),
+			hasNote: noteData.has(s.name),
+			pinnedNote: nd?.pinnedNote ?? null,
+			queueCount: nd?.queueCount ?? 0,
+			lastActivity: nd?.lastActivity ?? null,
+		};
+
+		if (project) {
+			if (!projectMap.has(project)) projectMap.set(project, []);
+			projectMap.get(project)!.push(info);
+		} else {
+			unmanaged.push(info);
+		}
+	}
+
+	// Sort projects alphabetically, sessions within each project alphabetically
+	const groups: SessionGroup[] = [];
+	const sortedProjects = [...projectMap.keys()].sort();
+	for (const project of sortedProjects) {
+		const sessions = projectMap.get(project)!;
+		sessions.sort((a, b) => a.name.localeCompare(b.name));
+		groups.push({ project, sessions });
+	}
+
+	if (unmanaged.length > 0) {
+		unmanaged.sort((a, b) => a.name.localeCompare(b.name));
+		groups.push({ project: "Unmanaged", sessions: unmanaged });
+	}
+
+	return groups;
+}
+
 // --- Session note types and parsing ---
 
 export type SessionStatus = "idle" | "running" | "waiting_for_user";

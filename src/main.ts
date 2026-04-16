@@ -1,7 +1,6 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
-import { PROJECT_PATH_RE, generateSessionName, parseTmuxSessionsForProject } from "./utils";
-import { execFile } from "child_process";
+import { PROJECT_PATH_RE, generateSessionName, parseTmuxSessionsForProject, tmuxLs } from "./utils";
 
 interface OrchestratorSettings {
 	queuePanel: boolean;
@@ -118,15 +117,24 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		const file = this.app.vault.getAbstractFileByPath(pinnedPath);
 		if (!(file instanceof TFile)) return;
 
-		const mainLeaf = this.app.workspace.getMostRecentLeaf(
-			this.app.workspace.rootSplit,
-		);
-		if (!mainLeaf) return;
+		// Find a markdown leaf in the main area (skip terminal views).
+		let targetLeaf = null;
+		const allLeaves = this.app.workspace.getLeavesOfType("markdown");
+		for (const leaf of allLeaves) {
+			if (leaf.getRoot() === this.app.workspace.rootSplit) {
+				targetLeaf = leaf;
+				break;
+			}
+		}
+		// No markdown leaf in main area — create a new tab there.
+		if (!targetLeaf) {
+			targetLeaf = this.app.workspace.getLeaf("tab");
+		}
 
-		const currentFile = (mainLeaf.view as any)?.file as TFile | undefined;
+		const currentFile = (targetLeaf.view as any)?.file as TFile | undefined;
 		if (currentFile?.path === file.path) return;
 
-		await mainLeaf.openFile(file, { active: false });
+		await targetLeaf.openFile(file, { active: false });
 	}
 
 	private collectSessionNames(): Set<string> {
@@ -169,7 +177,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 		// No open tabs — try to restore all alive tmux sessions.
 		const openSessionNames = this.collectSessionNames();
-		const tmuxOutput = await this.tmuxLs();
+		const tmuxOutput = await tmuxLs();
 		const { names: aliveSessions, mostRecent } =
 			parseTmuxSessionsForProject(tmuxOutput, project);
 
@@ -207,7 +215,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		}
 
 		const openSessionNames = this.collectSessionNames();
-		const tmuxOutput = await this.tmuxLs();
+		const tmuxOutput = await tmuxLs();
 		const { names: aliveSessions, mostRecent } =
 			parseTmuxSessionsForProject(tmuxOutput, project);
 
@@ -261,27 +269,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 	// --- Shared helpers ---
 
-	private tmuxLs(): Promise<string> {
-		// Obsidian's Electron process may not include /opt/homebrew/bin
-		// in PATH, so we prepend common locations.
-		const prependPath = ["/opt/homebrew/bin", "/usr/local/bin"];
-		const existingPath = process.env.PATH || "/usr/bin:/bin";
-		const entries = existingPath.split(":");
-		for (const p of prependPath) {
-			if (!entries.includes(p)) entries.unshift(p);
-		}
-
-		return new Promise((resolve) => {
-			execFile(
-				"tmux",
-				["ls", "-F", "#{session_name}:#{session_activity}"],
-				{ env: { ...process.env, PATH: entries.join(":") } },
-				(err, stdout) => {
-					resolve(err ? "" : stdout);
-				},
-			);
-		});
-	}
+	// tmuxLs is now in utils.ts — use the imported tmuxLs() directly.
 
 	private async createTerminalLeaf(
 		project: string | null,

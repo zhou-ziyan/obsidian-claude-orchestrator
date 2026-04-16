@@ -299,10 +299,14 @@ export class TerminalView extends ItemView {
 			this.pinLabel.textContent = "No note pinned";
 
 			pinBtn.addEventListener("click", () => {
-				const mainLeaf = this.app.workspace.getMostRecentLeaf(
-					this.app.workspace.rootSplit,
-				);
-				const currentFile = (mainLeaf?.view as any)?.file as any;
+				// Find the markdown leaf in the main area
+				let currentFile: any = null;
+				for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+					if (leaf.getRoot() === this.app.workspace.rootSplit) {
+						currentFile = (leaf.view as any)?.file;
+						break;
+					}
+				}
 				if (currentFile?.path) {
 					this.pinnedNote = currentFile.path;
 					this.updatePinLabel();
@@ -772,7 +776,7 @@ export class TerminalView extends ItemView {
 
 	// --- Send next ---
 
-	private async sendNext(): Promise<void> {
+	async sendNext(): Promise<void> {
 		if (!this.sessionNote || !this.sessionName) return;
 		if (this.sessionNote.queue.length === 0) return;
 
