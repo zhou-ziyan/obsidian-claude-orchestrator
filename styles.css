@@ -311,8 +311,8 @@
 
 .co-queue-item {
     display: flex;
-    align-items: center;
-    padding: 3px 0;
+    align-items: flex-start;
+    padding: 4px 0;
     font-size: 12px;
     color: #ccc;
     gap: 4px;
@@ -339,9 +339,9 @@
 
 .co-queue-text {
     flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.4;
 }
 
 .co-queue-actions {
@@ -388,7 +388,12 @@
     color: #ccc;
     padding: 3px 6px;
     font-size: 12px;
+    font-family: inherit;
     border-radius: 3px;
+    resize: none;
+    overflow: hidden;
+    line-height: 1.4;
+    min-height: 22px;
 }
 .co-queue-input:focus {
     border-color: #555;

@@ -212,26 +212,41 @@ export class TerminalView extends ItemView {
 			this.queueList = this.queuePanel.createDiv({ cls: "co-queue-list" });
 
 			const addRow = this.queuePanel.createDiv({ cls: "co-queue-add" });
-			const input = addRow.createEl("input", {
-				type: "text",
+			const input = addRow.createEl("textarea", {
 				placeholder: "Add task...",
 				cls: "co-queue-input",
 			});
+			input.rows = 1;
+			// Auto-grow textarea height
+			const autoResize = () => {
+				input.style.height = "auto";
+				input.style.height = `${input.scrollHeight}px`;
+			};
+			input.addEventListener("input", autoResize);
+
 			const addBtn = addRow.createEl("button", {
 				cls: "co-add-btn",
 				text: "+",
 			});
 			const doAdd = () => {
 				const text = input.value.trim();
-				if (!text || !this.sessionNote) return;
+				if (!text) {
+					// Empty input + Enter → send next if queue has items
+					if (this.sessionNote && this.sessionNote.queue.length > 0) {
+						this.sendNext();
+					}
+					return;
+				}
+				if (!this.sessionNote) return;
 				this.sessionNote.queue.push(text);
 				input.value = "";
+				input.style.height = "auto";
 				this.renderQueue();
 				this.saveSessionNote();
 			};
 			addBtn.addEventListener("click", doAdd);
 			input.addEventListener("keydown", (e) => {
-				if (e.key === "Enter") doAdd();
+				if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doAdd(); }
 			});
 		}
 
