@@ -28,7 +28,7 @@ export function generateSessionName(
  */
 export function resolveProjectFromPath(filePath: string): string | null {
 	const match = filePath.match(PROJECT_PATH_RE);
-	return match ? match[1] : null;
+	return match?.[1] ?? null;
 }
 
 /**
@@ -83,7 +83,7 @@ export function parseTmuxSessionsForProject(
 		const match = line.match(re);
 		if (match) {
 			const parts = line.split(":");
-			const name = parts[0];
+			const name = parts[0] ?? "";
 			const lastPart = parts[parts.length - 1]?.trim();
 			const activity =
 				lastPart && /^\d+$/.test(lastPart) ? Number(lastPart) : 0;
@@ -125,6 +125,7 @@ function escapeRegExp(s: string): string {
  * Prepends common Homebrew paths so the binary is found inside Electron.
  */
 export function tmuxLs(): Promise<string> {
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- child_process from require
 	const { execFile } = require("child_process");
 	const prependPath = ["/opt/homebrew/bin", "/usr/local/bin"];
 	const existingPath = process.env.PATH || "/usr/bin:/bin";
@@ -134,6 +135,7 @@ export function tmuxLs(): Promise<string> {
 	}
 
 	return new Promise((resolve) => {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped from require
 		execFile(
 			"tmux",
 			["ls", "-F", "#{session_name}:#{session_activity}"],
@@ -314,7 +316,7 @@ export function parseSessionNote(
 	if (lines[i]?.trim() === "---") {
 		i++;
 		while (i < lines.length && lines[i]?.trim() !== "---") {
-			const line = lines[i].trim();
+			const line = lines[i]!.trim();
 			const colonIdx = line.indexOf(":");
 			if (colonIdx !== -1) {
 				const key = line.slice(0, colonIdx).trim();
@@ -334,7 +336,7 @@ export function parseSessionNote(
 	let currentSection: "none" | "history" | "queue" = "none";
 
 	while (i < lines.length) {
-		const line = lines[i];
+		const line = lines[i]!;
 		const trimmed = line.trim();
 
 		if (trimmed.toLowerCase() === "## history") {
@@ -362,7 +364,7 @@ export function parseSessionNote(
 			// Collect continuation lines (indented, not a new list item or heading)
 			const textLines = [currentSection === "history" ? parseHistoryFirstLine(content) : content];
 			while (i + 1 < lines.length) {
-				const nextRaw = lines[i + 1];
+				const nextRaw = lines[i + 1]!;
 				const nextTrimmed = nextRaw.trim();
 				// Stop at new list item, heading, or non-indented non-empty line
 				if (nextTrimmed === "" || nextTrimmed.startsWith("- ") || nextTrimmed.startsWith("## ")) break;
@@ -433,4 +435,28 @@ export function serializeSessionNote(note: SessionNote): string {
 
 	lines.push("");
 	return lines.join("\n");
+}
+
+/**
+ * Format a "YYYY-MM-DD HH:MM" timestamp as relative time.
+ * Accepts an optional `now` parameter for testability.
+ */
+export function formatRelativeTime(stamp: string, now?: Date): string {
+	const [datePart, timePart] = stamp.split(" ");
+	if (!datePart || !timePart) return stamp;
+	const dateParts = datePart.split("-").map(Number);
+	const timeParts = timePart.split(":").map(Number);
+	const y = dateParts[0] ?? 0, mo = dateParts[1] ?? 1, d = dateParts[2] ?? 1;
+	const h = timeParts[0] ?? 0, mi = timeParts[1] ?? 0;
+	const then = new Date(y, mo - 1, d, h, mi);
+	const ref = now ?? new Date();
+	const diffMs = ref.getTime() - then.getTime();
+	if (diffMs < 0) return stamp;
+	const diffMin = Math.floor(diffMs / 60_000);
+	if (diffMin < 1) return "just now";
+	if (diffMin < 60) return `${diffMin}m ago`;
+	const diffHr = Math.floor(diffMin / 60);
+	if (diffHr < 24) return `${diffHr}h ago`;
+	const diffDay = Math.floor(diffHr / 24);
+	return `${diffDay}d ago`;
 }

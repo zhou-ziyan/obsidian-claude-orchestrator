@@ -1,4 +1,4 @@
-import { ItemView, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import { ItemView, TFile, WorkspaceLeaf } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import {
 	tmuxLs,
@@ -7,6 +7,7 @@ import {
 	sessionNotePath,
 	parseSessionNote,
 	projectFromSessionName,
+	formatRelativeTime,
 	SessionGroup,
 	SessionInfo,
 } from "./utils";
@@ -56,7 +57,7 @@ export class SessionManagerView extends ItemView {
 			text: "↻",
 		});
 		refreshBtn.title = "Refresh";
-		refreshBtn.addEventListener("click", () => this.refresh());
+		refreshBtn.addEventListener("click", () => { void this.refresh(); });
 
 		// Session list
 		this.listEl = container.createDiv({ cls: "co-sm-list" });
@@ -66,20 +67,20 @@ export class SessionManagerView extends ItemView {
 
 		// Workspace events — real-time sync for managed sessions
 		this.registerEvent(
-			this.app.workspace.on("layout-change", () => this.refresh()),
+			this.app.workspace.on("layout-change", () => { void this.refresh(); }),
 		);
 
 		// Session note changes
 		this.registerEvent(
 			this.app.vault.on("modify", (file) => {
 				if (file.path.includes("/sessions/") && file.path.endsWith(".md")) {
-					this.refresh();
+					void this.refresh();
 				}
 			}),
 		);
 
 		// Low-frequency polling for external tmux changes
-		this.pollTimer = setInterval(() => this.refresh(), POLL_INTERVAL_MS);
+		this.pollTimer = setInterval(() => { void this.refresh(); }, POLL_INTERVAL_MS);
 	}
 
 	async onClose() {
@@ -119,9 +120,9 @@ export class SessionManagerView extends ItemView {
 			if (!project) continue;
 			const notePath = sessionNotePath(project, s.name);
 			const file = this.app.vault.getAbstractFileByPath(notePath);
-			if (!file || file instanceof TFolder) continue;
+			if (!(file instanceof TFile)) continue;
 			try {
-				const content = await this.app.vault.read(file as TFile);
+				const content = await this.app.vault.read(file);
 				const note = parseSessionNote(content, s.name);
 				// Extract last activity from most recent history/queue timestamp
 				let lastActivity: string | null = null;
@@ -130,8 +131,8 @@ export class SessionManagerView extends ItemView {
 					...note.queue,
 				];
 				for (let i = allItems.length - 1; i >= 0; i--) {
-					const m = allItems[i].match(TIMESTAMP_RE);
-					if (m) {
+					const m = allItems[i]?.match(TIMESTAMP_RE);
+					if (m?.[1]) {
 						lastActivity = m[1];
 						break;
 					}
@@ -178,7 +179,7 @@ export class SessionManagerView extends ItemView {
 
 		// Group header
 		const groupHeader = groupEl.createDiv({ cls: "co-sm-group-header" });
-		const arrow = groupHeader.createSpan({
+		groupHeader.createSpan({
 			cls: "co-sm-arrow",
 			text: collapsed ? "▸" : "▾",
 		});
@@ -279,7 +280,7 @@ export class SessionManagerView extends ItemView {
 				});
 				sendBtn.addEventListener("click", (e) => {
 					e.stopPropagation();
-					this.sendNextForSession(session.name);
+					void this.sendNextForSession(session.name);
 				});
 			}
 		} else {
@@ -289,7 +290,7 @@ export class SessionManagerView extends ItemView {
 			});
 			attachBtn.addEventListener("click", (e) => {
 				e.stopPropagation();
-				this.attachSession(session);
+				void this.attachSession(session);
 			});
 		}
 	}
@@ -321,7 +322,7 @@ export class SessionManagerView extends ItemView {
 		confirmBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
 			portal.remove();
-			this.killSession(sessionName);
+			void this.killSession(sessionName);
 		});
 
 		// Auto-dismiss after 8 seconds
@@ -334,7 +335,7 @@ export class SessionManagerView extends ItemView {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
 			const view = leaf.view;
 			if (view instanceof TerminalView && view.getSessionName() === sessionName) {
-				this.app.workspace.revealLeaf(leaf);
+				void this.app.workspace.revealLeaf(leaf);
 				view.focusTerminal();
 				return;
 			}
@@ -347,7 +348,7 @@ export class SessionManagerView extends ItemView {
 			if (view instanceof TerminalView && view.getSessionName() === sessionName) {
 				await view.sendNext();
 				// Refresh to update queue count
-				setTimeout(() => this.refresh(), 300);
+				setTimeout(() => { void this.refresh(); }, 300);
 				return;
 			}
 		}
@@ -369,13 +370,14 @@ export class SessionManagerView extends ItemView {
 		if (view instanceof TerminalView) {
 			view.setProject(project, session.name);
 		}
-		workspace.revealLeaf(leaf);
+		void workspace.revealLeaf(leaf);
 
 		// Refresh to update hasPanel state
-		setTimeout(() => this.refresh(), 500);
+		setTimeout(() => { void this.refresh(); }, 500);
 	}
 
 	private async killSession(sessionName: string) {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- child_process from require
 		const { execFile } = require("child_process");
 		const prependPath = ["/opt/homebrew/bin", "/usr/local/bin"];
 		const existingPath = process.env.PATH || "/usr/bin:/bin";
@@ -385,6 +387,7 @@ export class SessionManagerView extends ItemView {
 		}
 
 		await new Promise<void>((resolve) => {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped from require
 			execFile(
 				"tmux",
 				["kill-session", "-t", sessionName],
@@ -394,27 +397,7 @@ export class SessionManagerView extends ItemView {
 		});
 
 		// Refresh to reflect the killed session
-		setTimeout(() => this.refresh(), 500);
+		setTimeout(() => { void this.refresh(); }, 500);
 	}
 }
 
-/**
- * Format a "YYYY-MM-DD HH:MM" timestamp as relative time.
- */
-function formatRelativeTime(stamp: string): string {
-	const [datePart, timePart] = stamp.split(" ");
-	if (!datePart || !timePart) return stamp;
-	const [y, mo, d] = datePart.split("-").map(Number);
-	const [h, mi] = timePart.split(":").map(Number);
-	const then = new Date(y, mo - 1, d, h, mi);
-	const now = new Date();
-	const diffMs = now.getTime() - then.getTime();
-	if (diffMs < 0) return stamp;
-	const diffMin = Math.floor(diffMs / 60_000);
-	if (diffMin < 1) return "just now";
-	if (diffMin < 60) return `${diffMin}m ago`;
-	const diffHr = Math.floor(diffMin / 60);
-	if (diffHr < 24) return `${diffHr}h ago`;
-	const diffDay = Math.floor(diffHr / 24);
-	return `${diffDay}d ago`;
-}

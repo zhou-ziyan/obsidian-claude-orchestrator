@@ -25,8 +25,9 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 				new TerminalView(
 					leaf,
 					pluginDir,
-					(project, sessionName) =>
-						this.onTerminalFocus(project, sessionName),
+					(project, sessionName) => {
+						void this.onTerminalFocus(project, sessionName);
+					},
 					() => this.settings,
 				),
 		);
@@ -74,7 +75,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		});
 
 		this.addRibbonIcon("terminal", "Open terminal for current project", () => {
-			this.openTerminal();
+			void this.openTerminal();
 		});
 
 		// Also handle tab switches (clicking the tab header doesn't
@@ -89,7 +90,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 					const project = view.getProject();
 					const sessionName = view.getSessionName();
 					if (project && sessionName) {
-						this.onTerminalFocus(project, sessionName);
+						void this.onTerminalFocus(project, sessionName);
 					}
 				}
 			}),
@@ -100,19 +101,17 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		// Auto-open Session Manager in left sidebar on startup
 		this.app.workspace.onLayoutReady(() => {
 			if (this.app.workspace.getLeavesOfType(VIEW_TYPE_SESSION_MANAGER).length === 0) {
-				this.openSessionManager();
+				void this.openSessionManager();
 			}
 		});
 	}
 
-	async onunload() {}
+	onunload() {}
 
 	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			await this.loadData(),
-		);
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Obsidian loadData() returns any
+		const data: Partial<OrchestratorSettings> = await this.loadData() ?? {};
+		this.settings = { ...DEFAULT_SETTINGS, ...data };
 	}
 
 	async saveSettings() {
@@ -150,6 +149,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			targetLeaf = this.app.workspace.getLeaf("tab");
 		}
 
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access -- MarkdownView.file not in public typings
 		const currentFile = (targetLeaf.view as any)?.file as TFile | undefined;
 		if (currentFile?.path === file.path) return;
 
@@ -182,7 +182,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		for (const leaf of workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
 			const view = leaf.view;
 			if (view instanceof TerminalView && view.getProject() === project) {
-				workspace.revealLeaf(leaf);
+				void workspace.revealLeaf(leaf);
 				view.focusTerminal();
 				return;
 			}
@@ -211,7 +211,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 				for (const leaf of workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
 					const view = leaf.view;
 					if (view instanceof TerminalView && view.getSessionName() === mostRecent) {
-						workspace.revealLeaf(leaf);
+						void workspace.revealLeaf(leaf);
 						break;
 					}
 				}
@@ -262,7 +262,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
 				const view = leaf.view;
 				if (view instanceof TerminalView && view.getSessionName() === mostRecent) {
-					this.app.workspace.revealLeaf(leaf);
+					void this.app.workspace.revealLeaf(leaf);
 					break;
 				}
 			}
@@ -292,8 +292,8 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 		// Reveal if already open.
 		const existing = workspace.getLeavesOfType(VIEW_TYPE_SESSION_MANAGER);
-		if (existing.length > 0) {
-			workspace.revealLeaf(existing[0]);
+		if (existing[0]) {
+			void workspace.revealLeaf(existing[0]);
 			return;
 		}
 
@@ -304,7 +304,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			type: VIEW_TYPE_SESSION_MANAGER,
 			active: true,
 		});
-		workspace.revealLeaf(leaf);
+		void workspace.revealLeaf(leaf);
 	}
 
 	// --- Shared helpers ---
@@ -332,7 +332,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		} else if (terminals.length > 0) {
 			// Different project → vertical split next to the last terminal group.
 			// This creates: [editor] [projectA tabs] [projectB tabs]
-			const lastTerminal = terminals[terminals.length - 1];
+			const lastTerminal = terminals[terminals.length - 1]!;
 			leaf = workspace.createLeafBySplit(lastTerminal, "vertical");
 		} else {
 			// No terminals at all → split the main editor to the right.
@@ -353,14 +353,14 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		if (view instanceof TerminalView) {
 			view.setProject(project, sessionName ?? undefined);
 		}
-		workspace.revealLeaf(leaf);
+		void workspace.revealLeaf(leaf);
 	}
 
 	private resolveActiveProject(): string | null {
 		const activeFile = this.app.workspace.getActiveFile();
 		if (!activeFile) return null;
 		const match = activeFile.path.match(PROJECT_PATH_RE);
-		return match ? match[1] : null;
+		return match?.[1] ?? null;
 	}
 
 	private resolvePluginDir(): string {

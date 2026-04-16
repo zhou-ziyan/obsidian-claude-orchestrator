@@ -1,4 +1,4 @@
-import { FileSystemAdapter, ItemView, TFolder, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { FileSystemAdapter, ItemView, TFile, TFolder, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import {
 	PROJECTS_DIR,
 	normalizeViewState,
@@ -35,13 +35,18 @@ function loadNodePty(pluginDir: string): typeof import("node-pty") {
 	const prebuildDir = path.join(ptyRoot, "prebuilds", platformDir);
 	const nativeBinaryPath = path.join(prebuildDir, "pty.node");
 
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- node-pty internals are untyped
 	const utils = require(path.join(ptyRoot, "lib", "utils.js"));
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- native binary is untyped
 	const nativeBinary = require(nativeBinaryPath);
+	/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment -- patching untyped node-pty internal */
 	utils.loadNativeModule = (_name: string) => ({
 		dir: prebuildDir,
 		module: nativeBinary,
 	});
+	/* eslint-enable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
 
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-return -- node-pty module is untyped at require level
 	return require(path.join(ptyRoot, "lib", "index.js"));
 }
 
@@ -49,10 +54,10 @@ const TS_RE = /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\] /;
 
 function extractTimestamp(text: string): { stamp: string | null; body: string } {
 	const m = text.match(TS_RE);
-	if (m) {
+	if (m && m[1]) {
 		// Show only HH:MM, not the full date
 		const timeOnly = m[1].split(" ")[1] ?? m[1];
-		return { stamp: timeOnly, body: text.slice(m[0].length) };
+		return { stamp: timeOnly, body: text.slice(m[0]?.length ?? 0) };
 	}
 	return { stamp: null, body: text };
 }
@@ -161,7 +166,7 @@ export class TerminalView extends ItemView {
 		this.sessionName = sessionName ?? project;
 		if (this.xtermReady) {
 			this.spawnShell();
-			this.loadSessionNote();
+			void this.loadSessionNote();
 		}
 	}
 
@@ -195,7 +200,7 @@ export class TerminalView extends ItemView {
 					}
 				}
 			});
-			const content = this.historyPanel.createDiv({ cls: "co-history-content" });
+			this.historyPanel.createDiv({ cls: "co-history-content" });
 		}
 
 		// --- Resize handle between history and terminal ---
@@ -312,24 +317,26 @@ export class TerminalView extends ItemView {
 
 			pinBtn.addEventListener("click", () => {
 				// Find the markdown leaf in the main area
-				let currentFile: any = null;
+				let filePath: string | null = null;
 				for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
 					if (leaf.getRoot() === this.app.workspace.rootSplit) {
-						currentFile = (leaf.view as any)?.file;
+						// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access -- Obsidian MarkdownView.file not in public typings
+						const file = (leaf.view as any)?.file as { path: string } | undefined;
+						filePath = file?.path ?? null;
 						break;
 					}
 				}
-				if (currentFile?.path) {
-					this.pinnedNote = currentFile.path;
+				if (filePath) {
+					this.pinnedNote = filePath;
 					this.updatePinLabel();
-					this.saveSessionNote();
+					void this.saveSessionNote();
 				}
 			});
 			this.pinLabel.addEventListener("click", () => {
 				if (this.pinnedNote) {
 					this.pinnedNote = null;
 					this.updatePinLabel();
-					this.saveSessionNote();
+					void this.saveSessionNote();
 				}
 			});
 
@@ -337,7 +344,7 @@ export class TerminalView extends ItemView {
 				cls: "co-text-btn co-accent",
 				text: "Send next ▶",
 			});
-			sendBtn.addEventListener("click", () => this.sendNext());
+			sendBtn.addEventListener("click", () => { void this.sendNext(); });
 
 			this.queueList = this.queuePanel.createDiv({ cls: "co-queue-list" });
 
@@ -363,7 +370,7 @@ export class TerminalView extends ItemView {
 				if (!text) {
 					// Empty input + Enter → send next if queue has items
 					if (this.sessionNote && this.sessionNote.queue.length > 0) {
-						this.sendNext();
+						void this.sendNext();
 					}
 					return;
 				}
@@ -372,7 +379,7 @@ export class TerminalView extends ItemView {
 				input.value = "";
 				input.style.height = "auto";
 				this.renderQueue();
-				this.saveSessionNote();
+				void this.saveSessionNote();
 			};
 			let composing = false;
 			input.addEventListener("compositionstart", () => { composing = true; });
@@ -447,7 +454,7 @@ export class TerminalView extends ItemView {
 		// called immediately after and drives the spawn.
 		if (this.stateSeenPreOpen) {
 			this.spawnShell();
-			this.loadSessionNote();
+			void this.loadSessionNote();
 		}
 	}
 
@@ -501,7 +508,7 @@ export class TerminalView extends ItemView {
 			// Use absolute path — Electron's PATH may not include /opt/homebrew/bin
 			const tmuxPaths = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "tmux"];
 			file = tmuxPaths.find((p) => {
-				try { require("fs").accessSync(p); return true; } catch { return false; }
+				try { (require("fs") as { accessSync: (p: string) => void }).accessSync(p); return true; } catch { return false; }
 			}) ?? "tmux";
 			args = ["new-session", "-A", "-s", this.sessionName];
 		} else {
@@ -574,7 +581,8 @@ export class TerminalView extends ItemView {
 			this.sessionNoteLoaded = true;
 			return;
 		}
-		const content = await this.app.vault.read(file as any);
+		if (!(file instanceof TFile)) return;
+		const content = await this.app.vault.read(file);
 		this.sessionNote = parseSessionNote(content, this.sessionName);
 		this.pinnedNote = this.sessionNote.pinnedNote;
 		this.sessionNoteLoaded = true;
@@ -588,9 +596,9 @@ export class TerminalView extends ItemView {
 		this.sessionNote.pinnedNote = this.pinnedNote;
 		const notePath = sessionNotePath(this.project, this.sessionName);
 		const file = this.app.vault.getAbstractFileByPath(notePath);
-		if (file && "path" in file) {
+		if (file instanceof TFile) {
 			await this.app.vault.modify(
-				file as any,
+				file,
 				serializeSessionNote(this.sessionNote),
 			);
 		}
@@ -680,14 +688,14 @@ export class TerminalView extends ItemView {
 				upBtn.addEventListener("click", () => {
 					if (!this.sessionNote) return;
 					const [item] = this.sessionNote.queue.splice(idx, 1);
-					this.sessionNote.queue.splice(idx - 1, 0, item);
+					if (item !== undefined) this.sessionNote.queue.splice(idx - 1, 0, item);
 					this.renderQueue();
-					this.saveSessionNote();
+					void this.saveSessionNote();
 				});
 			} else {
 				actions.createSpan({ cls: "co-btn-spacer" });
 			}
-			if (idx < this.sessionNote.queue.length - 1) {
+			if (this.sessionNote && idx < this.sessionNote.queue.length - 1) {
 				const downBtn = actions.createEl("button", {
 					cls: "co-icon-btn co-move-btn",
 					text: "▾",
@@ -695,9 +703,9 @@ export class TerminalView extends ItemView {
 				downBtn.addEventListener("click", () => {
 					if (!this.sessionNote) return;
 					const [item] = this.sessionNote.queue.splice(idx, 1);
-					this.sessionNote.queue.splice(idx + 1, 0, item);
+					if (item !== undefined) this.sessionNote.queue.splice(idx + 1, 0, item);
 					this.renderQueue();
-					this.saveSessionNote();
+					void this.saveSessionNote();
 				});
 			} else {
 				actions.createSpan({ cls: "co-btn-spacer" });
@@ -712,8 +720,8 @@ export class TerminalView extends ItemView {
 				row.empty();
 				// Strip timestamp for editing, preserve it for saving back
 				const tsMatch = text.match(/^(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] )/);
-				const tsPrefix = tsMatch ? tsMatch[1] : "";
-				const editableText = tsMatch ? text.slice(tsMatch[1].length) : text;
+				const tsPrefix = tsMatch?.[1] ?? "";
+				const editableText = tsPrefix ? text.slice(tsPrefix.length) : text;
 
 				const input = row.createEl("textarea", {
 					cls: "co-queue-input co-queue-edit-input",
@@ -738,7 +746,7 @@ export class TerminalView extends ItemView {
 					const newText = input.value.trim();
 					if (newText && this.sessionNote) {
 						this.sessionNote.queue[idx] = `${tsPrefix}${newText}`;
-						this.saveSessionNote();
+						void this.saveSessionNote();
 					}
 					this.renderQueue();
 				};
@@ -763,7 +771,7 @@ export class TerminalView extends ItemView {
 			removeBtn.addEventListener("click", () => {
 				this.sessionNote?.queue.splice(idx, 1);
 				this.renderQueue();
-				this.saveSessionNote();
+				void this.saveSessionNote();
 			});
 
 		});
@@ -798,13 +806,16 @@ export class TerminalView extends ItemView {
 		}
 		const env = { ...process.env, PATH: entries.join(":") };
 
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- child_process from require
 		const { execFile } = require("child_process");
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped from require
 		execFile(
 			"tmux",
 			["send-keys", "-t", this.sessionName, taskText],
 			{ env },
 			() => {
 				setTimeout(() => {
+					// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped
 					execFile(
 						"tmux",
 						["send-keys", "-t", this.sessionName, "Enter"],

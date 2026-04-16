@@ -8,12 +8,14 @@ export default tseslint.config(
 		languageOptions: {
 			globals: {
 				...globals.browser,
+				...globals.node,
 			},
 			parserOptions: {
 				projectService: {
 					allowDefaultProject: [
 						'eslint.config.js',
-						'manifest.json'
+						'manifest.json',
+						'tests/utils.test.ts',
 					]
 				},
 				tsconfigRootDir: import.meta.dirname,
@@ -22,6 +24,17 @@ export default tseslint.config(
 		},
 	},
 	...obsidianmd.configs.recommended,
+	// Project-wide rule overrides for Electron plugin context
+	{
+		rules: {
+			// We use require() for node-pty runtime loading (Electron prebuilt workaround)
+			"@typescript-eslint/no-require-imports": "off",
+			// Inline styles are needed for xterm.js layout and dynamic resize
+			"obsidianmd/no-static-styles-assignment": "off",
+			// Our UI strings are short labels — sentence case not always applicable
+			"obsidianmd/ui/sentence-case": "off",
+		},
+	},
 	globalIgnores([
 		"node_modules",
 		"dist",

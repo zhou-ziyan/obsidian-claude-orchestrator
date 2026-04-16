@@ -12,6 +12,8 @@ import {
 	parseAllTmuxSessions,
 	projectFromSessionName,
 	groupSessionsByProject,
+	nowStamp,
+	formatRelativeTime,
 } from "../src/utils.ts";
 
 // --- generateSessionName ---
@@ -566,7 +568,7 @@ describe("groupSessionsByProject", () => {
 		assert.deepEqual(groups, []);
 	});
 
-	it("sorts projects alphabetically and sessions within project", () => {
+	it("sorts projects alphabetically and sessions within each project", () => {
 		const groups = groupSessionsByProject(
 			[
 				{ name: "20_Z_Project-3", activity: 0 },
@@ -580,5 +582,119 @@ describe("groupSessionsByProject", () => {
 		assert.equal(groups[1].project, "20_Z_Project");
 		assert.equal(groups[1].sessions[0].name, "20_Z_Project");
 		assert.equal(groups[1].sessions[1].name, "20_Z_Project-3");
+	});
+});
+
+// --- nowStamp ---
+
+describe("nowStamp", () => {
+	it("returns YYYY-MM-DD HH:MM format", () => {
+		const stamp = nowStamp();
+		assert.match(stamp, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+	});
+
+	it("pads single-digit months and days", () => {
+		const stamp = nowStamp();
+		// Can't control the clock, but format should always be padded
+		const parts = stamp.split(/[-: ]/);
+		assert.equal(parts.length, 5);
+		assert.equal(parts[1]!.length, 2); // month
+		assert.equal(parts[2]!.length, 2); // day
+		assert.equal(parts[3]!.length, 2); // hour
+		assert.equal(parts[4]!.length, 2); // minute
+	});
+});
+
+// --- formatRelativeTime ---
+
+describe("formatRelativeTime", () => {
+	// Use a fixed "now" for deterministic tests
+	const now = new Date(2026, 3, 16, 14, 30); // 2026-04-16 14:30
+
+	it("returns 'just now' for < 1 minute ago", () => {
+		assert.equal(formatRelativeTime("2026-04-16 14:30", now), "just now");
+	});
+
+	it("returns minutes for < 60 minutes", () => {
+		assert.equal(formatRelativeTime("2026-04-16 14:05", now), "25m ago");
+	});
+
+	it("returns hours for < 24 hours", () => {
+		assert.equal(formatRelativeTime("2026-04-16 11:30", now), "3h ago");
+	});
+
+	it("returns days for >= 24 hours", () => {
+		assert.equal(formatRelativeTime("2026-04-14 14:30", now), "2d ago");
+	});
+
+	it("returns raw stamp for future timestamps", () => {
+		assert.equal(formatRelativeTime("2026-04-17 10:00", now), "2026-04-17 10:00");
+	});
+
+	it("returns raw stamp for malformed input", () => {
+		assert.equal(formatRelativeTime("not-a-date", now), "not-a-date");
+	});
+
+	it("handles midnight boundary", () => {
+		const midnight = new Date(2026, 3, 16, 0, 0);
+		assert.equal(formatRelativeTime("2026-04-15 23:00", midnight), "1h ago");
+	});
+});
+
+// --- parseSessionNote: multiline items ---
+
+describe("parseSessionNote multiline", () => {
+	it("parses multiline queue items with indented continuation", () => {
+		const md = [
+			"---",
+			"session: test",
+			"status: idle",
+			"pinnedNote: ",
+			"---",
+			"",
+			"## Queue",
+			"- [2026-04-16 10:00] First line",
+			"  continuation of first item",
+			"  another line",
+			"- Second item",
+			"",
+		].join("\n");
+		const note = parseSessionNote(md);
+		assert.equal(note.queue.length, 2);
+		assert.equal(note.queue[0], "[2026-04-16 10:00] First line\ncontinuation of first item\nanother line");
+		assert.equal(note.queue[1], "Second item");
+	});
+
+	it("round-trips multiline items", () => {
+		const original = {
+			session: "test",
+			status: "idle" as const,
+			pinnedNote: null,
+			history: [
+				{ text: "line1\nline2\nline3", completed: true },
+			],
+			queue: ["task A\n  with details", "task B"],
+		};
+		const md = serializeSessionNote(original);
+		const parsed = parseSessionNote(md);
+		assert.equal(parsed.history[0]!.text, "line1\nline2\nline3");
+		assert.equal(parsed.queue[0], "task A\nwith details");
+		assert.equal(parsed.queue[1], "task B");
+	});
+
+	it("parses pinnedNote from frontmatter", () => {
+		const md = [
+			"---",
+			"session: test",
+			"status: running",
+			"pinnedNote: 01_Projects/15_Claude/notes.md",
+			"---",
+			"",
+			"## History",
+			"## Queue",
+		].join("\n");
+		const note = parseSessionNote(md);
+		assert.equal(note.pinnedNote, "01_Projects/15_Claude/notes.md");
+		assert.equal(note.status, "running");
 	});
 });
