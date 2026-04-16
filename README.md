@@ -2,6 +2,8 @@
 
 Obsidian plugin that runs Claude Code sessions inside the Obsidian window — each project folder mapped to its own tmux session, with a task queue for dispatching work across sessions.
 
+<img width="1988" height="1118" alt="image" src="https://github.com/user-attachments/assets/ca43b4cc-faa8-47c2-926c-4d74c47e12fe" />
+
 ## Status
 
 - **M1 (embedded terminal)**: ✓ complete
