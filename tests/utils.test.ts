@@ -413,6 +413,7 @@ describe("serializeSessionNote", () => {
 		const original = {
 			session: "15_Claude_Orchestrator-2",
 			status: "waiting_for_user" as const,
+			pinnedNote: "01_Projects/15_Claude_Orchestrator/15_Claude_Orchestrator.md",
 			history: [
 				{ text: "task A", completed: true },
 				{ text: "task B", completed: false },
@@ -428,6 +429,7 @@ describe("serializeSessionNote", () => {
 		const note = {
 			session: "empty",
 			status: "idle" as const,
+			pinnedNote: null,
 			history: [],
 			queue: [],
 		};
