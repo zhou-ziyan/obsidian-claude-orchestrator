@@ -5,10 +5,12 @@ import { execFile } from "child_process";
 
 interface OrchestratorSettings {
 	autoRevealNote: boolean;
+	queuePanel: boolean;
 }
 
 const DEFAULT_SETTINGS: OrchestratorSettings = {
 	autoRevealNote: true,
+	queuePanel: false,
 };
 
 export default class ClaudeOrchestratorPlugin extends Plugin {
@@ -23,8 +25,11 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		this.registerView(
 			VIEW_TYPE_TERMINAL,
 			(leaf) =>
-				new TerminalView(leaf, pluginDir, (project) =>
-					this.onTerminalFocus(project),
+				new TerminalView(
+					leaf,
+					pluginDir,
+					(project) => this.onTerminalFocus(project),
+					() => this.settings,
 				),
 		);
 
@@ -289,6 +294,20 @@ class OrchestratorSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.autoRevealNote)
 					.onChange(async (value) => {
 						this.plugin.settings.autoRevealNote = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Queue panel")
+			.setDesc(
+				"Show history and queue panels above/below the terminal. Enables task queuing per session.",
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.queuePanel)
+					.onChange(async (value) => {
+						this.plugin.settings.queuePanel = value;
 						await this.plugin.saveSettings();
 					}),
 			);

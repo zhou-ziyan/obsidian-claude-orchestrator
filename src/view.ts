@@ -1,5 +1,13 @@
-import { FileSystemAdapter, ItemView, ViewStateResult, WorkspaceLeaf } from "obsidian";
-import { normalizeViewState } from "./utils";
+import { FileSystemAdapter, ItemView, TFolder, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import {
+	PROJECTS_DIR,
+	normalizeViewState,
+	sessionNotePath,
+	createDefaultSessionNote,
+	parseSessionNote,
+	serializeSessionNote,
+	SessionNote,
+} from "./utils";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { IPty } from "node-pty";
@@ -51,15 +59,22 @@ export class TerminalView extends ItemView {
 	private stateSeenPreOpen = false;
 	private host: HTMLElement | null = null;
 	private onTerminalFocus?: (project: string) => void;
+	private getSettings?: () => { queuePanel: boolean };
+	private historyPanel: HTMLElement | null = null;
+	private queuePanel: HTMLElement | null = null;
+	private queueList: HTMLElement | null = null;
+	private sessionNote: SessionNote | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
 		pluginDir: string,
 		onTerminalFocus?: (project: string) => void,
+		getSettings?: () => { queuePanel: boolean },
 	) {
 		super(leaf);
 		this.pluginDir = pluginDir;
 		this.onTerminalFocus = onTerminalFocus;
+		this.getSettings = getSettings;
 	}
 
 	getViewType(): string {
@@ -110,6 +125,9 @@ export class TerminalView extends ItemView {
 		this.sessionName = sessionName ?? project;
 		if (this.xtermReady) {
 			this.spawnShell();
+			if (this.getSettings?.().queuePanel) {
+				this.loadSessionNote();
+			}
 		}
 	}
 
@@ -117,16 +135,80 @@ export class TerminalView extends ItemView {
 		const container = this.containerEl.children[1] as HTMLElement;
 		container.empty();
 		container.style.padding = "0";
+		container.style.display = "flex";
+		container.style.flexDirection = "column";
+		container.style.overflow = "hidden";
 
+		const queueEnabled = this.getSettings?.().queuePanel ?? false;
+
+		// --- History panel (top, collapsible) ---
+		if (queueEnabled) {
+			this.historyPanel = container.createDiv({ cls: "co-history-panel" });
+			const header = this.historyPanel.createDiv({ cls: "co-panel-header" });
+			header.textContent = "▶ History";
+			header.addEventListener("click", () => {
+				const content = this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null;
+				if (content) {
+					const collapsed = content.style.display === "none";
+					content.style.display = collapsed ? "block" : "none";
+					header.textContent = collapsed ? "▼ History" : "▶ History";
+				}
+			});
+			const content = this.historyPanel.createDiv({ cls: "co-history-content" });
+			content.style.display = "none"; // collapsed by default
+		}
+
+		// --- Terminal host (middle, flex: 1) ---
 		const host = container.createDiv({ cls: "claude-orchestrator-term-host" });
 		host.style.width = "100%";
-		host.style.height = "100%";
+		host.style.flex = "1";
+		host.style.minHeight = "0";
 		host.style.overflow = "hidden";
 		host.style.minWidth = "0";
 		this.host = host;
 
 		host.addEventListener("focusin", this.onHostFocusIn);
 		host.addEventListener("focusout", this.onHostFocusOut);
+
+		// --- Queue panel (bottom) ---
+		if (queueEnabled) {
+			this.queuePanel = container.createDiv({ cls: "co-queue-panel" });
+			const queueHeader = this.queuePanel.createDiv({ cls: "co-panel-header co-queue-header" });
+
+			const queueTitle = queueHeader.createSpan();
+			queueTitle.textContent = "Queue";
+
+			const sendBtn = queueHeader.createEl("button", {
+				cls: "co-send-btn",
+				text: "Send next ▶",
+			});
+			sendBtn.addEventListener("click", () => this.sendNext());
+
+			this.queueList = this.queuePanel.createDiv({ cls: "co-queue-list" });
+
+			const addRow = this.queuePanel.createDiv({ cls: "co-queue-add" });
+			const input = addRow.createEl("input", {
+				type: "text",
+				placeholder: "Add task...",
+				cls: "co-queue-input",
+			});
+			const addBtn = addRow.createEl("button", {
+				cls: "co-add-btn",
+				text: "+",
+			});
+			const doAdd = () => {
+				const text = input.value.trim();
+				if (!text || !this.sessionNote) return;
+				this.sessionNote.queue.push(text);
+				input.value = "";
+				this.renderQueue();
+				this.saveSessionNote();
+			};
+			addBtn.addEventListener("click", doAdd);
+			input.addEventListener("keydown", (e) => {
+				if (e.key === "Enter") doAdd();
+			});
+		}
 
 		this.term = new Terminal({
 			cursorBlink: true,
@@ -183,6 +265,9 @@ export class TerminalView extends ItemView {
 		// called immediately after and drives the spawn.
 		if (this.stateSeenPreOpen) {
 			this.spawnShell();
+			if (this.getSettings?.().queuePanel) {
+				this.loadSessionNote();
+			}
 		}
 	}
 
@@ -273,6 +358,139 @@ export class TerminalView extends ItemView {
 		});
 	}
 
+	// --- Session note I/O ---
+
+	private async ensureSessionNote(): Promise<void> {
+		if (!this.project || !this.sessionName) return;
+		const notePath = sessionNotePath(this.project, this.sessionName);
+		const existing = this.app.vault.getAbstractFileByPath(notePath);
+		if (!existing) {
+			// Ensure sessions/ directory exists
+			const dirPath = `${PROJECTS_DIR}/${this.project}/sessions`;
+			if (!this.app.vault.getAbstractFileByPath(dirPath)) {
+				await this.app.vault.createFolder(dirPath);
+			}
+			await this.app.vault.create(
+				notePath,
+				createDefaultSessionNote(this.sessionName),
+			);
+		}
+	}
+
+	private async loadSessionNote(): Promise<void> {
+		if (!this.project || !this.sessionName) return;
+		await this.ensureSessionNote();
+		const notePath = sessionNotePath(this.project, this.sessionName);
+		const file = this.app.vault.getAbstractFileByPath(notePath);
+		if (!file || !(file instanceof TFolder === false && "path" in file)) {
+			this.sessionNote = parseSessionNote("", this.sessionName);
+			return;
+		}
+		const content = await this.app.vault.read(file as any);
+		this.sessionNote = parseSessionNote(content, this.sessionName);
+		this.renderHistory();
+		this.renderQueue();
+	}
+
+	private async saveSessionNote(): Promise<void> {
+		if (!this.project || !this.sessionName || !this.sessionNote) return;
+		const notePath = sessionNotePath(this.project, this.sessionName);
+		const file = this.app.vault.getAbstractFileByPath(notePath);
+		if (file && "path" in file) {
+			await this.app.vault.modify(
+				file as any,
+				serializeSessionNote(this.sessionNote),
+			);
+		}
+	}
+
+	// --- Panel rendering ---
+
+	private renderHistory(): void {
+		const content = this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null;
+		if (!content || !this.sessionNote) return;
+		content.empty();
+
+		if (this.sessionNote.history.length === 0) {
+			content.createDiv({ cls: "co-empty", text: "No history yet." });
+			return;
+		}
+
+		// Show most recent items first, with a truncated preview
+		const items = [...this.sessionNote.history].reverse();
+		for (const item of items) {
+			const row = content.createDiv({ cls: "co-history-item" });
+			const icon = item.completed ? "✓" : "⟳";
+			const cls = item.completed ? "co-completed" : "co-in-progress";
+			row.createSpan({ cls: `co-history-icon ${cls}`, text: icon });
+			row.createSpan({
+				cls: "co-history-text",
+				text: item.text.length > 80 ? item.text.slice(0, 80) + "…" : item.text,
+			});
+		}
+	}
+
+	private renderQueue(): void {
+		if (!this.queueList || !this.sessionNote) return;
+		this.queueList.empty();
+
+		if (this.sessionNote.queue.length === 0) {
+			this.queueList.createDiv({ cls: "co-empty", text: "Queue empty." });
+			return;
+		}
+
+		this.sessionNote.queue.forEach((text, idx) => {
+			const row = this.queueList!.createDiv({ cls: "co-queue-item" });
+			row.createSpan({
+				cls: "co-queue-text",
+				text: `${idx + 1}. ${text.length > 60 ? text.slice(0, 60) + "…" : text}`,
+			});
+			const removeBtn = row.createEl("button", {
+				cls: "co-remove-btn",
+				text: "×",
+			});
+			removeBtn.addEventListener("click", () => {
+				this.sessionNote?.queue.splice(idx, 1);
+				this.renderQueue();
+				this.saveSessionNote();
+			});
+		});
+	}
+
+	// --- Send next ---
+
+	private async sendNext(): Promise<void> {
+		if (!this.sessionNote || !this.sessionName) return;
+		if (this.sessionNote.queue.length === 0) return;
+
+		const task = this.sessionNote.queue.shift()!;
+
+		// Move to history as in-progress
+		this.sessionNote.history.push({ text: task, completed: false });
+		this.sessionNote.status = "running";
+		this.renderHistory();
+		this.renderQueue();
+		await this.saveSessionNote();
+
+		// Inject into tmux session via send-keys
+		const prependPath = ["/opt/homebrew/bin", "/usr/local/bin"];
+		const existingPath = process.env.PATH || "/usr/bin:/bin";
+		const entries = existingPath.split(":");
+		for (const p of prependPath) {
+			if (!entries.includes(p)) entries.unshift(p);
+		}
+
+		const { execFile } = require("child_process");
+		execFile(
+			"tmux",
+			["send-keys", "-t", this.sessionName, task, "Enter"],
+			{ env: { ...process.env, PATH: entries.join(":") } },
+			() => {
+				// fire and forget
+			},
+		);
+	}
+
 	private onHostFocusIn = () => {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
 			const view = leaf.view;
@@ -319,6 +537,10 @@ export class TerminalView extends ItemView {
 		this.host?.removeEventListener("focusin", this.onHostFocusIn);
 		this.host?.removeEventListener("focusout", this.onHostFocusOut);
 		this.host = null;
+		this.historyPanel = null;
+		this.queuePanel = null;
+		this.queueList = null;
+		this.sessionNote = null;
 		this.ptyGen++; // invalidate pending callbacks
 		this.resizeObserver?.disconnect();
 		this.resizeObserver = null;

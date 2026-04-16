@@ -86,3 +86,162 @@ export function parseTmuxSessionsForProject(
 function escapeRegExp(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+// --- Session note types and parsing ---
+
+export type SessionStatus = "idle" | "running" | "waiting_for_user";
+
+export interface HistoryItem {
+	text: string;
+	completed: boolean;
+}
+
+export interface SessionNote {
+	session: string;
+	status: SessionStatus;
+	history: HistoryItem[];
+	queue: string[];
+}
+
+/**
+ * Vault-relative path for a session note.
+ */
+export function sessionNotePath(
+	project: string,
+	sessionName: string,
+): string {
+	return `${PROJECTS_DIR}/${project}/sessions/${sessionName}.md`;
+}
+
+/**
+ * Create default markdown content for a new session note.
+ */
+export function createDefaultSessionNote(sessionName: string): string {
+	return [
+		"---",
+		`session: ${sessionName}`,
+		"status: idle",
+		"---",
+		"",
+		"## History",
+		"",
+		"## Queue",
+		"",
+	].join("\n");
+}
+
+/**
+ * Parse a session note markdown string into a structured SessionNote.
+ */
+export function parseSessionNote(
+	markdown: string,
+	fallbackSession: string = "",
+): SessionNote {
+	const note: SessionNote = {
+		session: fallbackSession,
+		status: "idle",
+		history: [],
+		queue: [],
+	};
+
+	const lines = markdown.split("\n");
+	let i = 0;
+
+	// Parse frontmatter
+	if (lines[i]?.trim() === "---") {
+		i++;
+		while (i < lines.length && lines[i]?.trim() !== "---") {
+			const line = lines[i].trim();
+			const colonIdx = line.indexOf(":");
+			if (colonIdx !== -1) {
+				const key = line.slice(0, colonIdx).trim();
+				const value = line.slice(colonIdx + 1).trim();
+				if (key === "session") note.session = value;
+				if (key === "status" && isSessionStatus(value))
+					note.status = value;
+			}
+			i++;
+		}
+		if (i < lines.length) i++; // skip closing ---
+	}
+
+	// Parse body sections
+	let currentSection: "none" | "history" | "queue" = "none";
+
+	while (i < lines.length) {
+		const line = lines[i];
+		const trimmed = line.trim();
+
+		if (trimmed.toLowerCase() === "## history") {
+			currentSection = "history";
+			i++;
+			continue;
+		}
+		if (trimmed.toLowerCase() === "## queue") {
+			currentSection = "queue";
+			i++;
+			continue;
+		}
+		// Any other heading ends the current section
+		if (trimmed.startsWith("## ")) {
+			currentSection = "none";
+			i++;
+			continue;
+		}
+
+		if (currentSection === "history" && trimmed.startsWith("- ")) {
+			const checkMatch = trimmed.match(/^- \[([ xX])\] (.+)$/);
+			if (checkMatch) {
+				note.history.push({
+					text: checkMatch[2],
+					completed: checkMatch[1] !== " ",
+				});
+			} else {
+				// Plain list item in history — treat as incomplete
+				note.history.push({
+					text: trimmed.slice(2),
+					completed: false,
+				});
+			}
+		} else if (currentSection === "queue" && trimmed.startsWith("- ")) {
+			note.queue.push(trimmed.slice(2));
+		}
+
+		i++;
+	}
+
+	return note;
+}
+
+function isSessionStatus(s: string): s is SessionStatus {
+	return s === "idle" || s === "running" || s === "waiting_for_user";
+}
+
+/**
+ * Serialize a SessionNote back to markdown.
+ */
+export function serializeSessionNote(note: SessionNote): string {
+	const lines: string[] = [
+		"---",
+		`session: ${note.session}`,
+		`status: ${note.status}`,
+		"---",
+		"",
+		"## History",
+	];
+
+	for (const item of note.history) {
+		const mark = item.completed ? "x" : " ";
+		lines.push(`- [${mark}] ${item.text}`);
+	}
+
+	lines.push("");
+	lines.push("## Queue");
+
+	for (const item of note.queue) {
+		lines.push(`- ${item}`);
+	}
+
+	lines.push("");
+	return lines.join("\n");
+}

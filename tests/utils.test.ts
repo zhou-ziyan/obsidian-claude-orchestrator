@@ -5,6 +5,10 @@ import {
 	resolveProjectFromPath,
 	normalizeViewState,
 	parseTmuxSessionsForProject,
+	sessionNotePath,
+	createDefaultSessionNote,
+	parseSessionNote,
+	serializeSessionNote,
 } from "../src/utils.ts";
 
 // --- generateSessionName ---
@@ -242,5 +246,168 @@ describe("parseTmuxSessionsForProject", () => {
 			"15_Claude_Orchestrator",
 		);
 		assert.deepEqual(result, ["15_Claude_Orchestrator"]);
+	});
+});
+
+// --- sessionNotePath ---
+
+describe("sessionNotePath", () => {
+	it("returns correct vault-relative path", () => {
+		assert.equal(
+			sessionNotePath("15_Claude_Orchestrator", "15_Claude_Orchestrator"),
+			"01_Projects/15_Claude_Orchestrator/sessions/15_Claude_Orchestrator.md",
+		);
+	});
+
+	it("handles numbered session names", () => {
+		assert.equal(
+			sessionNotePath("15_Claude_Orchestrator", "15_Claude_Orchestrator-2"),
+			"01_Projects/15_Claude_Orchestrator/sessions/15_Claude_Orchestrator-2.md",
+		);
+	});
+});
+
+// --- createDefaultSessionNote ---
+
+describe("createDefaultSessionNote", () => {
+	it("creates valid frontmatter and empty sections", () => {
+		const content = createDefaultSessionNote("15_Claude_Orchestrator");
+		assert.ok(content.includes("session: 15_Claude_Orchestrator"));
+		assert.ok(content.includes("status: idle"));
+		assert.ok(content.includes("## History"));
+		assert.ok(content.includes("## Queue"));
+	});
+
+	it("round-trips through parse", () => {
+		const content = createDefaultSessionNote("test-session");
+		const parsed = parseSessionNote(content);
+		assert.equal(parsed.session, "test-session");
+		assert.equal(parsed.status, "idle");
+		assert.deepEqual(parsed.history, []);
+		assert.deepEqual(parsed.queue, []);
+	});
+});
+
+// --- parseSessionNote ---
+
+describe("parseSessionNote", () => {
+	const FULL_NOTE = [
+		"---",
+		"session: 15_Claude_Orchestrator",
+		"status: running",
+		"---",
+		"",
+		"## History",
+		"- [x] 初始化项目脚手架",
+		"- [x] 添加焦点遮罩功能",
+		"- [ ] 重构 auth 模块",
+		"",
+		"## Queue",
+		"- 写 auth 模块的单元测试",
+		"- 更新 README",
+		"",
+	].join("\n");
+
+	it("parses frontmatter correctly", () => {
+		const note = parseSessionNote(FULL_NOTE);
+		assert.equal(note.session, "15_Claude_Orchestrator");
+		assert.equal(note.status, "running");
+	});
+
+	it("parses history items with checkboxes", () => {
+		const note = parseSessionNote(FULL_NOTE);
+		assert.equal(note.history.length, 3);
+		assert.deepEqual(note.history[0], { text: "初始化项目脚手架", completed: true });
+		assert.deepEqual(note.history[1], { text: "添加焦点遮罩功能", completed: true });
+		assert.deepEqual(note.history[2], { text: "重构 auth 模块", completed: false });
+	});
+
+	it("parses queue items", () => {
+		const note = parseSessionNote(FULL_NOTE);
+		assert.deepEqual(note.queue, [
+			"写 auth 模块的单元测试",
+			"更新 README",
+		]);
+	});
+
+	it("handles empty note with fallback session", () => {
+		const note = parseSessionNote("", "fallback");
+		assert.equal(note.session, "fallback");
+		assert.equal(note.status, "idle");
+		assert.deepEqual(note.history, []);
+		assert.deepEqual(note.queue, []);
+	});
+
+	it("handles note with no frontmatter", () => {
+		const content = "## History\n- [x] done\n\n## Queue\n- todo\n";
+		const note = parseSessionNote(content, "fb");
+		assert.equal(note.session, "fb");
+		assert.equal(note.history.length, 1);
+		assert.equal(note.queue.length, 1);
+	});
+
+	it("handles plain list items in history (no checkbox)", () => {
+		const content = "## History\n- some task without checkbox\n";
+		const note = parseSessionNote(content);
+		assert.deepEqual(note.history[0], {
+			text: "some task without checkbox",
+			completed: false,
+		});
+	});
+
+	it("ignores unknown frontmatter status values", () => {
+		const content = "---\nstatus: banana\n---\n";
+		const note = parseSessionNote(content);
+		assert.equal(note.status, "idle");
+	});
+});
+
+// --- serializeSessionNote ---
+
+describe("serializeSessionNote", () => {
+	it("produces valid markdown", () => {
+		const note = {
+			session: "test",
+			status: "running" as const,
+			history: [
+				{ text: "done task", completed: true },
+				{ text: "in progress", completed: false },
+			],
+			queue: ["next task", "after that"],
+		};
+		const md = serializeSessionNote(note);
+		assert.ok(md.includes("session: test"));
+		assert.ok(md.includes("status: running"));
+		assert.ok(md.includes("- [x] done task"));
+		assert.ok(md.includes("- [ ] in progress"));
+		assert.ok(md.includes("- next task"));
+		assert.ok(md.includes("- after that"));
+	});
+
+	it("round-trips with parseSessionNote", () => {
+		const original = {
+			session: "15_Claude_Orchestrator-2",
+			status: "waiting_for_user" as const,
+			history: [
+				{ text: "task A", completed: true },
+				{ text: "task B", completed: false },
+			],
+			queue: ["task C", "task D"],
+		};
+		const md = serializeSessionNote(original);
+		const parsed = parseSessionNote(md);
+		assert.deepEqual(parsed, original);
+	});
+
+	it("handles empty history and queue", () => {
+		const note = {
+			session: "empty",
+			status: "idle" as const,
+			history: [],
+			queue: [],
+		};
+		const md = serializeSessionNote(note);
+		const parsed = parseSessionNote(md);
+		assert.deepEqual(parsed, note);
 	});
 });
