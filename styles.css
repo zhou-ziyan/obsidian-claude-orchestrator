@@ -620,6 +620,7 @@
     color: #666;
     font-size: 11px;
     flex-shrink: 0;
+    margin-left: auto;
 }
 
 /* Session card */
@@ -806,7 +807,6 @@
 }
 .co-sm-gear {
     font-size: 12px;
-    margin-left: auto;
     opacity: 0;
     transition: opacity 0.15s;
 }

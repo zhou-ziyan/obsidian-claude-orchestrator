@@ -238,10 +238,6 @@ export class SessionManagerView extends ItemView {
 			cls: "co-sm-group-name",
 			text: group.project,
 		});
-		groupHeader.createSpan({
-			cls: "co-sm-group-count",
-			text: `${group.sessions.length}`,
-		});
 
 		if (isManaged) {
 			const restorable = restorableSessionNames(group);
@@ -269,6 +265,11 @@ export class SessionManagerView extends ItemView {
 				this.showProjectForm(group.project);
 			});
 		}
+
+		groupHeader.createSpan({
+			cls: "co-sm-group-count",
+			text: `${group.sessions.length}`,
+		});
 
 		groupHeader.addEventListener("click", () => {
 			if (this.collapsedProjects.has(group.project)) {
