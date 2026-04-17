@@ -1913,6 +1913,49 @@ describe("extractSessionPreview", () => {
 		const note = mkNote([], [{ text: "plain history", completed: false }]);
 		assert.equal(extractSessionPreview(note), "plain history");
 	});
+
+	it("skips template line and returns actual content", () => {
+		const note = mkNote([
+			"[2026-04-17 12:00] 按照 [[Tasks_Convention#代码任务生命周期]] 执行以下任务。\n\n## 任务\n优化 Session Manager 卡片的预览",
+		], []);
+		assert.equal(extractSessionPreview(note), "优化 Session Manager 卡片的预览");
+	});
+
+	it("skips markdown headings", () => {
+		const note = mkNote([
+			"[2026-04-17 12:00] ## 任务\n实现拖拽排序",
+		], []);
+		assert.equal(extractSessionPreview(note), "实现拖拽排序");
+	});
+
+	it("skips multiple template/heading lines to find content", () => {
+		const note = mkNote([
+			"[2026-04-17 12:00] 按照 Tasks_Convention 执行。\n## 任务（合并 3 个改动）\n### 1. Quick Reply 按钮精简\n删除多余按钮",
+		], []);
+		assert.equal(extractSessionPreview(note), "删除多余按钮");
+	});
+
+	it("skips --- separator lines", () => {
+		const note = mkNote(["[2026-04-17 12:00] ## 来源\n---\n修复 bug"], []);
+		assert.equal(extractSessionPreview(note), "修复 bug");
+	});
+
+	it("falls back to first line when all lines are template", () => {
+		const note = mkNote(["[2026-04-17 12:00] ## 任务\n## 来源\n## 参数"], []);
+		assert.equal(extractSessionPreview(note), "## 任务");
+	});
+
+	it("skips empty lines between template and content", () => {
+		const note = mkNote([
+			"[2026-04-17 12:00] 按 Tasks_Convention 执行\n\n\n实际任务描述",
+		], []);
+		assert.equal(extractSessionPreview(note), "实际任务描述");
+	});
+
+	it("does not skip normal content that happens to start with 按", () => {
+		const note = mkNote(["[2026-04-17 12:00] 按钮样式需要修改"], []);
+		assert.equal(extractSessionPreview(note), "按钮样式需要修改");
+	});
 });
 
 // ---------------------------------------------------------------------------
