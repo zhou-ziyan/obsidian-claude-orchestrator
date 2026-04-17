@@ -50,8 +50,10 @@ import {
 	PTY_WARNING_THRESHOLD,
 	PTY_DEFAULT_MAX,
 	extractSessionPreview,
+	bumpPatchVersion,
+	parseQueueItemSegments,
 } from "../src/utils.ts";
-import type { ProjectRegistry, QueueMode, SessionNote } from "../src/utils.ts";
+import type { ProjectRegistry, SessionNote } from "../src/utils.ts";
 
 const TEST_PROJECTS: ProjectRegistry = {
 	"15_Claude_Orchestrator": { vaultFolder: "01_Projects/15_Claude_Orchestrator" },
@@ -1990,5 +1992,116 @@ describe("createDefaultSessionNote notes", () => {
 		assert.ok(content.includes("## Notes"));
 		const parsed = parseSessionNote(content);
 		assert.equal(parsed.notes, "");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// bumpPatchVersion
+// ---------------------------------------------------------------------------
+
+describe("bumpPatchVersion", () => {
+	it("bumps patch from 0.0.1 to 0.0.2", () => {
+		assert.equal(bumpPatchVersion("0.0.1"), "0.0.2");
+	});
+
+	it("bumps patch from 1.2.3 to 1.2.4", () => {
+		assert.equal(bumpPatchVersion("1.2.3"), "1.2.4");
+	});
+
+	it("bumps patch from 0.0.9 to 0.0.10", () => {
+		assert.equal(bumpPatchVersion("0.0.9"), "0.0.10");
+	});
+
+	it("bumps patch from 1.0.0 to 1.0.1", () => {
+		assert.equal(bumpPatchVersion("1.0.0"), "1.0.1");
+	});
+
+	it("handles large patch numbers", () => {
+		assert.equal(bumpPatchVersion("0.1.99"), "0.1.100");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseQueueItemSegments
+// ---------------------------------------------------------------------------
+
+describe("parseQueueItemSegments", () => {
+	it("returns plain text as single segment", () => {
+		const result = parseQueueItemSegments("hello world");
+		assert.deepEqual(result, [{ type: "text", content: "hello world" }]);
+	});
+
+	it("parses wikilink image ![[name.png]]", () => {
+		const result = parseQueueItemSegments("see ![[screenshot.png]] here");
+		assert.deepEqual(result, [
+			{ type: "text", content: "see " },
+			{ type: "image", content: "screenshot.png" },
+			{ type: "text", content: " here" },
+		]);
+	});
+
+	it("parses markdown image ![alt](path)", () => {
+		const result = parseQueueItemSegments("check ![photo](imgs/photo.jpg) done");
+		assert.deepEqual(result, [
+			{ type: "text", content: "check " },
+			{ type: "image", content: "imgs/photo.jpg" },
+			{ type: "text", content: " done" },
+		]);
+	});
+
+	it("handles multiple images", () => {
+		const result = parseQueueItemSegments("![[a.png]] and ![[b.jpg]]");
+		assert.deepEqual(result, [
+			{ type: "image", content: "a.png" },
+			{ type: "text", content: " and " },
+			{ type: "image", content: "b.jpg" },
+		]);
+	});
+
+	it("handles image at start of text", () => {
+		const result = parseQueueItemSegments("![[img.png]] is cool");
+		assert.deepEqual(result, [
+			{ type: "image", content: "img.png" },
+			{ type: "text", content: " is cool" },
+		]);
+	});
+
+	it("handles image at end of text", () => {
+		const result = parseQueueItemSegments("look at ![[img.png]]");
+		assert.deepEqual(result, [
+			{ type: "text", content: "look at " },
+			{ type: "image", content: "img.png" },
+		]);
+	});
+
+	it("handles mixed wikilink and markdown images", () => {
+		const result = parseQueueItemSegments("![[a.png]] and ![b](b.jpg)");
+		assert.deepEqual(result, [
+			{ type: "image", content: "a.png" },
+			{ type: "text", content: " and " },
+			{ type: "image", content: "b.jpg" },
+		]);
+	});
+
+	it("returns empty array for empty string", () => {
+		const result = parseQueueItemSegments("");
+		assert.deepEqual(result, []);
+	});
+
+	it("handles wikilink with path", () => {
+		const result = parseQueueItemSegments("![[attachments/screen shot.png]]");
+		assert.deepEqual(result, [
+			{ type: "image", content: "attachments/screen shot.png" },
+		]);
+	});
+
+	it("does not match non-image wikilinks [[note]]", () => {
+		const result = parseQueueItemSegments("see [[note]] here");
+		assert.deepEqual(result, [{ type: "text", content: "see [[note]] here" }]);
+	});
+
+	it("only matches image extensions", () => {
+		const result = parseQueueItemSegments("![[data.csv]] text");
+		assert.deepEqual(result, [{ type: "text", content: "![[data.csv]] text" }]);
 	});
 });

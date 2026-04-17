@@ -857,6 +857,48 @@ export function parseStopSignal(json: string): StopSignal | null {
 	};
 }
 
+// --- Version bump ---
+
+export function bumpPatchVersion(version: string): string {
+	const parts = version.split(".").map(Number);
+	parts[2] = (parts[2] ?? 0) + 1;
+	return parts.join(".");
+}
+
+// --- Queue image parsing ---
+
+export interface QueueItemSegment {
+	type: "text" | "image";
+	content: string;
+}
+
+const IMAGE_EXTS = /\.(png|jpg|jpeg|gif|svg|webp|bmp|avif)$/i;
+
+const QUEUE_IMAGE_RE = /!\[\[([^\]]+)]]|!\[(?:[^\]]*)\]\(([^)]+)\)/g;
+
+export function parseQueueItemSegments(text: string): QueueItemSegment[] {
+	if (!text) return [];
+	const segments: QueueItemSegment[] = [];
+	let lastIndex = 0;
+
+	for (const match of text.matchAll(QUEUE_IMAGE_RE)) {
+		const ref = match[1] ?? match[2] ?? "";
+		if (!IMAGE_EXTS.test(ref)) continue;
+
+		if (match.index > lastIndex) {
+			segments.push({ type: "text", content: text.slice(lastIndex, match.index) });
+		}
+		segments.push({ type: "image", content: ref });
+		lastIndex = match.index + match[0].length;
+	}
+
+	if (lastIndex < text.length) {
+		segments.push({ type: "text", content: text.slice(lastIndex) });
+	}
+
+	return segments;
+}
+
 export function migrateSettings(data: Record<string, unknown>): Record<string, unknown> {
 	const out = { ...data };
 	if ("queuePanel" in out && !("simpleMode" in out)) {
