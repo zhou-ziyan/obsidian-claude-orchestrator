@@ -1,7 +1,7 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, parseSessionNote, serializeSessionNote, ensureStopHookConfig } from "./utils";
+import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, parseSessionNote, serializeSessionNote, ensureStopHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys } from "./utils";
 import type { ProjectRegistry } from "./utils";
 import { StopHookWatcher } from "./stop-hook-watcher";
 import { findTerminalLeafBySession, findTerminalLeafByProject, collectOpenSessionNames } from "./workspace-helpers";
@@ -12,11 +12,13 @@ import { homedir } from "os";
 export interface OrchestratorSettings {
 	simpleMode: boolean;
 	projects: ProjectRegistry;
+	quickReplyKeys: string[];
 }
 
 const DEFAULT_SETTINGS: OrchestratorSettings = {
 	simpleMode: false,
 	projects: {},
+	quickReplyKeys: [...QUICK_REPLY_KEYS],
 };
 
 export default class ClaudeOrchestratorPlugin extends Plugin {
@@ -491,6 +493,18 @@ class OrchestratorSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.simpleMode)
 					.onChange(async (value) => {
 						this.plugin.settings.simpleMode = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Quick reply keys")
+			.setDesc("Comma-separated list of quick reply buttons shown in the queue header.")
+			.addText((text) =>
+				text
+					.setValue(this.plugin.settings.quickReplyKeys.join(", "))
+					.onChange(async (value) => {
+						this.plugin.settings.quickReplyKeys = parseQuickReplyKeys(value);
 						await this.plugin.saveSettings();
 					}),
 			);
