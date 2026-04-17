@@ -551,17 +551,32 @@
 }
 
 .co-ac-item {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
     padding: 4px 8px;
     font-size: 12px;
     color: var(--co-text-secondary);
     cursor: pointer;
+}
+.co-ac-cmd {
     font-family: monospace;
+    flex-shrink: 0;
+}
+.co-ac-desc {
+    font-size: 11px;
+    color: var(--co-text-faint);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .co-ac-item:hover {
     background: var(--co-bg-hover);
 }
 .co-ac-item.co-ac-selected {
     background: var(--co-bg-card-focused);
+}
+.co-ac-item.co-ac-selected .co-ac-cmd {
     color: var(--co-green);
 }
 

@@ -1,8 +1,8 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, parseSessionNote, serializeSessionNote, ensureStopHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys } from "./utils";
-import type { ProjectRegistry } from "./utils";
+import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, parseSessionNote, serializeSessionNote, ensureStopHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, loadSlashCommands, BUILTIN_SLASH_COMMANDS } from "./utils";
+import type { ProjectRegistry, SlashCommandEntry } from "./utils";
 import { StopHookWatcher } from "./stop-hook-watcher";
 import { findTerminalLeafBySession, findTerminalLeafByProject, collectOpenSessionNames } from "./workspace-helpers";
 import { readFileSync, writeFileSync } from "fs";
@@ -25,6 +25,7 @@ const DEFAULT_SETTINGS: OrchestratorSettings = {
 
 export default class ClaudeOrchestratorPlugin extends Plugin {
 	settings: OrchestratorSettings = DEFAULT_SETTINGS;
+	private slashCommands: SlashCommandEntry[] = [...BUILTIN_SLASH_COMMANDS];
 	private stopHookWatcher: StopHookWatcher | null = null;
 
 	async onload() {
@@ -43,7 +44,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 					(project, sessionName) => {
 						void this.onTerminalFocus(project, sessionName);
 					},
-					() => this.settings,
+					() => ({ ...this.settings, slashCommands: this.slashCommands }),
 				),
 		);
 
@@ -139,6 +140,9 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			}
 		});
 
+		// Load dynamic slash commands
+		this.loadSlashCommands();
+
 		// Stop hook watcher
 		this.stopHookWatcher = new StopHookWatcher(() => this.settings.projects);
 		this.stopHookWatcher.onSignal((signal, project) => {
@@ -152,6 +156,16 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 	onunload() {
 		this.stopHookWatcher?.stop();
+	}
+
+	private loadSlashCommands(): void {
+		const skillDirs = [join(homedir(), ".claude", "skills")];
+		for (const config of Object.values(this.settings.projects)) {
+			if (config.workingDirectory) {
+				skillDirs.push(join(config.workingDirectory, ".claude", "skills"));
+			}
+		}
+		this.slashCommands = loadSlashCommands(skillDirs);
 	}
 
 	async loadSettings() {
