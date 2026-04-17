@@ -263,6 +263,11 @@ export function groupSessionsByProject(
 		}
 	}
 
+	// Ensure registered projects with 0 sessions still appear
+	for (const key of Object.keys(projects)) {
+		if (!projectMap.has(key)) projectMap.set(key, []);
+	}
+
 	// Sort projects alphabetically, sessions within each project alphabetically
 	const groups: SessionGroup[] = [];
 	const sortedProjects = [...projectMap.keys()].sort();

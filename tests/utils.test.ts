@@ -698,9 +698,18 @@ describe("groupSessionsByProject", () => {
 		assert.equal(orch.sessions[1].queueCount, 0);
 	});
 
-	it("returns empty array for no sessions", () => {
-		const groups = groupSessionsByProject([], new Set(), new Map(), TEST_PROJECTS);
+	it("returns empty array for no sessions and no projects", () => {
+		const groups = groupSessionsByProject([], new Set(), new Map(), {});
 		assert.deepEqual(groups, []);
+	});
+
+	it("shows registered projects with 0 sessions", () => {
+		const groups = groupSessionsByProject([], new Set(), new Map(), TEST_PROJECTS);
+		assert.equal(groups.length, 2);
+		assert.equal(groups[0].project, "14_Mobile_Claude_Code");
+		assert.equal(groups[0].sessions.length, 0);
+		assert.equal(groups[1].project, "15_Claude_Orchestrator");
+		assert.equal(groups[1].sessions.length, 0);
 	});
 
 	it("sorts projects alphabetically and sessions within each project", () => {
