@@ -491,10 +491,15 @@ export class SessionManagerView extends ItemView {
 			pinRow.createSpan({ text: `📌 ${noteName}` });
 		}
 
-		// Notes summary
-		if (session.notesSummary) {
-			const notesRow = card.createDiv({ cls: "co-sm-card-notes" });
-			notesRow.textContent = session.notesSummary;
+		// Notes (clickable to edit)
+		if (session.hasNote) {
+			const notesRow = card.createDiv({ cls: "co-sm-card-notes co-sm-notes-editable" });
+			notesRow.textContent = session.notesSummary || "Add notes...";
+			if (!session.notesSummary) notesRow.classList.add("co-sm-notes-placeholder");
+			notesRow.addEventListener("click", (e) => {
+				e.stopPropagation();
+				void this.showNotesEditor(card, notesRow, session.name);
+			});
 		}
 
 		// Info row: queue count + last activity + idle badge
@@ -724,6 +729,48 @@ export class SessionManagerView extends ItemView {
 			if (e.key === "Escape") { e.preventDefault(); cancel(); }
 		});
 		input.addEventListener("blur", () => save());
+	}
+
+	private async showNotesEditor(card: HTMLElement, notesRow: HTMLElement, sessionName: string): Promise<void> {
+		const project = projectFromSessionName(sessionName, this.plugin.settings.projects);
+		if (!project) return;
+		const config = this.plugin.settings.projects[project];
+		if (!config) return;
+		const notePath = sessionNotePath(config.vaultFolder, sessionName);
+		const file = this.app.vault.getAbstractFileByPath(notePath);
+		if (!(file instanceof TFile)) return;
+
+		const content = await this.app.vault.read(file);
+		const note = parseSessionNote(content, sessionName);
+
+		notesRow.empty();
+		notesRow.classList.remove("co-sm-notes-placeholder");
+		notesRow.classList.add("co-sm-notes-editing");
+
+		const textarea = notesRow.createEl("textarea", {
+			cls: "co-sm-notes-textarea",
+			placeholder: "Add notes...",
+		});
+		textarea.value = note.notes;
+		textarea.rows = 3;
+
+		const save = () => {
+			const newNotes = textarea.value;
+			if (newNotes !== note.notes) {
+				note.notes = newNotes;
+				void this.app.vault.modify(file, serializeSessionNote(note)).then(
+					() => { void this.refresh(); },
+				);
+			} else {
+				void this.refresh();
+			}
+		};
+
+		textarea.addEventListener("blur", () => save());
+		textarea.addEventListener("keydown", (e) => {
+			if (e.key === "Escape") { e.preventDefault(); void this.refresh(); }
+		});
+		textarea.focus();
 	}
 
 	private showKillConfirm(card: HTMLElement, sessionName: string) {
