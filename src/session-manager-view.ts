@@ -671,6 +671,19 @@ export class SessionManagerView extends ItemView {
 	}
 
 	private showInlineRename(nameSpan: HTMLElement, session: SessionInfo) {
+		const card = nameSpan.closest(".co-sm-card");
+		if (card instanceof HTMLElement) card.classList.add("co-sm-card-editing");
+
+		const topActions = card?.querySelector(".co-sm-card-top-actions");
+		if (topActions instanceof HTMLElement) {
+			topActions.empty();
+			const cancelBtn = topActions.createEl("button", { cls: "co-text-btn", text: "Cancel" });
+			cancelBtn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				void this.refresh();
+			});
+		}
+
 		const current = session.displayName || "";
 		const input = document.createElement("input");
 		input.type = "text";
@@ -702,9 +715,13 @@ export class SessionManagerView extends ItemView {
 			}
 		};
 
+		const cancel = () => {
+			void this.refresh();
+		};
+
 		input.addEventListener("keydown", (e) => {
 			if (e.key === "Enter") { e.preventDefault(); save(); }
-			if (e.key === "Escape") { e.preventDefault(); void this.refresh(); }
+			if (e.key === "Escape") { e.preventDefault(); cancel(); }
 		});
 		input.addEventListener("blur", () => save());
 	}

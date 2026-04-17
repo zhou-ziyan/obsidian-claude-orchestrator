@@ -837,6 +837,10 @@
     background: var(--co-bg-card-focused-hover);
 }
 
+.co-sm-card-editing > :not(.co-sm-card-top) {
+    display: none;
+}
+
 .co-sm-card-name {
     display: flex;
     align-items: center;
