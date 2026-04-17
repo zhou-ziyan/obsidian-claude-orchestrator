@@ -481,8 +481,10 @@ export class TerminalView extends ItemView {
 				return config.workingDirectory;
 			}
 			const adapter = this.app.vault.adapter;
-			if (adapter instanceof FileSystemAdapter && config?.vaultFolder) {
-				return path.join(adapter.getBasePath(), config.vaultFolder);
+			if (adapter instanceof FileSystemAdapter && config) {
+				return config.vaultFolder
+					? path.join(adapter.getBasePath(), config.vaultFolder)
+					: adapter.getBasePath();
 			}
 		}
 		return os.homedir();
@@ -569,17 +571,19 @@ export class TerminalView extends ItemView {
 
 	private vaultFolder(): string | null {
 		if (!this.project) return null;
-		return this.getSettings?.().projects[this.project]?.vaultFolder ?? null;
+		const config = this.getSettings?.().projects[this.project];
+		if (!config) return null;
+		return config.vaultFolder;
 	}
 
 	private async ensureSessionNote(): Promise<void> {
 		if (!this.project || !this.sessionName) return;
 		const folder = this.vaultFolder();
-		if (!folder) return;
+		if (folder === null) return;
 		const notePath = sessionNotePath(folder, this.sessionName);
 		const existing = this.app.vault.getAbstractFileByPath(notePath);
 		if (!existing) {
-			const dirPath = `${folder}/sessions`;
+			const dirPath = folder ? `${folder}/sessions` : "sessions";
 			if (!this.app.vault.getAbstractFileByPath(dirPath)) {
 				await this.app.vault.createFolder(dirPath);
 			}
@@ -597,7 +601,7 @@ export class TerminalView extends ItemView {
 		this.sessionNoteLoaded = false;
 		await this.ensureSessionNote();
 		const folder = this.vaultFolder();
-		if (!folder) return;
+		if (folder === null) return;
 		const notePath = sessionNotePath(folder, this.sessionName);
 		const file = this.app.vault.getAbstractFileByPath(notePath);
 		if (!file || file instanceof TFolder) {
@@ -619,7 +623,7 @@ export class TerminalView extends ItemView {
 		if (!this.project || !this.sessionName || !this.sessionNote) return;
 		this.sessionNote.pinnedNote = this.pinnedNote;
 		const folder = this.vaultFolder();
-		if (!folder) return;
+		if (folder === null) return;
 		const notePath = sessionNotePath(folder, this.sessionName);
 		const file = this.app.vault.getAbstractFileByPath(notePath);
 		if (file instanceof TFile) {

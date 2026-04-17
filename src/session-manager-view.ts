@@ -8,9 +8,15 @@ import {
 	parseSessionNote,
 	projectFromSessionName,
 	formatRelativeTime,
+	validateProjectKey,
+	addProject,
+	updateProjectConfig,
+	removeProject,
+	normalizeVaultFolder,
 	SessionGroup,
 	SessionInfo,
 } from "./utils";
+import type { ProjectConfig } from "./utils";
 import type ClaudeOrchestratorPlugin from "./main";
 
 export const VIEW_TYPE_SESSION_MANAGER = "claude-orchestrator-session-manager";
@@ -26,6 +32,8 @@ export class SessionManagerView extends ItemView {
 	private listEl: HTMLElement | null = null;
 	private pollTimer: ReturnType<typeof setInterval> | null = null;
 	private collapsedProjects = new Set<string>();
+	private editing = false;
+	private focusedSession: string | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClaudeOrchestratorPlugin) {
 		super(leaf);
@@ -58,6 +66,13 @@ export class SessionManagerView extends ItemView {
 		});
 		refreshBtn.title = "Refresh";
 		refreshBtn.addEventListener("click", () => { void this.refresh(); });
+
+		const addBtn = header.createEl("button", {
+			cls: "co-icon-btn",
+			text: "+",
+		});
+		addBtn.title = "Add project";
+		addBtn.addEventListener("click", () => { this.showProjectForm(); });
 
 		// Session list
 		this.listEl = container.createDiv({ cls: "co-sm-list" });
@@ -92,7 +107,7 @@ export class SessionManagerView extends ItemView {
 	}
 
 	async refresh() {
-		if (!this.listEl) return;
+		if (!this.listEl || this.editing) return;
 
 		// 1. Get all tmux sessions
 		const tmuxOutput = await tmuxLs();
@@ -161,10 +176,12 @@ export class SessionManagerView extends ItemView {
 		if (!this.listEl) return;
 		this.listEl.empty();
 
-		if (this.groups.length === 0) {
+		const activeProjectNames = new Set(this.groups.map((g) => g.project));
+
+		if (this.groups.length === 0 && Object.keys(this.plugin.settings.projects).length === 0) {
 			this.listEl.createDiv({
 				cls: "co-sm-empty",
-				text: "No tmux sessions running.",
+				text: "No projects registered. Click + to add one.",
 			});
 			return;
 		}
@@ -172,11 +189,18 @@ export class SessionManagerView extends ItemView {
 		for (const group of this.groups) {
 			this.renderGroup(group);
 		}
+
+		for (const [key, config] of Object.entries(this.plugin.settings.projects)) {
+			if (!activeProjectNames.has(key)) {
+				this.renderIdleProject(key, config);
+			}
+		}
 	}
 
 	private renderGroup(group: SessionGroup) {
 		if (!this.listEl) return;
 		const collapsed = this.collapsedProjects.has(group.project);
+		const isManaged = group.project !== "Unmanaged" && group.project in this.plugin.settings.projects;
 
 		const groupEl = this.listEl.createDiv({ cls: "co-sm-group" });
 
@@ -195,6 +219,18 @@ export class SessionManagerView extends ItemView {
 			text: `${group.sessions.length}`,
 		});
 
+		if (isManaged) {
+			const gearBtn = groupHeader.createEl("button", {
+				cls: "co-icon-btn co-sm-gear",
+				text: "⚙",
+			});
+			gearBtn.title = "Edit project";
+			gearBtn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				this.showProjectForm(group.project);
+			});
+		}
+
 		groupHeader.addEventListener("click", () => {
 			if (this.collapsedProjects.has(group.project)) {
 				this.collapsedProjects.delete(group.project);
@@ -212,8 +248,31 @@ export class SessionManagerView extends ItemView {
 		}
 	}
 
+	private renderIdleProject(key: string, _config: ProjectConfig) {
+		if (!this.listEl) return;
+		const groupEl = this.listEl.createDiv({ cls: "co-sm-group" });
+		const groupHeader = groupEl.createDiv({ cls: "co-sm-group-header" });
+		groupHeader.createSpan({ cls: "co-sm-arrow", text: "▸" });
+		groupHeader.createSpan({ cls: "co-sm-group-name co-sm-idle", text: key });
+		groupHeader.createSpan({ cls: "co-sm-group-count", text: "0" });
+
+		const gearBtn = groupHeader.createEl("button", {
+			cls: "co-icon-btn co-sm-gear",
+			text: "⚙",
+		});
+		gearBtn.title = "Edit project";
+		gearBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			this.showProjectForm(key);
+		});
+	}
+
 	private renderSessionCard(parent: HTMLElement, session: SessionInfo) {
-		const card = parent.createDiv({ cls: "co-sm-card" });
+		const isFocused = session.name === this.focusedSession;
+		const card = parent.createDiv({ cls: `co-sm-card${isFocused ? " co-sm-card-focused" : ""}` });
+		if (isFocused) {
+			requestAnimationFrame(() => card.scrollIntoView({ block: "nearest" }));
+		}
 
 		// Top row: name + kill button in top-right corner
 		const topRow = card.createDiv({ cls: "co-sm-card-top" });
@@ -332,6 +391,16 @@ export class SessionManagerView extends ItemView {
 		setTimeout(() => portal.remove(), 8000);
 	}
 
+	highlightSession(sessionName: string | null) {
+		if (this.focusedSession === sessionName) return;
+		this.focusedSession = sessionName;
+		if (sessionName) {
+			const project = projectFromSessionName(sessionName, this.plugin.settings.projects);
+			if (project) this.collapsedProjects.delete(project);
+		}
+		this.render();
+	}
+
 	// --- Actions ---
 
 	private focusSession(sessionName: string) {
@@ -377,6 +446,109 @@ export class SessionManagerView extends ItemView {
 
 		// Refresh to update hasPanel state
 		setTimeout(() => { void this.refresh(); }, 500);
+	}
+
+	private showProjectForm(existingKey?: string) {
+		if (!this.listEl) return;
+		this.editing = true;
+
+		const config = existingKey ? this.plugin.settings.projects[existingKey] : undefined;
+		const isEdit = !!existingKey;
+
+		// Remove any existing form
+		this.listEl.querySelector(".co-sm-project-form")?.remove();
+
+		const form = this.listEl.createDiv({ cls: "co-sm-project-form" });
+		// Insert at top
+		if (this.listEl.firstChild && this.listEl.firstChild !== form) {
+			this.listEl.insertBefore(form, this.listEl.firstChild);
+		}
+
+		form.createDiv({ cls: "co-sm-form-title", text: isEdit ? `Edit: ${existingKey}` : "New Project" });
+
+		const nameRow = form.createDiv({ cls: "co-sm-form-row" });
+		nameRow.createSpan({ cls: "co-sm-form-label", text: "Name" });
+		const nameInput = nameRow.createEl("input", { cls: "co-sm-form-input", type: "text" });
+		if (isEdit) {
+			nameInput.value = existingKey;
+			nameInput.disabled = true;
+		} else {
+			nameInput.placeholder = "e.g. My Project";
+		}
+
+		const folderRow = form.createDiv({ cls: "co-sm-form-row" });
+		folderRow.createSpan({ cls: "co-sm-form-label", text: "Vault folder" });
+		const folderInput = folderRow.createEl("input", { cls: "co-sm-form-input", type: "text" });
+		folderInput.placeholder = "e.g. 01_Projects/MyProject";
+		if (config) folderInput.value = config.vaultFolder;
+
+		const cwdRow = form.createDiv({ cls: "co-sm-form-row" });
+		cwdRow.createSpan({ cls: "co-sm-form-label", text: "Working dir" });
+		const cwdInput = cwdRow.createEl("input", { cls: "co-sm-form-input", type: "text" });
+		cwdInput.placeholder = "(optional)";
+		if (config?.workingDirectory) cwdInput.value = config.workingDirectory;
+
+		const linkedRow = form.createDiv({ cls: "co-sm-form-row" });
+		linkedRow.createSpan({ cls: "co-sm-form-label", text: "Linked file" });
+		const linkedInput = linkedRow.createEl("input", { cls: "co-sm-form-input", type: "text" });
+		linkedInput.placeholder = "(optional — e.g. CLAUDE.md)";
+		if (config?.linkedFile) linkedInput.value = config.linkedFile;
+
+		const errorEl = form.createDiv({ cls: "co-sm-form-error" });
+		errorEl.style.display = "none";
+
+		const actions = form.createDiv({ cls: "co-sm-form-actions" });
+
+		if (isEdit) {
+			const rmBtn = actions.createEl("button", { cls: "co-text-btn co-danger", text: "Remove" });
+			rmBtn.addEventListener("click", () => {
+				this.plugin.settings.projects = removeProject(this.plugin.settings.projects, existingKey);
+				void this.plugin.saveSettings();
+				this.editing = false;
+				void this.refresh();
+			});
+		}
+
+		const cancelBtn = actions.createEl("button", { cls: "co-text-btn", text: "Cancel" });
+		cancelBtn.addEventListener("click", () => {
+			this.editing = false;
+			void this.refresh();
+		});
+
+		const saveBtn = actions.createEl("button", { cls: "co-text-btn co-accent", text: "Save" });
+		saveBtn.addEventListener("click", () => {
+			const key = nameInput.value.trim();
+			const vaultFolder = normalizeVaultFolder(folderInput.value.trim());
+			const workingDirectory = cwdInput.value.trim() || undefined;
+			const linkedFile = linkedInput.value.trim() || undefined;
+
+			if (!isEdit) {
+				const err = validateProjectKey(key, new Set(Object.keys(this.plugin.settings.projects)));
+				if (err) {
+					errorEl.textContent = err;
+					errorEl.style.display = "";
+					return;
+				}
+			}
+
+			const newConfig: ProjectConfig = { vaultFolder, workingDirectory, linkedFile };
+
+			if (isEdit) {
+				this.plugin.settings.projects = updateProjectConfig(this.plugin.settings.projects, existingKey, newConfig);
+			} else {
+				this.plugin.settings.projects = addProject(this.plugin.settings.projects, key, newConfig);
+			}
+
+			void this.plugin.saveSettings();
+			this.editing = false;
+			void this.refresh();
+		});
+
+		if (!isEdit) {
+			nameInput.focus();
+		} else {
+			folderInput.focus();
+		}
 	}
 
 	private async killSession(sessionName: string) {

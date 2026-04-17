@@ -28,19 +28,30 @@ export function generateSessionName(
 	}
 }
 
+export function normalizeVaultFolder(raw: string): string {
+	const trimmed = raw.replace(/^\/+|\/+$/g, "");
+	return trimmed === "." ? "" : trimmed;
+}
+
 /**
  * Find the project whose vaultFolder is a prefix of the given file path.
  * If multiple projects match, the longest (most specific) folder wins.
+ * An empty vaultFolder matches all files (vault root).
  */
 export function resolveProjectFromPath(
 	filePath: string,
 	projects: ProjectRegistry,
 ): string | null {
 	let bestMatch: string | null = null;
-	let bestLen = 0;
+	let bestLen = -1;
 	for (const [key, config] of Object.entries(projects)) {
-		const folder = config.vaultFolder;
-		if (
+		const folder = normalizeVaultFolder(config.vaultFolder);
+		if (folder === "") {
+			if (bestLen < 0) {
+				bestMatch = key;
+				bestLen = 0;
+			}
+		} else if (
 			(filePath.startsWith(folder + "/") || filePath === folder) &&
 			folder.length > bestLen
 		) {
@@ -290,12 +301,15 @@ export interface SessionNote {
 /**
  * Vault-relative path for a session note.
  * `vaultFolder` is the project's vault-relative folder path.
+ * Empty string means vault root.
  */
 export function sessionNotePath(
 	vaultFolder: string,
 	sessionName: string,
 ): string {
-	return `${vaultFolder}/sessions/${sessionName}.md`;
+	const normalized = normalizeVaultFolder(vaultFolder);
+	const prefix = normalized ? normalized + "/" : "";
+	return `${prefix}sessions/${sessionName}.md`;
 }
 
 /**
@@ -524,6 +538,49 @@ export function findTmuxBinary(exists?: (p: string) => boolean): string {
  */
 export function shouldAutoSendAfterEdit(queueLength: number): boolean {
 	return queueLength === 1;
+}
+
+// --- Project registry mutations ---
+
+export function validateProjectKey(
+	key: string,
+	existingKeys: Set<string>,
+	currentKey?: string,
+): string | null {
+	const trimmed = key.trim();
+	if (trimmed.length === 0) return "Project name cannot be empty";
+	if (/[.:]/.test(trimmed)) return "Project name cannot contain '.' or ':' (tmux restriction)";
+	if (trimmed === "Unmanaged") return "'Unmanaged' is a reserved name";
+	if (existingKeys.has(trimmed) && trimmed !== currentKey) return "A project with this name already exists";
+	return null;
+}
+
+export function addProject(
+	registry: ProjectRegistry,
+	key: string,
+	config: ProjectConfig,
+): ProjectRegistry {
+	return { ...registry, [key]: config };
+}
+
+export function updateProjectConfig(
+	registry: ProjectRegistry,
+	key: string,
+	updates: Partial<ProjectConfig>,
+): ProjectRegistry {
+	const existing = registry[key];
+	if (!existing) return registry;
+	return { ...registry, [key]: { ...existing, ...updates } };
+}
+
+export function removeProject(
+	registry: ProjectRegistry,
+	key: string,
+): ProjectRegistry {
+	if (!(key in registry)) return registry;
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to exclude key
+	const { [key]: _, ...rest } = registry;
+	return rest;
 }
 
 export function migrateSettings(data: Record<string, unknown>): Record<string, unknown> {

@@ -112,6 +112,9 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 					if (project && sessionName) {
 						void this.onTerminalFocus(project, sessionName);
 					}
+					this.highlightSessionInManager(view.getSessionName());
+				} else {
+					this.highlightSessionInManager(null);
 				}
 			}),
 		);
@@ -326,6 +329,15 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			active: true,
 		});
 		void workspace.revealLeaf(leaf);
+	}
+
+	private highlightSessionInManager(sessionName: string | null) {
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_SESSION_MANAGER)) {
+			const view = leaf.view;
+			if (view instanceof SessionManagerView) {
+				view.highlightSession(sessionName);
+			}
+		}
 	}
 
 	// --- Shared helpers ---

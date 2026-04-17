@@ -20,6 +20,11 @@ import {
 	HISTORY_ITEM_MIN_HEIGHT,
 	copyHistoryItemToQueue,
 	shouldAutoSendAfterEdit,
+	validateProjectKey,
+	addProject,
+	updateProjectConfig,
+	removeProject,
+	normalizeVaultFolder,
 } from "../src/utils.ts";
 import type { ProjectRegistry } from "../src/utils.ts";
 
@@ -161,6 +166,26 @@ describe("resolveProjectFromPath", () => {
 
 	it("returns null for empty registry", () => {
 		assert.equal(resolveProjectFromPath("any/path.md", {}), null);
+	});
+
+	it("matches vault root project (empty vaultFolder)", () => {
+		const projects: ProjectRegistry = {
+			"Root": { vaultFolder: "" },
+		};
+		assert.equal(resolveProjectFromPath("CLAUDE.md", projects), "Root");
+		assert.equal(resolveProjectFromPath("01_Projects/foo/bar.md", projects), "Root");
+	});
+
+	it("prefers specific project over vault root", () => {
+		const projects: ProjectRegistry = {
+			"Root": { vaultFolder: "" },
+			"Specific": { vaultFolder: "01_Projects/15_Claude" },
+		};
+		assert.equal(
+			resolveProjectFromPath("01_Projects/15_Claude/note.md", projects),
+			"Specific",
+		);
+		assert.equal(resolveProjectFromPath("other/note.md", projects), "Root");
 	});
 });
 
@@ -340,6 +365,13 @@ describe("sessionNotePath", () => {
 		assert.equal(
 			sessionNotePath("work/my-project", "my-project"),
 			"work/my-project/sessions/my-project.md",
+		);
+	});
+
+	it("handles vault root (empty vaultFolder)", () => {
+		assert.equal(
+			sessionNotePath("", "my-session"),
+			"sessions/my-session.md",
 		);
 	});
 });
@@ -924,5 +956,202 @@ describe("shouldAutoSendAfterEdit", () => {
 
 	it("returns false when queue has many items", () => {
 		assert.equal(shouldAutoSendAfterEdit(10), false);
+	});
+});
+
+// --- validateProjectKey ---
+
+describe("validateProjectKey", () => {
+	it("rejects empty string", () => {
+		assert.notEqual(validateProjectKey("", new Set()), null);
+	});
+
+	it("rejects whitespace-only string", () => {
+		assert.notEqual(validateProjectKey("   ", new Set()), null);
+	});
+
+	it("rejects name containing period", () => {
+		assert.notEqual(validateProjectKey("my.project", new Set()), null);
+	});
+
+	it("rejects name containing colon", () => {
+		assert.notEqual(validateProjectKey("my:project", new Set()), null);
+	});
+
+	it("rejects reserved name 'Unmanaged'", () => {
+		assert.notEqual(validateProjectKey("Unmanaged", new Set()), null);
+	});
+
+	it("rejects duplicate key", () => {
+		assert.notEqual(validateProjectKey("my-project", new Set(["my-project"])), null);
+	});
+
+	it("accepts valid simple name", () => {
+		assert.equal(validateProjectKey("my-project", new Set()), null);
+	});
+
+	it("accepts name with spaces", () => {
+		assert.equal(validateProjectKey("My Project", new Set()), null);
+	});
+
+	it("accepts name with underscores and digits", () => {
+		assert.equal(validateProjectKey("15_Claude_Orchestrator", new Set()), null);
+	});
+
+	it("accepts unicode names", () => {
+		assert.equal(validateProjectKey("我的项目", new Set()), null);
+	});
+
+	it("allows own key as non-duplicate when editing", () => {
+		assert.equal(validateProjectKey("my-project", new Set(["my-project"]), "my-project"), null);
+	});
+
+	it("still rejects other duplicates when editing", () => {
+		assert.notEqual(validateProjectKey("other", new Set(["other"]), "my-project"), null);
+	});
+});
+
+// --- addProject ---
+
+describe("addProject", () => {
+	it("adds to empty registry", () => {
+		const result = addProject({}, "my-project", { vaultFolder: "projects/my-project" });
+		assert.deepEqual(result, {
+			"my-project": { vaultFolder: "projects/my-project" },
+		});
+	});
+
+	it("adds to non-empty registry without affecting existing", () => {
+		const existing: ProjectRegistry = {
+			"proj-a": { vaultFolder: "a" },
+		};
+		const result = addProject(existing, "proj-b", { vaultFolder: "b" });
+		assert.equal(Object.keys(result).length, 2);
+		assert.deepEqual(result["proj-a"], { vaultFolder: "a" });
+		assert.deepEqual(result["proj-b"], { vaultFolder: "b" });
+	});
+
+	it("preserves all optional fields", () => {
+		const config = {
+			vaultFolder: "work/proj",
+			workingDirectory: "/Users/me/code/proj",
+			mainNote: "work/proj/README.md",
+			linkedFile: "work/proj/CLAUDE.md",
+		};
+		const result = addProject({}, "proj", config);
+		assert.deepEqual(result["proj"], config);
+	});
+
+	it("does not mutate the original registry", () => {
+		const original: ProjectRegistry = { "a": { vaultFolder: "a" } };
+		addProject(original, "b", { vaultFolder: "b" });
+		assert.equal(Object.keys(original).length, 1);
+	});
+});
+
+// --- updateProjectConfig ---
+
+describe("updateProjectConfig", () => {
+	it("updates vaultFolder", () => {
+		const registry: ProjectRegistry = {
+			"proj": { vaultFolder: "old/path" },
+		};
+		const result = updateProjectConfig(registry, "proj", { vaultFolder: "new/path" });
+		assert.equal(result["proj"]?.vaultFolder, "new/path");
+	});
+
+	it("adds optional field without affecting others", () => {
+		const registry: ProjectRegistry = {
+			"proj": { vaultFolder: "path", mainNote: "note.md" },
+		};
+		const result = updateProjectConfig(registry, "proj", { workingDirectory: "/code" });
+		assert.equal(result["proj"]?.vaultFolder, "path");
+		assert.equal(result["proj"]?.mainNote, "note.md");
+		assert.equal(result["proj"]?.workingDirectory, "/code");
+	});
+
+	it("clears optional field when set to undefined", () => {
+		const registry: ProjectRegistry = {
+			"proj": { vaultFolder: "path", workingDirectory: "/code" },
+		};
+		const result = updateProjectConfig(registry, "proj", { workingDirectory: undefined });
+		assert.equal(result["proj"]?.workingDirectory, undefined);
+	});
+
+	it("returns registry unchanged for non-existent key", () => {
+		const registry: ProjectRegistry = { "a": { vaultFolder: "a" } };
+		const result = updateProjectConfig(registry, "nonexistent", { vaultFolder: "x" });
+		assert.deepEqual(result, registry);
+	});
+
+	it("does not mutate the original registry or config", () => {
+		const registry: ProjectRegistry = { "proj": { vaultFolder: "old" } };
+		const result = updateProjectConfig(registry, "proj", { vaultFolder: "new" });
+		assert.equal(registry["proj"]?.vaultFolder, "old");
+		assert.equal(result["proj"]?.vaultFolder, "new");
+	});
+});
+
+// --- removeProject ---
+
+describe("removeProject", () => {
+	it("removes existing project", () => {
+		const registry: ProjectRegistry = {
+			"a": { vaultFolder: "a" },
+			"b": { vaultFolder: "b" },
+		};
+		const result = removeProject(registry, "a");
+		assert.equal(Object.keys(result).length, 1);
+		assert.equal(result["a"], undefined);
+		assert.deepEqual(result["b"], { vaultFolder: "b" });
+	});
+
+	it("returns empty registry when removing last project", () => {
+		const registry: ProjectRegistry = { "only": { vaultFolder: "x" } };
+		const result = removeProject(registry, "only");
+		assert.deepEqual(result, {});
+	});
+
+	it("returns registry unchanged for non-existent key", () => {
+		const registry: ProjectRegistry = { "a": { vaultFolder: "a" } };
+		const result = removeProject(registry, "nonexistent");
+		assert.deepEqual(result, registry);
+	});
+
+	it("does not mutate the original registry", () => {
+		const registry: ProjectRegistry = {
+			"a": { vaultFolder: "a" },
+			"b": { vaultFolder: "b" },
+		};
+		removeProject(registry, "a");
+		assert.equal(Object.keys(registry).length, 2);
+	});
+});
+
+// --- normalizeVaultFolder ---
+
+describe("normalizeVaultFolder", () => {
+	it("strips leading slash", () => {
+		assert.equal(normalizeVaultFolder("/"), "");
+	});
+
+	it("strips trailing slash", () => {
+		assert.equal(normalizeVaultFolder("01_Projects/foo/"), "01_Projects/foo");
+	});
+
+	it("strips both leading and trailing slashes", () => {
+		assert.equal(normalizeVaultFolder("/projects/foo/"), "projects/foo");
+	});
+
+	it("normalizes dot to empty string", () => {
+		assert.equal(normalizeVaultFolder("."), "");
+	});
+
+	it("leaves normal paths unchanged", () => {
+		assert.equal(normalizeVaultFolder("01_Projects/15_Claude"), "01_Projects/15_Claude");
+	});
+
+	it("returns empty string for empty input", () => {
+		assert.equal(normalizeVaultFolder(""), "");
 	});
 });
