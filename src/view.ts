@@ -100,6 +100,7 @@ export class TerminalView extends ItemView {
 	private pinLabel: HTMLElement | null = null;
 	private termFocusIndicator: HTMLElement | null = null;
 	private modeBtn: HTMLElement | null = null;
+	private sendBtn: HTMLElement | null = null;
 	private themeObserver: MutationObserver | null = null;
 
 	private fitAndResize(): void {
@@ -408,11 +409,11 @@ export class TerminalView extends ItemView {
 				btn.addEventListener("click", () => { void this.sendQuickReply(key); });
 			}
 
-			const sendBtn = headerRight.createEl("button", {
-				cls: "co-text-btn co-accent",
+			this.sendBtn = headerRight.createEl("button", {
+				cls: "co-text-btn",
 				text: "Send next ▶",
 			});
-			sendBtn.addEventListener("click", () => { void this.sendNext(); });
+			this.sendBtn.addEventListener("click", () => { void this.sendNext(); });
 
 			this.queueList = this.queuePanel.createDiv({ cls: "co-queue-list" });
 
@@ -766,6 +767,10 @@ export class TerminalView extends ItemView {
 		if (!this.queueList || !this.sessionNote) return;
 		this.queueList.empty();
 
+		if (this.sendBtn) {
+			this.sendBtn.toggleClass("co-accent", this.sessionNote.queue.length > 0);
+		}
+
 		if (this.sessionNote.queue.length === 0) {
 			this.queueList.createDiv({ cls: "co-empty", text: "Queue empty." });
 			return;
@@ -1036,6 +1041,7 @@ export class TerminalView extends ItemView {
 		this.historyPanel = null;
 		this.queuePanel = null;
 		this.queueList = null;
+		this.sendBtn = null;
 		this.sessionNote = null;
 		this.pinLabel = null;
 		this.termFocusIndicator = null;
