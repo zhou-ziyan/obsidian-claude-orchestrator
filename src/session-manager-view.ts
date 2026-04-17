@@ -567,6 +567,10 @@ export class SessionManagerView extends ItemView {
 			const workingDirectory = cwdInput.value.trim() || undefined;
 
 			if (!isEdit) {
+				if (key in this.plugin.settings.projects) {
+					this.showProjectForm(key);
+					return;
+				}
 				const err = validateProjectKey(key, new Set(Object.keys(this.plugin.settings.projects)));
 				if (err) {
 					errorEl.textContent = err;
