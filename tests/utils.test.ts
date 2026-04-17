@@ -57,6 +57,7 @@ import {
 	autoSendAction,
 	AUTO_SEND_COUNTDOWN_MS,
 	ensureStopHookConfig,
+	parseQuickReplyKeys,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote } from "../src/utils.ts";
 
@@ -2457,5 +2458,39 @@ describe("ensureStopHookConfig", () => {
 		});
 		const result = ensureStopHookConfig(input, SCRIPT);
 		assert.equal(result.updated, false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseQuickReplyKeys
+// ---------------------------------------------------------------------------
+
+describe("parseQuickReplyKeys", () => {
+	it("parses comma-separated keys", () => {
+		assert.deepEqual(parseQuickReplyKeys("1, 2, Y"), ["1", "2", "Y"]);
+	});
+
+	it("trims whitespace", () => {
+		assert.deepEqual(parseQuickReplyKeys("  A ,  B  , C "), ["A", "B", "C"]);
+	});
+
+	it("filters empty entries", () => {
+		assert.deepEqual(parseQuickReplyKeys("1,,2,,,Y"), ["1", "2", "Y"]);
+	});
+
+	it("handles single key", () => {
+		assert.deepEqual(parseQuickReplyKeys("Y"), ["Y"]);
+	});
+
+	it("returns empty array for empty string", () => {
+		assert.deepEqual(parseQuickReplyKeys(""), []);
+	});
+
+	it("returns empty array for only commas", () => {
+		assert.deepEqual(parseQuickReplyKeys(",,,"), []);
+	});
+
+	it("preserves multi-char keys", () => {
+		assert.deepEqual(parseQuickReplyKeys("Yes, No, 1"), ["Yes", "No", "1"]);
 	});
 });

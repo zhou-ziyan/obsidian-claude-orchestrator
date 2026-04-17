@@ -96,7 +96,7 @@ export class TerminalView extends ItemView {
 	private stateSeenPreOpen = false;
 	private host: HTMLElement | null = null;
 	private onTerminalFocus?: (project: string, sessionName: string) => void;
-	private getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry };
+	private getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[] };
 	private historyPanel: HTMLElement | null = null;
 	private queuePanel: HTMLElement | null = null;
 	private queueList: HTMLElement | null = null;
@@ -108,6 +108,7 @@ export class TerminalView extends ItemView {
 	private sendBtn: HTMLElement | null = null;
 	private countdownTimer: ReturnType<typeof setInterval> | null = null;
 	private countdownRemaining = 0;
+	private escHandler: ((e: KeyboardEvent) => void) | null = null;
 	private claudeIdle = false;
 	private themeObserver: MutationObserver | null = null;
 
@@ -132,7 +133,7 @@ export class TerminalView extends ItemView {
 		leaf: WorkspaceLeaf,
 		pluginDir: string,
 		onTerminalFocus?: (project: string, sessionName: string) => void,
-		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry },
+		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[] },
 	) {
 		super(leaf);
 		this.pluginDir = pluginDir;
@@ -412,7 +413,8 @@ export class TerminalView extends ItemView {
 			});
 
 			const quickReplyGroup = headerRight.createDiv({ cls: "co-quick-reply-group" });
-			for (const key of QUICK_REPLY_KEYS) {
+			const keys = this.getSettings?.().quickReplyKeys ?? [...QUICK_REPLY_KEYS];
+			for (const key of keys) {
 				const btn = quickReplyGroup.createEl("button", {
 					cls: "co-text-btn co-quick-reply-btn",
 					text: key,
@@ -1035,7 +1037,7 @@ export class TerminalView extends ItemView {
 		if (action === "send") {
 			this.startCountdown();
 		} else if (action === "notify") {
-			new Notice(`Claude finished — ${this.sessionNote.queue.length} item(s) in queue`);
+			this.notifyUser(`Claude finished — ${this.sessionNote.queue.length} item(s) in queue`);
 		}
 	}
 
@@ -1046,6 +1048,11 @@ export class TerminalView extends ItemView {
 		const totalSeconds = Math.round(AUTO_SEND_COUNTDOWN_MS / 1000);
 		this.countdownRemaining = totalSeconds;
 		this.updateSendBtnCountdown();
+
+		this.escHandler = (e: KeyboardEvent) => {
+			if (e.key === "Escape") this.cancelCountdown();
+		};
+		document.addEventListener("keydown", this.escHandler);
 
 		this.countdownTimer = setInterval(() => {
 			this.countdownRemaining--;
@@ -1058,16 +1065,25 @@ export class TerminalView extends ItemView {
 		}, 1000);
 	}
 
-	private cancelCountdown(): void {
+	getCountdownRemaining(): number {
+		return this.countdownRemaining;
+	}
+
+	cancelCountdown(): void {
 		if (this.countdownTimer) {
 			clearInterval(this.countdownTimer);
 			this.countdownTimer = null;
+		}
+		if (this.escHandler) {
+			document.removeEventListener("keydown", this.escHandler);
+			this.escHandler = null;
 		}
 		this.countdownRemaining = 0;
 		if (this.sendBtn) {
 			this.sendBtn.textContent = "Send next ▶";
 			this.sendBtn.classList.remove("co-countdown-active");
 		}
+		this.app.workspace.trigger("claude-orchestrator:countdown-tick");
 	}
 
 	private checkAutoSend(): void {
@@ -1084,14 +1100,24 @@ export class TerminalView extends ItemView {
 		if (action === "send") {
 			this.startCountdown();
 		} else if (action === "notify") {
-			new Notice(`Claude idle — ${this.sessionNote.queue.length} item(s) in queue`);
+			this.notifyUser(`Claude idle — ${this.sessionNote.queue.length} item(s) in queue`);
 		}
+	}
+
+	private notifyUser(message: string): void {
+		new Notice(message);
+		try {
+			new Notification("Claude Orchestrator", { body: message });
+		} catch { /* Notification API may not be available */ }
+		const { execFile } = require("child_process") as typeof import("child_process");
+		execFile("afplay", ["/System/Library/Sounds/Glass.aiff"], () => {});
 	}
 
 	private updateSendBtnCountdown(): void {
 		if (!this.sendBtn) return;
 		this.sendBtn.textContent = `Cancel (${this.countdownRemaining}s)`;
 		this.sendBtn.classList.add("co-countdown-active");
+		this.app.workspace.trigger("claude-orchestrator:countdown-tick");
 	}
 
 	private onHostFocusIn = () => {

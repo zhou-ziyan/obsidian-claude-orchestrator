@@ -195,6 +195,8 @@ export interface SessionInfo {
 	preview: string | null;
 	notesSummary: string | null;
 	displayName: string | null;
+	status: SessionStatus;
+	queueMode: QueueMode;
 }
 
 export interface SessionGroup {
@@ -226,7 +228,7 @@ export function projectFromSessionName(
 export function groupSessionsByProject(
 	allSessions: { name: string; activity: number }[],
 	openSessionNames: Set<string>,
-	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null; notesSummary: string | null; displayName: string | null }>,
+	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null; notesSummary: string | null; displayName: string | null; status: SessionStatus; queueMode: QueueMode }>,
 	projects: ProjectRegistry,
 ): SessionGroup[] {
 	const projectMap = new Map<string, SessionInfo[]>();
@@ -246,6 +248,8 @@ export function groupSessionsByProject(
 			preview: nd?.preview ?? null,
 			notesSummary: nd?.notesSummary ?? null,
 			displayName: nd?.displayName ?? null,
+			status: nd?.status ?? "idle",
+			queueMode: nd?.queueMode ?? "manual",
 		};
 
 		if (project) {
@@ -617,6 +621,10 @@ export function copyHistoryItemToQueue(text: string, queue: string[]): number {
 export const TMUX_SEARCH_PATHS = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"];
 
 export const QUICK_REPLY_KEYS = ["1", "2", "Y"] as const;
+
+export function parseQuickReplyKeys(input: string): string[] {
+	return input.split(",").map((k) => k.trim()).filter((k) => k.length > 0);
+}
 
 export function cancelCopyModeArgs(sessionName: string): string[] {
 	return ["send-keys", "-t", sessionName, "-X", "cancel"];
