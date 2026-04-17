@@ -559,6 +559,10 @@ export function serializeSessionNote(note: SessionNote): string {
 }
 
 const TIMESTAMP_PREFIX_RE = /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] /;
+
+export function stripTimestamp(text: string): string {
+	return text.replace(TIMESTAMP_PREFIX_RE, "");
+}
 const PREVIEW_SKIP_RE = /^(按照\s|按\s\S+\s执行|##+ |---\s*$)/;
 
 export function extractSessionPreview(note: SessionNote): string | null {

@@ -26,6 +26,7 @@ import {
 	AUTO_SEND_COUNTDOWN_MS,
 	execTmux,
 	filterSlashCommands,
+	stripTimestamp,
 } from "./utils";
 import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry } from "./utils";
 import { Terminal } from "@xterm/xterm";
@@ -557,6 +558,36 @@ export class TerminalView extends ItemView {
 			void this.saveSessionNote();
 			this.checkAutoSend();
 		};
+		// History prefill (shell-like ↑/↓ navigation)
+		let histIdx = -1;
+		let savedInput = "";
+
+		const historyPrefill = (direction: "up" | "down"): boolean => {
+			if (!this.sessionNote || this.sessionNote.history.length === 0) return false;
+			const hist = this.sessionNote.history;
+			if (direction === "up") {
+				if (histIdx === -1) savedInput = input.value;
+				const next = histIdx === -1 ? hist.length - 1 : histIdx - 1;
+				if (next < 0) return true;
+				histIdx = next;
+			} else {
+				if (histIdx === -1) return false;
+				const next = histIdx + 1;
+				if (next >= hist.length) {
+					histIdx = -1;
+					input.value = savedInput;
+					requestAnimationFrame(autoResize);
+					return true;
+				}
+				histIdx = next;
+			}
+			input.value = stripTimestamp(hist[histIdx]!.text);
+			requestAnimationFrame(autoResize);
+			return true;
+		};
+
+		input.addEventListener("input", () => { histIdx = -1; });
+
 		let composing = false;
 		input.addEventListener("compositionstart", () => { composing = true; });
 		input.addEventListener("compositionend", () => { composing = false; });
@@ -587,6 +618,12 @@ export class TerminalView extends ItemView {
 					closeAc();
 					return;
 				}
+			}
+			if (e.key === "ArrowUp" && !e.shiftKey) {
+				if (historyPrefill("up")) { e.preventDefault(); return; }
+			}
+			if (e.key === "ArrowDown" && !e.shiftKey) {
+				if (historyPrefill("down")) { e.preventDefault(); return; }
 			}
 			if (e.key === "Enter" && !e.shiftKey && !composing && !e.isComposing) { e.preventDefault(); doAdd(); }
 		});
