@@ -566,6 +566,9 @@ export function stripTimestamp(text: string): string {
 const PREVIEW_SKIP_RE = /^(按照\s|按\s\S+\s执行|##+ |---\s*$)/;
 
 export function extractSessionPreview(note: SessionNote): string | null {
+	const notesLine = note.notes.split("\n").find((l) => l.trim().length > 0);
+	if (notesLine) return notesLine.trim();
+
 	const source = note.queue.length > 0
 		? note.queue[note.queue.length - 1]!
 		: note.history.length > 0

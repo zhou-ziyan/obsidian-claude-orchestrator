@@ -1859,11 +1859,13 @@ describe("PTY_DEFAULT_MAX", () => {
 // ---------------------------------------------------------------------------
 
 describe("extractSessionPreview", () => {
-	const mkNote = (queue: string[], history: Array<{ text: string; completed: boolean }>): SessionNote => ({
+	const mkNote = (queue: string[], history: Array<{ text: string; completed: boolean }>, notes = ""): SessionNote => ({
 		session: "test",
 		status: "idle",
 		pinnedNote: null,
 		queueMode: "manual",
+		displayName: "",
+		notes,
 		history,
 		queue,
 	});
@@ -1958,6 +1960,30 @@ describe("extractSessionPreview", () => {
 	it("does not skip normal content that happens to start with 按", () => {
 		const note = mkNote(["[2026-04-17 12:00] 按钮样式需要修改"], []);
 		assert.equal(extractSessionPreview(note), "按钮样式需要修改");
+	});
+
+	it("prioritizes notes over queue and history", () => {
+		const note = mkNote(
+			["[2026-04-17 10:00] queue item"],
+			[{ text: "history item", completed: false }],
+			"This session handles PTY management",
+		);
+		assert.equal(extractSessionPreview(note), "This session handles PTY management");
+	});
+
+	it("uses first line of multiline notes", () => {
+		const note = mkNote([], [], "First line\nSecond line\nThird line");
+		assert.equal(extractSessionPreview(note), "First line");
+	});
+
+	it("falls back to queue when notes is empty", () => {
+		const note = mkNote(["[2026-04-17 10:00] task"], [], "");
+		assert.equal(extractSessionPreview(note), "task");
+	});
+
+	it("falls back to queue when notes is whitespace only", () => {
+		const note = mkNote(["[2026-04-17 10:00] task"], [], "  \n  ");
+		assert.equal(extractSessionPreview(note), "task");
 	});
 });
 
