@@ -96,7 +96,7 @@ export class TerminalView extends ItemView {
 	private stateSeenPreOpen = false;
 	private host: HTMLElement | null = null;
 	private onTerminalFocus?: (project: string, sessionName: string) => void;
-	private getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry };
+	private getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[] };
 	private historyPanel: HTMLElement | null = null;
 	private queuePanel: HTMLElement | null = null;
 	private queueList: HTMLElement | null = null;
@@ -108,6 +108,7 @@ export class TerminalView extends ItemView {
 	private sendBtn: HTMLElement | null = null;
 	private countdownTimer: ReturnType<typeof setInterval> | null = null;
 	private countdownRemaining = 0;
+	private escHandler: ((e: KeyboardEvent) => void) | null = null;
 	private claudeIdle = false;
 	private themeObserver: MutationObserver | null = null;
 
@@ -132,7 +133,7 @@ export class TerminalView extends ItemView {
 		leaf: WorkspaceLeaf,
 		pluginDir: string,
 		onTerminalFocus?: (project: string, sessionName: string) => void,
-		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry },
+		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[] },
 	) {
 		super(leaf);
 		this.pluginDir = pluginDir;
@@ -412,7 +413,8 @@ export class TerminalView extends ItemView {
 			});
 
 			const quickReplyGroup = headerRight.createDiv({ cls: "co-quick-reply-group" });
-			for (const key of QUICK_REPLY_KEYS) {
+			const keys = this.getSettings?.().quickReplyKeys ?? [...QUICK_REPLY_KEYS];
+			for (const key of keys) {
 				const btn = quickReplyGroup.createEl("button", {
 					cls: "co-text-btn co-quick-reply-btn",
 					text: key,
@@ -1047,6 +1049,11 @@ export class TerminalView extends ItemView {
 		this.countdownRemaining = totalSeconds;
 		this.updateSendBtnCountdown();
 
+		this.escHandler = (e: KeyboardEvent) => {
+			if (e.key === "Escape") this.cancelCountdown();
+		};
+		document.addEventListener("keydown", this.escHandler);
+
 		this.countdownTimer = setInterval(() => {
 			this.countdownRemaining--;
 			if (this.countdownRemaining <= 0) {
@@ -1062,6 +1069,10 @@ export class TerminalView extends ItemView {
 		if (this.countdownTimer) {
 			clearInterval(this.countdownTimer);
 			this.countdownTimer = null;
+		}
+		if (this.escHandler) {
+			document.removeEventListener("keydown", this.escHandler);
+			this.escHandler = null;
 		}
 		this.countdownRemaining = 0;
 		if (this.sendBtn) {

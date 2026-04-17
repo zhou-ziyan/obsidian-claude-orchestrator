@@ -599,7 +599,7 @@
     align-items: center;
     gap: 4px;
     flex-wrap: nowrap;
-    overflow: hidden;
+    overflow-x: auto;
     min-width: 0;
 }
 
