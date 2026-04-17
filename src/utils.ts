@@ -287,6 +287,27 @@ export function groupSessionsByProject(
 
 export type SessionStatus = "idle" | "running" | "waiting_for_user";
 
+export type QueueMode = "manual" | "listen" | "auto";
+
+export const QUEUE_MODES: readonly QueueMode[] = ["manual", "listen", "auto"] as const;
+
+export function nextQueueMode(current: QueueMode): QueueMode {
+	const idx = QUEUE_MODES.indexOf(current);
+	return QUEUE_MODES[(idx + 1) % QUEUE_MODES.length]!;
+}
+
+export function queueModeLabel(mode: QueueMode): string {
+	switch (mode) {
+		case "manual": return "Manual";
+		case "listen": return "Listen";
+		case "auto": return "Auto";
+	}
+}
+
+function isQueueMode(s: string): s is QueueMode {
+	return s === "manual" || s === "listen" || s === "auto";
+}
+
 export interface HistoryItem {
 	text: string;
 	completed: boolean;
@@ -296,6 +317,7 @@ export interface SessionNote {
 	session: string;
 	status: SessionStatus;
 	pinnedNote: string | null;
+	queueMode: QueueMode;
 	history: HistoryItem[];
 	queue: string[];
 }
@@ -326,6 +348,7 @@ export function createDefaultSessionNote(sessionName: string): string {
 		`session: ${sessionName}`,
 		"status: idle",
 		"pinnedNote: ",
+		"queueMode: manual",
 		"---",
 		"",
 		"## History",
@@ -346,6 +369,7 @@ export function parseSessionNote(
 		session: fallbackSession,
 		status: "idle",
 		pinnedNote: null,
+		queueMode: "manual",
 		history: [],
 		queue: [],
 	};
@@ -367,6 +391,8 @@ export function parseSessionNote(
 					note.status = value;
 				if (key === "pinnedNote" && value)
 					note.pinnedNote = value;
+				if (key === "queueMode" && isQueueMode(value))
+					note.queueMode = value;
 			}
 			i++;
 		}
@@ -448,6 +474,7 @@ export function serializeSessionNote(note: SessionNote): string {
 		`session: ${note.session}`,
 		`status: ${note.status}`,
 		`pinnedNote: ${note.pinnedNote ?? ""}`,
+		`queueMode: ${note.queueMode}`,
 		"---",
 		"",
 		"## History",

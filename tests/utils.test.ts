@@ -31,8 +31,11 @@ import {
 	QUICK_REPLY_KEYS,
 	buildQuickReplyTmuxArgs,
 	cancelCopyModeArgs,
+	nextQueueMode,
+	queueModeLabel,
+	QUEUE_MODES,
 } from "../src/utils.ts";
-import type { ProjectRegistry } from "../src/utils.ts";
+import type { ProjectRegistry, QueueMode } from "../src/utils.ts";
 
 const TEST_PROJECTS: ProjectRegistry = {
 	"15_Claude_Orchestrator": { vaultFolder: "01_Projects/15_Claude_Orchestrator" },
@@ -558,6 +561,7 @@ describe("serializeSessionNote", () => {
 			session: "15_Claude_Orchestrator-2",
 			status: "waiting_for_user" as const,
 			pinnedNote: "01_Projects/15_Claude_Orchestrator/15_Claude_Orchestrator.md",
+			queueMode: "manual" as const,
 			history: [
 				{ text: "task A", completed: true },
 				{ text: "task B", completed: false },
@@ -574,6 +578,7 @@ describe("serializeSessionNote", () => {
 			session: "empty",
 			status: "idle" as const,
 			pinnedNote: null,
+			queueMode: "manual" as const,
 			history: [],
 			queue: [],
 		};
@@ -1400,5 +1405,62 @@ describe("cancelCopyModeArgs", () => {
 		assert.ok(args.includes("my-session-3"));
 		assert.ok(args.includes("-X"));
 		assert.ok(args.includes("cancel"));
+	});
+});
+
+// --- QueueMode helpers ---
+
+describe("nextQueueMode", () => {
+	it("cycles manual → listen → auto → manual", () => {
+		assert.equal(nextQueueMode("manual"), "listen");
+		assert.equal(nextQueueMode("listen"), "auto");
+		assert.equal(nextQueueMode("auto"), "manual");
+	});
+});
+
+describe("queueModeLabel", () => {
+	it("returns human-readable labels", () => {
+		assert.equal(queueModeLabel("manual"), "Manual");
+		assert.equal(queueModeLabel("listen"), "Listen");
+		assert.equal(queueModeLabel("auto"), "Auto");
+	});
+});
+
+describe("QUEUE_MODES", () => {
+	it("contains all three modes", () => {
+		assert.deepEqual([...QUEUE_MODES], ["manual", "listen", "auto"]);
+	});
+});
+
+describe("parseSessionNote queueMode", () => {
+	it("defaults to manual when queueMode is absent", () => {
+		const note = parseSessionNote("---\nsession: test\nstatus: idle\n---\n\n## History\n\n## Queue\n");
+		assert.equal(note.queueMode, "manual");
+	});
+
+	it("parses queueMode from frontmatter", () => {
+		const note = parseSessionNote("---\nsession: test\nstatus: idle\nqueueMode: auto\n---\n\n## History\n\n## Queue\n");
+		assert.equal(note.queueMode, "auto");
+	});
+
+	it("ignores invalid queueMode values", () => {
+		const note = parseSessionNote("---\nsession: test\nstatus: idle\nqueueMode: turbo\n---\n\n## History\n\n## Queue\n");
+		assert.equal(note.queueMode, "manual");
+	});
+
+	it("round-trips queueMode through serialize", () => {
+		const note = parseSessionNote("---\nsession: test\nstatus: idle\nqueueMode: listen\n---\n\n## History\n\n## Queue\n");
+		const serialized = serializeSessionNote(note);
+		const reparsed = parseSessionNote(serialized);
+		assert.equal(reparsed.queueMode, "listen");
+	});
+});
+
+describe("createDefaultSessionNote queueMode", () => {
+	it("includes queueMode: manual in default note", () => {
+		const content = createDefaultSessionNote("test-session");
+		assert.ok(content.includes("queueMode: manual"));
+		const parsed = parseSessionNote(content);
+		assert.equal(parsed.queueMode, "manual");
 	});
 });
