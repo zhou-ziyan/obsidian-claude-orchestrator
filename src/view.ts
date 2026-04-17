@@ -791,9 +791,7 @@ export class TerminalView extends ItemView {
 		const content = await this.app.vault.read(file);
 		this.sessionNote = parseSessionNote(content, this.sessionName);
 		this.pinnedNote = this.sessionNote.pinnedNote;
-		if (this.sessionNote.status === "running") {
-			this.claudeIdle = false;
-		}
+		this.claudeIdle = this.sessionNote.status === "idle";
 		this.sessionNoteLoaded = true;
 		this.renderHistory();
 		this.renderQueue();
