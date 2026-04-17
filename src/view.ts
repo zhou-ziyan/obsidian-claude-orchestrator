@@ -15,6 +15,7 @@ import {
 	SessionNote,
 	QUICK_REPLY_KEYS,
 	buildQuickReplyTmuxArgs,
+	cancelCopyModeArgs,
 } from "./utils";
 import type { ProjectRegistry } from "./utils";
 import { Terminal } from "@xterm/xterm";
@@ -887,28 +888,31 @@ export class TerminalView extends ItemView {
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- child_process from require
 		const { execFile } = require("child_process");
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped from require
-		execFile(
-			tmux,
-			["send-keys", "-l", "-t", target, taskText],
-			(err: Error | null) => {
-				if (err) {
-					new Notice(`Send failed: ${err.message}`);
-					return;
-				}
-				setTimeout(() => {
-					// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped
-					execFile(
-						tmux,
-						["send-keys", "-t", target, "Enter"],
-						(err2: Error | null) => {
-							if (err2) {
-								new Notice(`Enter failed: ${err2.message}`);
-							}
-						},
-					);
-				}, 150);
-			},
-		);
+		execFile(tmux, cancelCopyModeArgs(target), () => {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped from require
+			execFile(
+				tmux,
+				["send-keys", "-l", "-t", target, taskText],
+				(err: Error | null) => {
+					if (err) {
+						new Notice(`Send failed: ${err.message}`);
+						return;
+					}
+					setTimeout(() => {
+						// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped
+						execFile(
+							tmux,
+							["send-keys", "-t", target, "Enter"],
+							(err2: Error | null) => {
+								if (err2) {
+									new Notice(`Enter failed: ${err2.message}`);
+								}
+							},
+						);
+					}, 150);
+				},
+			);
+		});
 	}
 
 	private async sendQuickReply(key: string): Promise<void> {
@@ -920,19 +924,22 @@ export class TerminalView extends ItemView {
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- child_process from require
 		const { execFile } = require("child_process");
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped from require
-		execFile(tmux, textArgs, (err: Error | null) => {
-			if (err) {
-				new Notice(`Quick reply failed: ${err.message}`);
-				return;
-			}
-			setTimeout(() => {
-				// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped
-				execFile(tmux, enterArgs, (err2: Error | null) => {
-					if (err2) {
-						new Notice(`Enter failed: ${err2.message}`);
-					}
-				});
-			}, 150);
+		execFile(tmux, cancelCopyModeArgs(this.sessionName), () => {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped from require
+			execFile(tmux, textArgs, (err: Error | null) => {
+				if (err) {
+					new Notice(`Quick reply failed: ${err.message}`);
+					return;
+				}
+				setTimeout(() => {
+					// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped
+					execFile(tmux, enterArgs, (err2: Error | null) => {
+						if (err2) {
+							new Notice(`Enter failed: ${err2.message}`);
+						}
+					});
+				}, 150);
+			});
 		});
 	}
 
