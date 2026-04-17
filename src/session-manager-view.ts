@@ -322,6 +322,14 @@ export class SessionManagerView extends ItemView {
 			});
 		}
 
+		card.addEventListener("dblclick", () => {
+			if (session.hasPanel) {
+				this.focusSession(session.name);
+			} else {
+				void this.attachSession(session);
+			}
+		});
+
 		// Actions (bottom-left)
 		const actions = card.createDiv({ cls: "co-sm-card-actions" });
 
