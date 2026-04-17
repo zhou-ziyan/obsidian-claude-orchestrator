@@ -397,15 +397,14 @@ export function parseSessionNote(
 		// belong to the previous item.
 		if ((currentSection === "history" || currentSection === "queue") && trimmed.startsWith("- ")) {
 			const content = trimmed.slice(2);
-			// Collect continuation lines (indented, not a new list item or heading)
+			// Collect continuation lines: any line starting with 2+ spaces or tab
+			// belongs to this item, regardless of its trimmed content (blank
+			// lines, headings, etc. inside a multi-line item are preserved).
 			const textLines = [currentSection === "history" ? parseHistoryFirstLine(content) : content];
 			while (i + 1 < lines.length) {
 				const nextRaw = lines[i + 1]!;
-				const nextTrimmed = nextRaw.trim();
-				// Stop at new list item, heading, or non-indented non-empty line
-				if (nextTrimmed === "" || nextTrimmed.startsWith("- ") || nextTrimmed.startsWith("## ")) break;
 				if (!nextRaw.startsWith("  ") && !nextRaw.startsWith("\t")) break;
-				textLines.push(nextTrimmed);
+				textLines.push(nextRaw.trim());
 				i++;
 			}
 			const fullText = textLines.join("\n");

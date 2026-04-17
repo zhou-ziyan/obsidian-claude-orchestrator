@@ -777,6 +777,48 @@ describe("parseSessionNote multiline", () => {
 		assert.equal(parsed.queue[1], "task B");
 	});
 
+	it("parses multiline items with blank lines and headings", () => {
+		const md = [
+			"---",
+			"session: test",
+			"status: idle",
+			"pinnedNote: ",
+			"---",
+			"",
+			"## Queue",
+			"- [2026-04-16 23:12] 按照 Tasks_Convention 执行以下任务。",
+			"  ",
+			"  ## 任务",
+			"  修复 display text bug。",
+			"  ",
+			"  ## 参数",
+			"  - 分支：fix/display-text",
+			"",
+		].join("\n");
+		const note = parseSessionNote(md);
+		assert.equal(note.queue.length, 1);
+		assert.ok(note.queue[0]!.includes("按照 Tasks_Convention"));
+		assert.ok(note.queue[0]!.includes("## 任务"));
+		assert.ok(note.queue[0]!.includes("修复 display text bug"));
+		assert.ok(note.queue[0]!.includes("## 参数"));
+		assert.ok(note.queue[0]!.includes("分支：fix/display-text"));
+	});
+
+	it("round-trips multiline items with blank lines", () => {
+		const original = {
+			session: "test",
+			status: "idle" as const,
+			pinnedNote: null,
+			history: [],
+			queue: ["[2026-04-16 23:12] Line one\n\n## Section\nContent"],
+		};
+		const md = serializeSessionNote(original);
+		const parsed = parseSessionNote(md);
+		assert.equal(parsed.queue.length, 1);
+		assert.ok(parsed.queue[0]!.includes("## Section"));
+		assert.ok(parsed.queue[0]!.includes("Content"));
+	});
+
 	it("parses pinnedNote from frontmatter", () => {
 		const md = [
 			"---",
