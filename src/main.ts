@@ -1,9 +1,12 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, parseSessionNote, serializeSessionNote } from "./utils";
+import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, parseSessionNote, serializeSessionNote, ensureStopHookConfig } from "./utils";
 import type { ProjectRegistry } from "./utils";
 import { StopHookWatcher } from "./stop-hook-watcher";
+import { readFileSync, writeFileSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
 
 export interface OrchestratorSettings {
 	simpleMode: boolean;
@@ -24,6 +27,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		await this.autoDiscoverProjects();
 
 		const pluginDir = this.resolvePluginDir();
+		this.ensureStopHookRegistered(pluginDir);
 
 		this.registerView(
 			VIEW_TYPE_TERMINAL,
@@ -470,6 +474,20 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		}
 		if (Object.keys(this.settings.projects).length > 0) {
 			await this.saveSettings();
+		}
+	}
+
+	private ensureStopHookRegistered(pluginDir: string): void {
+		const scriptPath = join(pluginDir, "scripts", "co-stop-hook.sh");
+		const settingsPath = join(homedir(), ".claude", "settings.json");
+		try {
+			const content = readFileSync(settingsPath, "utf-8");
+			const result = ensureStopHookConfig(content, scriptPath);
+			if (result.updated) {
+				writeFileSync(settingsPath, result.content, "utf-8");
+			}
+		} catch {
+			// Settings file doesn't exist or isn't readable — skip
 		}
 	}
 

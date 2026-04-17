@@ -969,3 +969,56 @@ export function migrateSettings(data: Record<string, unknown>): Record<string, u
 	}
 	return out;
 }
+
+// --- Stop hook auto-registration ---
+
+interface ClaudeHookEntry {
+	type: string;
+	command: string;
+	timeout?: number;
+}
+
+interface ClaudeHookMatcher {
+	matcher: string;
+	hooks: ClaudeHookEntry[];
+}
+
+export function ensureStopHookConfig(
+	settingsJson: string,
+	scriptPath: string,
+): { updated: boolean; content: string } {
+	let settings: Record<string, unknown>;
+	try {
+		settings = JSON.parse(settingsJson) as Record<string, unknown>;
+	} catch {
+		return { updated: false, content: settingsJson };
+	}
+
+	const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
+	const stopMatchers = (hooks.Stop ?? []) as ClaudeHookMatcher[];
+
+	const alreadyRegistered = stopMatchers.some((m) =>
+		m.hooks?.some((h) => h.command?.includes("co-stop-hook.sh")),
+	);
+
+	if (alreadyRegistered) {
+		return { updated: false, content: settingsJson };
+	}
+
+	stopMatchers.push({
+		matcher: "*",
+		hooks: [{
+			type: "command",
+			command: scriptPath,
+			timeout: 10,
+		}],
+	});
+
+	hooks.Stop = stopMatchers;
+	settings.hooks = hooks;
+
+	return {
+		updated: true,
+		content: JSON.stringify(settings, null, 2),
+	};
+}

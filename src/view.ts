@@ -107,6 +107,7 @@ export class TerminalView extends ItemView {
 	private sendBtn: HTMLElement | null = null;
 	private countdownTimer: ReturnType<typeof setInterval> | null = null;
 	private countdownRemaining = 0;
+	private claudeIdle = false;
 	private themeObserver: MutationObserver | null = null;
 
 	private fitAndResize(): void {
@@ -402,8 +403,10 @@ export class TerminalView extends ItemView {
 			this.modeBtn.addEventListener("click", () => {
 				if (!this.sessionNote) return;
 				this.sessionNote.queueMode = nextQueueMode(this.sessionNote.queueMode);
+				this.cancelCountdown();
 				this.updateModeBtn();
 				void this.saveSessionNote();
+				this.checkAutoSend();
 			});
 
 			const quickReplyGroup = headerRight.createDiv({ cls: "co-quick-reply-group" });
@@ -484,6 +487,7 @@ export class TerminalView extends ItemView {
 				input.style.height = "auto";
 				this.renderQueue();
 				void this.saveSessionNote();
+				this.checkAutoSend();
 			};
 			let composing = false;
 			input.addEventListener("compositionstart", () => { composing = true; });
@@ -705,11 +709,13 @@ export class TerminalView extends ItemView {
 		const content = await this.app.vault.read(file);
 		this.sessionNote = parseSessionNote(content, this.sessionName);
 		this.pinnedNote = this.sessionNote.pinnedNote;
+		this.claudeIdle = this.sessionNote.status === "idle";
 		this.sessionNoteLoaded = true;
 		this.renderHistory();
 		this.renderQueue();
 		this.updatePinLabel();
 		this.updateModeBtn();
+		this.checkAutoSend();
 	}
 
 	private async saveSessionNote(): Promise<void> {
@@ -957,6 +963,8 @@ export class TerminalView extends ItemView {
 		if (!this.sessionNote || !this.sessionName) return;
 		if (this.sessionNote.queue.length === 0) return;
 
+		this.claudeIdle = false;
+		this.sessionNote.status = "running";
 		const task = this.sessionNote.queue.shift()!;
 
 		// Move to history as in-progress
@@ -1032,6 +1040,8 @@ export class TerminalView extends ItemView {
 	onStopSignal(stopReason: StopReason | null): void {
 		if (!this.sessionNote) return;
 
+		this.claudeIdle = stopReason !== "asking";
+
 		if (stopReason === "done") {
 			const last = this.sessionNote.history[this.sessionNote.history.length - 1];
 			if (last && !last.completed) {
@@ -1082,6 +1092,24 @@ export class TerminalView extends ItemView {
 		if (this.sendBtn) {
 			this.sendBtn.textContent = "Send next ▶";
 			this.sendBtn.classList.remove("co-countdown-active");
+		}
+	}
+
+	private checkAutoSend(): void {
+		if (!this.claudeIdle) return;
+		if (!this.sessionNote) return;
+		if (this.countdownRemaining > 0) return;
+
+		const action = autoSendAction(
+			this.sessionNote.queueMode,
+			null,
+			this.sessionNote.queue.length,
+		);
+
+		if (action === "send") {
+			this.startCountdown();
+		} else if (action === "notify") {
+			new Notice(`Claude idle — ${this.sessionNote.queue.length} item(s) in queue`);
 		}
 	}
 
