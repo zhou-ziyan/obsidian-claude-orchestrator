@@ -812,9 +812,13 @@
     color: var(--co-text-dim);
     flex-shrink: 0;
 }
-.co-sm-dot-active {
-    color: var(--co-green);
-}
+.co-sm-dot-off { color: #555; }
+.co-sm-dot-idle { color: #888; }
+.co-sm-dot-running { color: var(--co-green); }
+.co-sm-dot-waiting_for_user { color: #e8a838; }
+
+.co-sm-mode-listen { color: var(--co-listen); }
+.co-sm-mode-auto { color: var(--co-auto); }
 
 .co-sm-card-pin {
     font-size: 11px;

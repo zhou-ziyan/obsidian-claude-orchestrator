@@ -21,6 +21,7 @@ import {
 	isSessionIdle,
 	extractSessionPreview,
 	execTmux,
+	queueModeLabel,
 	SessionGroup,
 	SessionInfo,
 } from "./utils";
@@ -175,6 +176,8 @@ export class SessionManagerView extends ItemView {
 			notesSummary: string | null;
 			displayName: string | null;
 			hidden: boolean;
+			status: import("./utils").SessionStatus;
+			queueMode: import("./utils").QueueMode;
 		}>();
 
 		const projects = this.plugin.settings.projects;
@@ -211,6 +214,8 @@ export class SessionManagerView extends ItemView {
 					notesSummary: firstLine,
 					displayName: note.displayName || null,
 					hidden: note.hidden,
+					status: note.status,
+					queueMode: note.queueMode,
 				});
 			} catch {
 				// Note read failed — skip
@@ -403,10 +408,10 @@ export class SessionManagerView extends ItemView {
 		const topRow = card.createDiv({ cls: "co-sm-card-top" });
 
 		const nameRow = topRow.createDiv({ cls: "co-sm-card-name" });
-		nameRow.createSpan({
-			cls: `co-sm-dot ${session.hasPanel ? "co-sm-dot-active" : ""}`,
-			text: "●",
-		});
+		const dotCls = session.hasPanel
+			? `co-sm-dot co-sm-dot-${session.status}`
+			: "co-sm-dot co-sm-dot-off";
+		nameRow.createSpan({ cls: dotCls, text: "●" });
 		const displayLabel = session.displayName || session.name.replace(/-(\d+)$/, " #$1");
 		const nameSpan = nameRow.createSpan({ text: displayLabel });
 		nameSpan.addEventListener("dblclick", (e) => {
@@ -457,6 +462,12 @@ export class SessionManagerView extends ItemView {
 				cls: "co-sm-badge",
 				text: `Queue: ${session.queueCount}`,
 			});
+			if (session.queueMode !== "manual") {
+				infoRow.createSpan({
+					cls: `co-sm-badge co-sm-mode-${session.queueMode}`,
+					text: queueModeLabel(session.queueMode),
+				});
+			}
 			if (session.lastActivity) {
 				infoRow.createSpan({
 					cls: "co-sm-time",

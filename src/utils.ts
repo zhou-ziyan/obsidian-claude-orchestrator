@@ -196,6 +196,8 @@ export interface SessionInfo {
 	notesSummary: string | null;
 	displayName: string | null;
 	hidden: boolean;
+	status: SessionStatus;
+	queueMode: QueueMode;
 }
 
 export interface SessionGroup {
@@ -227,7 +229,7 @@ export function projectFromSessionName(
 export function groupSessionsByProject(
 	allSessions: { name: string; activity: number }[],
 	openSessionNames: Set<string>,
-	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null; notesSummary: string | null; displayName: string | null; hidden: boolean }>,
+	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null; notesSummary: string | null; displayName: string | null; hidden: boolean; status: SessionStatus; queueMode: QueueMode }>,
 	projects: ProjectRegistry,
 ): SessionGroup[] {
 	const projectMap = new Map<string, SessionInfo[]>();
@@ -248,6 +250,8 @@ export function groupSessionsByProject(
 			notesSummary: nd?.notesSummary ?? null,
 			displayName: nd?.displayName ?? null,
 			hidden: nd?.hidden ?? false,
+			status: nd?.status ?? "idle",
+			queueMode: nd?.queueMode ?? "manual",
 		};
 
 		if (project) {
