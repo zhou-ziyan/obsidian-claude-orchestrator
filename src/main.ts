@@ -4,6 +4,7 @@ import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager
 import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, parseSessionNote, serializeSessionNote } from "./utils";
 import type { ProjectRegistry } from "./utils";
 import { StopHookWatcher } from "./stop-hook-watcher";
+import { findTerminalLeafBySession, findTerminalLeafByProject, collectOpenSessionNames } from "./workspace-helpers";
 
 export interface OrchestratorSettings {
 	simpleMode: boolean;
@@ -159,14 +160,8 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 	private async onTerminalFocus(_project: string, sessionName: string) {
 		// Only jump if this session has an explicitly pinned note.
 		// No pin → do nothing.
-		let pinnedPath: string | null = null;
-		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
-			const view = leaf.view;
-			if (view instanceof TerminalView && view.getSessionName() === sessionName) {
-				pinnedPath = view.getPinnedNote();
-				break;
-			}
-		}
+		const match = findTerminalLeafBySession(this.app.workspace, sessionName);
+		const pinnedPath = match?.view.getPinnedNote() ?? null;
 
 		if (!pinnedPath) return;
 
@@ -195,17 +190,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 	}
 
 	private collectSessionNames(): Set<string> {
-		const names = new Set<string>();
-		for (const leaf of this.app.workspace.getLeavesOfType(
-			VIEW_TYPE_TERMINAL,
-		)) {
-			const view = leaf.view;
-			if (view instanceof TerminalView) {
-				const name = view.getSessionName();
-				if (name) names.add(name);
-			}
-		}
-		return names;
+		return collectOpenSessionNames(this.app.workspace);
 	}
 
 	// --- "Open terminal for current project" ---
@@ -217,11 +202,11 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		const project = this.resolveActiveProject();
 
 		// Already have open tabs? Reveal the first one.
-		for (const leaf of workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
-			const view = leaf.view;
-			if (view instanceof TerminalView && view.getProject() === project) {
-				void workspace.revealLeaf(leaf);
-				view.focusTerminal();
+		if (project) {
+			const existing = findTerminalLeafByProject(workspace, project);
+			if (existing) {
+				void workspace.revealLeaf(existing.leaf);
+				existing.view.focusTerminal();
 				return;
 			}
 		}
@@ -244,15 +229,9 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			for (const sessionName of missing) {
 				await this.createTerminalLeaf(project, sessionName);
 			}
-			// Reveal the most recently active session
 			if (mostRecent && missing.includes(mostRecent)) {
-				for (const leaf of workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
-					const view = leaf.view;
-					if (view instanceof TerminalView && view.getSessionName() === mostRecent) {
-						void workspace.revealLeaf(leaf);
-						break;
-					}
-				}
+				const recent = findTerminalLeafBySession(workspace, mostRecent);
+				if (recent) void workspace.revealLeaf(recent.leaf);
 			}
 			return;
 		}
@@ -300,13 +279,8 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		}
 
 		if (mostRecent && missing.includes(mostRecent)) {
-			for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
-				const view = leaf.view;
-				if (view instanceof TerminalView && view.getSessionName() === mostRecent) {
-					void this.app.workspace.revealLeaf(leaf);
-					break;
-				}
-			}
+			const recent = findTerminalLeafBySession(this.app.workspace, mostRecent);
+			if (recent) void this.app.workspace.revealLeaf(recent.leaf);
 		}
 		new Notice(`Restored ${missing.length} terminal(s).`);
 		return missing.length;
@@ -383,13 +357,8 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 	}
 
 	private routeStopSignalToView(tmuxSession: string, reason: "done" | "asking"): void {
-		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
-			const view = leaf.view;
-			if (view instanceof TerminalView && view.getSessionName() === tmuxSession) {
-				view.onStopSignal(reason);
-				return;
-			}
-		}
+		const match = findTerminalLeafBySession(this.app.workspace, tmuxSession);
+		if (match) match.view.onStopSignal(reason);
 	}
 
 	// --- Shared helpers ---
@@ -410,19 +379,14 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 		const { workspace } = this.app;
 
-		// Find existing terminals to decide placement.
 		const terminals = workspace.getLeavesOfType(VIEW_TYPE_TERMINAL);
 
 		let leaf;
-		// Check if any existing terminal belongs to the same project.
-		const sameProject = terminals.find((l) => {
-			const v = l.view;
-			return v instanceof TerminalView && v.getProject() === project;
-		});
+		const sameProject = project ? findTerminalLeafByProject(workspace, project) : null;
 
 		if (sameProject) {
 			// Same project → new tab in the same tab group.
-			workspace.setActiveLeaf(sameProject, { focus: false });
+			workspace.setActiveLeaf(sameProject.leaf, { focus: false });
 			leaf = workspace.getLeaf("tab");
 		} else if (terminals.length > 0) {
 			// Different project → vertical split next to the last terminal group.

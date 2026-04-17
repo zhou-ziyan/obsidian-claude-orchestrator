@@ -148,31 +148,18 @@ function escapeRegExp(s: string): string {
 
 // --- tmux helpers ---
 
-/**
- * Run `tmux ls` and return raw output.
- * Prepends common Homebrew paths so the binary is found inside Electron.
- */
-export function tmuxLs(): Promise<string> {
-	// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- child_process from require
-	const { execFile } = require("child_process");
-	const prependPath = ["/opt/homebrew/bin", "/usr/local/bin"];
-	const existingPath = process.env.PATH || "/usr/bin:/bin";
-	const entries = existingPath.split(":");
-	for (const p of prependPath) {
-		if (!entries.includes(p)) entries.unshift(p);
-	}
-
-	return new Promise((resolve) => {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped from require
-		execFile(
-			"tmux",
-			["ls", "-F", "#{session_name}:#{session_activity}"],
-			{ env: { ...process.env, PATH: entries.join(":") } },
-			(err: Error | null, stdout: string) => {
-				resolve(err ? "" : stdout);
-			},
-		);
+export function execTmux(args: string[]): Promise<string> {
+	const { execFile } = require("child_process") as typeof import("child_process");
+	return new Promise((resolve, reject) => {
+		execFile(findTmuxBinary(), args, (err, stdout) => {
+			if (err) reject(err as Error);
+			else resolve(stdout ?? "");
+		});
 	});
+}
+
+export function tmuxLs(): Promise<string> {
+	return execTmux(["ls", "-F", "#{session_name}:#{session_activity}"]).catch(() => "");
 }
 
 /**

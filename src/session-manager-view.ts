@@ -20,9 +20,11 @@ import {
 	ptyLevel,
 	isSessionIdle,
 	extractSessionPreview,
+	execTmux,
 	SessionGroup,
 	SessionInfo,
 } from "./utils";
+import { findTerminalLeafBySession, collectOpenSessionNames } from "./workspace-helpers";
 import type { ProjectConfig, PtyLevel } from "./utils";
 import type ClaudeOrchestratorPlugin from "./main";
 
@@ -162,14 +164,7 @@ export class SessionManagerView extends ItemView {
 		this.renderPty(ptyUsage.used, ptyUsage.max);
 
 		// 2. Collect open terminal panel session names
-		const openNames = new Set<string>();
-		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
-			const view = leaf.view;
-			if (view instanceof TerminalView) {
-				const name = view.getSessionName();
-				if (name) openNames.add(name);
-			}
-		}
+		const openNames = collectOpenSessionNames(this.app.workspace);
 
 		// 3. Read session notes for managed sessions
 		const noteData = new Map<string, {
@@ -591,25 +586,18 @@ export class SessionManagerView extends ItemView {
 	// --- Actions ---
 
 	private focusSession(sessionName: string) {
-		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
-			const view = leaf.view;
-			if (view instanceof TerminalView && view.getSessionName() === sessionName) {
-				void this.app.workspace.revealLeaf(leaf);
-				view.focusTerminal();
-				return;
-			}
+		const match = findTerminalLeafBySession(this.app.workspace, sessionName);
+		if (match) {
+			void this.app.workspace.revealLeaf(match.leaf);
+			match.view.focusTerminal();
 		}
 	}
 
 	private async sendNextForSession(sessionName: string) {
-		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
-			const view = leaf.view;
-			if (view instanceof TerminalView && view.getSessionName() === sessionName) {
-				await view.sendNext();
-				// Refresh to update queue count
-				setTimeout(() => { void this.refresh(); }, 300);
-				return;
-			}
+		const match = findTerminalLeafBySession(this.app.workspace, sessionName);
+		if (match) {
+			await match.view.sendNext();
+			setTimeout(() => { void this.refresh(); }, 300);
 		}
 	}
 
@@ -779,26 +767,7 @@ export class SessionManagerView extends ItemView {
 	}
 
 	private async killSession(sessionName: string) {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- child_process from require
-		const { execFile } = require("child_process");
-		const prependPath = ["/opt/homebrew/bin", "/usr/local/bin"];
-		const existingPath = process.env.PATH || "/usr/bin:/bin";
-		const entries = existingPath.split(":");
-		for (const p of prependPath) {
-			if (!entries.includes(p)) entries.unshift(p);
-		}
-
-		await new Promise<void>((resolve) => {
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped from require
-			execFile(
-				"tmux",
-				["kill-session", "-t", sessionName],
-				{ env: { ...process.env, PATH: entries.join(":") } },
-				() => resolve(),
-			);
-		});
-
-		// Refresh to reflect the killed session
+		await execTmux(["kill-session", "-t", sessionName]).catch(() => {});
 		setTimeout(() => { void this.refresh(); }, 500);
 	}
 }

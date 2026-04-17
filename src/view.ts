@@ -24,6 +24,7 @@ import {
 	parseQueueItemSegments,
 	autoSendAction,
 	AUTO_SEND_COUNTDOWN_MS,
+	execTmux,
 } from "./utils";
 import type { ProjectRegistry, QueueMode, StopReason } from "./utils";
 import { Terminal } from "@xterm/xterm";
@@ -121,8 +122,7 @@ export class TerminalView extends ItemView {
 	}
 
 	private refreshTmuxClient(): void {
-		const { execFile } = require("child_process") as typeof import("child_process");
-		execFile(findTmuxBinary(), ["refresh-client", "-t", this.sessionName!], () => {});
+		void execTmux(["refresh-client", "-t", this.sessionName!]).catch(() => {});
 	}
 
 	private debouncedFit = debounce(() => this.fitAndResize(), 150, true);
@@ -973,65 +973,33 @@ export class TerminalView extends ItemView {
 		// Strip timestamp prefix before injecting (e.g. "[2026-04-15 23:15] actual text")
 		const taskText = task.replace(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] /, "");
 
-		const tmux = findTmuxBinary();
 		const target = this.sessionName;
 
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- child_process from require
-		const { execFile } = require("child_process");
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped from require
-		execFile(tmux, cancelCopyModeArgs(target), () => {
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped from require
-			execFile(
-				tmux,
-				["send-keys", "-l", "-t", target, taskText],
-				(err: Error | null) => {
-					if (err) {
-						new Notice(`Send failed: ${err.message}`);
-						return;
-					}
-					setTimeout(() => {
-						// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped
-						execFile(
-							tmux,
-							["send-keys", "-t", target, "Enter"],
-							(err2: Error | null) => {
-								if (err2) {
-									new Notice(`Enter failed: ${err2.message}`);
-								}
-							},
-						);
-					}, 150);
-				},
-			);
-		});
+		void (async () => {
+			await execTmux(cancelCopyModeArgs(target)).catch(() => {});
+			try {
+				await execTmux(["send-keys", "-l", "-t", target, taskText]);
+				await new Promise((r) => setTimeout(r, 150));
+				await execTmux(["send-keys", "-t", target, "Enter"]);
+			} catch (err) {
+				new Notice(`Send failed: ${(err as Error).message}`);
+			}
+		})();
 	}
 
 	private async sendQuickReply(key: string): Promise<void> {
 		if (!this.sessionName) return;
 
-		const tmux = findTmuxBinary();
 		const { textArgs, enterArgs } = buildQuickReplyTmuxArgs(this.sessionName, key);
 
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- child_process from require
-		const { execFile } = require("child_process");
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped from require
-		execFile(tmux, cancelCopyModeArgs(this.sessionName), () => {
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped from require
-			execFile(tmux, textArgs, (err: Error | null) => {
-				if (err) {
-					new Notice(`Quick reply failed: ${err.message}`);
-					return;
-				}
-				setTimeout(() => {
-					// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped
-					execFile(tmux, enterArgs, (err2: Error | null) => {
-						if (err2) {
-							new Notice(`Enter failed: ${err2.message}`);
-						}
-					});
-				}, 150);
-			});
-		});
+		await execTmux(cancelCopyModeArgs(this.sessionName)).catch(() => {});
+		try {
+			await execTmux(textArgs);
+			await new Promise((r) => setTimeout(r, 150));
+			await execTmux(enterArgs);
+		} catch (err) {
+			new Notice(`Quick reply failed: ${(err as Error).message}`);
+		}
 	}
 
 	onStopSignal(stopReason: StopReason | null): void {
