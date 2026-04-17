@@ -559,6 +559,7 @@ export function serializeSessionNote(note: SessionNote): string {
 }
 
 const TIMESTAMP_PREFIX_RE = /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] /;
+const PREVIEW_SKIP_RE = /^(按照\s|按\s\S+\s执行|##+ |---\s*$)/;
 
 export function extractSessionPreview(note: SessionNote): string | null {
 	const source = note.queue.length > 0
@@ -568,8 +569,9 @@ export function extractSessionPreview(note: SessionNote): string | null {
 			: null;
 	if (!source) return null;
 	const stripped = source.replace(TIMESTAMP_PREFIX_RE, "");
-	const firstLine = stripped.split("\n")[0]!;
-	return firstLine;
+	const lines = stripped.split("\n");
+	const meaningful = lines.find((l) => l.trim().length > 0 && !PREVIEW_SKIP_RE.test(l.trim()));
+	return meaningful?.trim() ?? lines[0]!;
 }
 
 /**
