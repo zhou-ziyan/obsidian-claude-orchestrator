@@ -597,7 +597,10 @@
 .co-queue-header-right {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
+    flex-wrap: nowrap;
+    overflow: hidden;
+    min-width: 0;
 }
 
 .co-countdown {
@@ -658,7 +661,8 @@
     align-items: center;
     gap: 3px;
     font-size: 11px;
-    max-width: 200px;
+    min-width: 0;
+    flex-shrink: 1;
     overflow: hidden;
 }
 
