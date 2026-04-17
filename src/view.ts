@@ -2,6 +2,7 @@ import { debounce, FileSystemAdapter, ItemView, Notice, setIcon, TFile, TFolder,
 import {
 	findTmuxBinary,
 	normalizeViewState,
+	sessionDirPath,
 	sessionNotePath,
 	createDefaultSessionNote,
 	parseSessionNote,
@@ -608,7 +609,7 @@ export class TerminalView extends ItemView {
 		const notePath = sessionNotePath(folder, this.sessionName);
 		const existing = this.app.vault.getAbstractFileByPath(notePath);
 		if (!existing) {
-			const dirPath = folder ? `${folder}/sessions` : "sessions";
+			const dirPath = sessionDirPath(folder);
 			if (!this.app.vault.getAbstractFileByPath(dirPath)) {
 				await this.app.vault.createFolder(dirPath);
 			}

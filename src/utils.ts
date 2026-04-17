@@ -303,13 +303,16 @@ export interface SessionNote {
  * `vaultFolder` is the project's vault-relative folder path.
  * Empty string means vault root.
  */
+export function sessionDirPath(vaultFolder: string): string {
+	const normalized = normalizeVaultFolder(vaultFolder);
+	return normalized ? `${normalized}/sessions` : "sessions";
+}
+
 export function sessionNotePath(
 	vaultFolder: string,
 	sessionName: string,
 ): string {
-	const normalized = normalizeVaultFolder(vaultFolder);
-	const prefix = normalized ? normalized + "/" : "";
-	return `${prefix}sessions/${sessionName}.md`;
+	return `${sessionDirPath(vaultFolder)}/${sessionName}.md`;
 }
 
 /**

@@ -25,6 +25,7 @@ import {
 	updateProjectConfig,
 	removeProject,
 	normalizeVaultFolder,
+	sessionDirPath,
 } from "../src/utils.ts";
 import type { ProjectRegistry } from "../src/utils.ts";
 
@@ -346,6 +347,32 @@ describe("parseTmuxSessionsForProject", () => {
 
 // --- sessionNotePath ---
 
+// --- sessionDirPath ---
+
+describe("sessionDirPath", () => {
+	it("returns folder/sessions for normal project", () => {
+		assert.equal(sessionDirPath("01_Projects/15_Claude_Orchestrator"), "01_Projects/15_Claude_Orchestrator/sessions");
+	});
+
+	it("returns 'sessions' for empty vaultFolder", () => {
+		assert.equal(sessionDirPath(""), "sessions");
+	});
+
+	it("returns 'sessions' for '/' vaultFolder (root project)", () => {
+		assert.equal(sessionDirPath("/"), "sessions");
+	});
+
+	it("returns 'sessions' for '.' vaultFolder", () => {
+		assert.equal(sessionDirPath("."), "sessions");
+	});
+
+	it("strips trailing slash from normal folder", () => {
+		assert.equal(sessionDirPath("projects/foo/"), "projects/foo/sessions");
+	});
+});
+
+// --- sessionNotePath ---
+
 describe("sessionNotePath", () => {
 	it("returns correct vault-relative path", () => {
 		assert.equal(
@@ -372,6 +399,20 @@ describe("sessionNotePath", () => {
 		assert.equal(
 			sessionNotePath("", "my-session"),
 			"sessions/my-session.md",
+		);
+	});
+
+	it("handles '/' vaultFolder (root project)", () => {
+		assert.equal(
+			sessionNotePath("/", "ClaudeRoot"),
+			"sessions/ClaudeRoot.md",
+		);
+	});
+
+	it("handles '/' vaultFolder with numbered session", () => {
+		assert.equal(
+			sessionNotePath("/", "ClaudeRoot-2"),
+			"sessions/ClaudeRoot-2.md",
 		);
 	});
 });
