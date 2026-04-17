@@ -201,6 +201,31 @@ export class TerminalView extends ItemView {
 		container.style.flexDirection = "column";
 		container.style.overflow = "hidden";
 
+		const isMySessionNote = (filePath: string): boolean => {
+			if (!this.sessionName) return false;
+			const folder = this.vaultFolder();
+			if (folder === null) return false;
+			return filePath === sessionNotePath(folder, this.sessionName);
+		};
+
+		this.registerEvent(
+			this.app.vault.on("modify", (file) => {
+				if (this.savingSessionNote) return;
+				if (!this.sessionNoteLoaded) return;
+				if (isMySessionNote(file.path)) {
+					void this.loadSessionNote();
+				}
+			}),
+		);
+
+		this.registerEvent(
+			this.app.vault.on("create", (file) => {
+				if (isMySessionNote(file.path)) {
+					void this.loadSessionNote();
+				}
+			}),
+		);
+
 		const queueEnabled = !(this.getSettings?.().simpleMode ?? false);
 
 		// --- History panel (top, collapsible) ---
@@ -595,6 +620,7 @@ export class TerminalView extends ItemView {
 	}
 
 	private sessionNoteLoaded = false;
+	private savingSessionNote = false;
 
 	private async loadSessionNote(): Promise<void> {
 		if (!this.project || !this.sessionName) return;
@@ -627,10 +653,12 @@ export class TerminalView extends ItemView {
 		const notePath = sessionNotePath(folder, this.sessionName);
 		const file = this.app.vault.getAbstractFileByPath(notePath);
 		if (file instanceof TFile) {
+			this.savingSessionNote = true;
 			await this.app.vault.modify(
 				file,
 				serializeSessionNote(this.sessionNote),
 			);
+			this.savingSessionNote = false;
 		}
 	}
 
