@@ -49,8 +49,9 @@ import {
 	parsePtyUsed,
 	PTY_WARNING_THRESHOLD,
 	PTY_DEFAULT_MAX,
+	extractSessionPreview,
 } from "../src/utils.ts";
-import type { ProjectRegistry, QueueMode } from "../src/utils.ts";
+import type { ProjectRegistry, QueueMode, SessionNote } from "../src/utils.ts";
 
 const TEST_PROJECTS: ProjectRegistry = {
 	"15_Claude_Orchestrator": { vaultFolder: "01_Projects/15_Claude_Orchestrator" },
@@ -689,8 +690,8 @@ describe("groupSessionsByProject", () => {
 			sessions,
 			new Set(["15_Claude_Orchestrator", "14_Mobile_Claude_Code"]),
 			new Map([
-				["15_Claude_Orchestrator", { pinnedNote: "note.md", queueCount: 2, lastActivity: "2026-04-15 14:30" }],
-				["14_Mobile_Claude_Code", { pinnedNote: null, queueCount: 0, lastActivity: null }],
+				["15_Claude_Orchestrator", { pinnedNote: "note.md", queueCount: 2, lastActivity: "2026-04-15 14:30", preview: "do the thing" }],
+				["14_Mobile_Claude_Code", { pinnedNote: null, queueCount: 0, lastActivity: null, preview: null }],
 			]),
 			TEST_PROJECTS,
 		);
@@ -721,7 +722,7 @@ describe("groupSessionsByProject", () => {
 			sessions,
 			new Set(),
 			new Map([
-				["15_Claude_Orchestrator", { pinnedNote: "a.md", queueCount: 3, lastActivity: "2026-04-15 10:00" }],
+				["15_Claude_Orchestrator", { pinnedNote: "a.md", queueCount: 3, lastActivity: "2026-04-15 10:00", preview: "task preview" }],
 			]),
 			TEST_PROJECTS,
 		);
@@ -1832,5 +1833,105 @@ describe("PTY_WARNING_THRESHOLD", () => {
 describe("PTY_DEFAULT_MAX", () => {
 	it("is 511", () => {
 		assert.equal(PTY_DEFAULT_MAX, 511);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// extractSessionPreview
+// ---------------------------------------------------------------------------
+
+describe("extractSessionPreview", () => {
+	const mkNote = (queue: string[], history: Array<{ text: string; completed: boolean }>): SessionNote => ({
+		session: "test",
+		status: "idle",
+		pinnedNote: null,
+		queueMode: "manual",
+		history,
+		queue,
+	});
+
+	it("returns last queue item when queue is non-empty", () => {
+		const note = mkNote(
+			["[2026-04-17 10:00] first task", "[2026-04-17 11:00] second task"],
+			[{ text: "[2026-04-17 09:00] old history", completed: true }],
+		);
+		assert.equal(extractSessionPreview(note), "second task");
+	});
+
+	it("falls back to last history item when queue is empty", () => {
+		const note = mkNote(
+			[],
+			[
+				{ text: "[2026-04-16 09:00] done", completed: true },
+				{ text: "[2026-04-16 10:00] latest history item", completed: false },
+			],
+		);
+		assert.equal(extractSessionPreview(note), "latest history item");
+	});
+
+	it("returns null when both queue and history are empty", () => {
+		const note = mkNote([], []);
+		assert.equal(extractSessionPreview(note), null);
+	});
+
+	it("strips timestamp prefix from queue item", () => {
+		const note = mkNote(["[2026-04-17 12:00] do the thing"], []);
+		assert.equal(extractSessionPreview(note), "do the thing");
+	});
+
+	it("strips timestamp prefix from history item", () => {
+		const note = mkNote([], [{ text: "[2026-04-17 12:00] did the thing", completed: true }]);
+		assert.equal(extractSessionPreview(note), "did the thing");
+	});
+
+	it("returns first line only for multiline items", () => {
+		const note = mkNote(["[2026-04-17 12:00] first line\nsecond line\nthird line"], []);
+		assert.equal(extractSessionPreview(note), "first line");
+	});
+
+	it("handles items without timestamp prefix", () => {
+		const note = mkNote(["plain text item"], []);
+		assert.equal(extractSessionPreview(note), "plain text item");
+	});
+
+	it("handles history items without timestamp prefix", () => {
+		const note = mkNote([], [{ text: "plain history", completed: false }]);
+		assert.equal(extractSessionPreview(note), "plain history");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// groupSessionsByProject passes preview
+// ---------------------------------------------------------------------------
+
+describe("groupSessionsByProject preview", () => {
+	it("passes preview from noteData into SessionInfo", () => {
+		const sessions = [
+			{ name: "15_Claude_Orchestrator", activity: 100 },
+		];
+		const groups = groupSessionsByProject(
+			sessions,
+			new Set(),
+			new Map([
+				["15_Claude_Orchestrator", { pinnedNote: null, queueCount: 1, lastActivity: null, preview: "task preview" }],
+			]),
+			TEST_PROJECTS,
+		);
+		const orch = groups.find((g) => g.project === "15_Claude_Orchestrator")!;
+		assert.equal(orch.sessions[0].preview, "task preview");
+	});
+
+	it("defaults preview to null when noteData has no entry", () => {
+		const sessions = [
+			{ name: "15_Claude_Orchestrator", activity: 100 },
+		];
+		const groups = groupSessionsByProject(
+			sessions,
+			new Set(),
+			new Map(),
+			TEST_PROJECTS,
+		);
+		const orch = groups.find((g) => g.project === "15_Claude_Orchestrator")!;
+		assert.equal(orch.sessions[0].preview, null);
 	});
 });
