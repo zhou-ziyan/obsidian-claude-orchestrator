@@ -913,6 +913,22 @@
     white-space: nowrap;
 }
 
+/* Session hidden toggle */
+.co-sm-hidden-toggle {
+    padding: 4px 8px;
+    font-size: 11px;
+    color: #888;
+    cursor: pointer;
+    text-align: center;
+}
+.co-sm-hidden-toggle:hover {
+    color: #aaa;
+}
+
+.co-sm-card-hidden {
+    opacity: 0.5;
+}
+
 /* --- Claude Orchestrator: light theme overrides --- */
 
 .theme-light .claude-orchestrator-term-host.is-dimmed::after {

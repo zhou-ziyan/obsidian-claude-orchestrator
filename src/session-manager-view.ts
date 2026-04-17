@@ -8,6 +8,7 @@ import {
 	restorableSessionNames,
 	sessionNotePath,
 	parseSessionNote,
+	serializeSessionNote,
 	projectFromSessionName,
 	formatRelativeTime,
 	validateProjectKey,
@@ -70,6 +71,7 @@ export class SessionManagerView extends ItemView {
 	private collapsedProjects = new Set<string>();
 	private editing = false;
 	private focusedSession: string | null = null;
+	private showHidden = false;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClaudeOrchestratorPlugin) {
 		super(leaf);
@@ -175,6 +177,7 @@ export class SessionManagerView extends ItemView {
 			queueCount: number;
 			lastActivity: string | null;
 			preview: string | null;
+			hidden: boolean;
 		}>();
 
 		const projects = this.plugin.settings.projects;
@@ -207,6 +210,7 @@ export class SessionManagerView extends ItemView {
 					queueCount: note.queue.length,
 					lastActivity,
 					preview: extractSessionPreview(note),
+					hidden: note.hidden,
 				});
 			} catch {
 				// Note read failed — skip
@@ -364,9 +368,22 @@ export class SessionManagerView extends ItemView {
 
 		if (collapsed) return;
 
-		// Session cards
-		for (const session of group.sessions) {
+		// Session cards (filter hidden unless showHidden)
+		const visible = group.sessions.filter((s) => !s.hidden || this.showHidden);
+		const hiddenCount = group.sessions.length - visible.length;
+		for (const session of visible) {
 			this.renderSessionCard(groupEl, session);
+		}
+
+		if (hiddenCount > 0) {
+			const toggle = groupEl.createDiv({ cls: "co-sm-hidden-toggle" });
+			toggle.textContent = this.showHidden
+				? "Hide hidden sessions"
+				: `Show ${hiddenCount} hidden`;
+			toggle.addEventListener("click", () => {
+				this.showHidden = !this.showHidden;
+				this.render();
+			});
 		}
 	}
 
@@ -376,6 +393,7 @@ export class SessionManagerView extends ItemView {
 		let cls = "co-sm-card";
 		if (isFocused) cls += " co-sm-card-focused";
 		if (idle) cls += " co-sm-card-idle";
+		if (session.hidden) cls += " co-sm-card-hidden";
 		const card = parent.createDiv({ cls });
 		if (isFocused) {
 			requestAnimationFrame(() => card.scrollIntoView({ block: "nearest" }));
@@ -449,27 +467,26 @@ export class SessionManagerView extends ItemView {
 		// Actions (bottom-left)
 		const actions = card.createDiv({ cls: "co-sm-card-actions" });
 
-		if (session.hasPanel) {
-			if (session.queueCount > 0) {
-				const sendBtn = actions.createEl("button", {
-					cls: "co-text-btn co-accent",
-					text: "Send ▶",
-				});
-				sendBtn.addEventListener("click", (e) => {
-					e.stopPropagation();
-					void this.sendNextForSession(session.name);
-				});
-			}
-		} else {
-			const attachBtn = actions.createEl("button", {
-				cls: "co-text-btn",
-				text: "Attach",
+		if (session.hasPanel && session.queueCount > 0) {
+			const sendBtn = actions.createEl("button", {
+				cls: "co-text-btn co-accent",
+				text: "Send ▶",
 			});
-			attachBtn.addEventListener("click", (e) => {
+			sendBtn.addEventListener("click", (e) => {
 				e.stopPropagation();
-				void this.attachSession(session);
+				void this.sendNextForSession(session.name);
 			});
 		}
+
+		const hideBtn = actions.createEl("button", {
+			cls: "co-icon-btn",
+			text: session.hidden ? "👁" : "👁‍🗨",
+		});
+		hideBtn.title = session.hidden ? "Unhide session" : "Hide session";
+		hideBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			void this.toggleSessionHidden(session.name, !session.hidden);
+		});
 	}
 
 	private showKillConfirm(card: HTMLElement, sessionName: string) {
@@ -561,6 +578,26 @@ export class SessionManagerView extends ItemView {
 
 		// Refresh to update hasPanel state
 		setTimeout(() => { void this.refresh(); }, 500);
+	}
+
+	private async toggleSessionHidden(sessionName: string, hidden: boolean) {
+		const projects = this.plugin.settings.projects;
+		const project = projectFromSessionName(sessionName, projects);
+		if (!project) return;
+		const config = projects[project];
+		if (!config) return;
+		const notePath = sessionNotePath(config.vaultFolder, sessionName);
+		const file = this.app.vault.getAbstractFileByPath(notePath);
+		if (!(file instanceof TFile)) return;
+		try {
+			const content = await this.app.vault.read(file);
+			const note = parseSessionNote(content, sessionName);
+			note.hidden = hidden;
+			await this.app.vault.modify(file, serializeSessionNote(note));
+		} catch {
+			return;
+		}
+		void this.refresh();
 	}
 
 	private showProjectForm(existingKey?: string) {
