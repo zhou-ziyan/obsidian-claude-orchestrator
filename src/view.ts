@@ -1,4 +1,4 @@
-import { FileSystemAdapter, ItemView, TFile, TFolder, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { debounce, FileSystemAdapter, ItemView, TFile, TFolder, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import {
 	PROJECTS_DIR,
 	normalizeViewState,
@@ -85,6 +85,17 @@ export class TerminalView extends ItemView {
 	private pinnedNote: string | null = null;
 	private pinLabel: HTMLElement | null = null;
 	private termFocusIndicator: HTMLElement | null = null;
+	private themeObserver: MutationObserver | null = null;
+
+	private fitAndResize(): void {
+		if (!this.host || this.host.clientWidth < 50) return;
+		this.fitAddon?.fit();
+		if (this.term && this.ptyProcess) {
+			try { this.ptyProcess.resize(this.term.cols, this.term.rows); } catch { /* ignore */ }
+		}
+	}
+
+	private debouncedFit = debounce(() => this.fitAndResize(), 80, true);
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -216,10 +227,7 @@ export class TerminalView extends ItemView {
 				if (content) {
 					content.style.maxHeight = `${newHeight}px`;
 				}
-				this.fitAddon?.fit();
-				if (this.term && this.ptyProcess) {
-					try { this.ptyProcess.resize(this.term.cols, this.term.rows); } catch { /* ignore */ }
-				}
+				this.debouncedFit();
 			};
 
 			const onMouseUp = () => {
@@ -227,6 +235,7 @@ export class TerminalView extends ItemView {
 				document.removeEventListener("mouseup", onMouseUp);
 				document.body.style.cursor = "";
 				document.body.style.userSelect = "";
+				this.fitAndResize();
 			};
 
 			historyResize.addEventListener("mousedown", (e) => {
@@ -265,13 +274,7 @@ export class TerminalView extends ItemView {
 				if (this.queuePanel) {
 					this.queuePanel.style.height = `${newHeight}px`;
 				}
-				// Refit terminal after resize
-				this.fitAddon?.fit();
-				if (this.term && this.ptyProcess) {
-					try {
-						this.ptyProcess.resize(this.term.cols, this.term.rows);
-					} catch { /* ignore */ }
-				}
+				this.debouncedFit();
 			};
 
 			const onMouseUp = () => {
@@ -279,6 +282,7 @@ export class TerminalView extends ItemView {
 				document.removeEventListener("mouseup", onMouseUp);
 				document.body.style.cursor = "";
 				document.body.style.userSelect = "";
+				this.fitAndResize();
 			};
 
 			resizeHandle.addEventListener("mousedown", (e) => {
@@ -391,20 +395,28 @@ export class TerminalView extends ItemView {
 
 		}
 
+		const isDark = document.body.classList.contains("theme-dark");
 		this.term = new Terminal({
 			cursorBlink: true,
 			fontFamily: "Menlo, Monaco, 'Courier New', monospace",
 			fontSize: 13,
 			lineHeight: 1.2,
-			theme: {
-				background: "#1e1e1e",
-				foreground: "#d4d4d4",
-			},
+			theme: isDark
+				? { background: "#1e1e1e", foreground: "#d4d4d4" }
+				: { background: "#f5f5f5", foreground: "#383a42", cursor: "#383a42" },
 		});
 		this.fitAddon = new FitAddon();
 		this.term.loadAddon(this.fitAddon);
 		this.term.open(host);
-		this.fitAddon.fit();
+		requestAnimationFrame(() => this.fitAddon?.fit());
+
+		this.themeObserver = new MutationObserver(() => {
+			const dark = document.body.classList.contains("theme-dark");
+			this.term!.options.theme = dark
+				? { background: "#1e1e1e", foreground: "#d4d4d4" }
+				: { background: "#f5f5f5", foreground: "#383a42", cursor: "#383a42" };
+		});
+		this.themeObserver.observe(document.body, { attributes: true, attributeFilter: ["class"] });
 
 		// Show green ▲ indicator when terminal has keyboard focus
 		this.term.textarea?.addEventListener("focus", () => {
@@ -431,20 +443,7 @@ export class TerminalView extends ItemView {
 			this.ptyProcess?.write(data);
 		});
 
-		this.resizeObserver = new ResizeObserver(() => {
-			// Skip transient near-zero sizes during layout animations —
-			// fitting at these sizes squashes the terminal to a few cols
-			// and the PTY stays narrow even after layout stabilizes.
-			if (!this.host || this.host.clientWidth < 50) return;
-			this.fitAddon?.fit();
-			if (this.term && this.ptyProcess) {
-				try {
-					this.ptyProcess.resize(this.term.cols, this.term.rows);
-				} catch {
-					/* ignore resize errors */
-				}
-			}
-		});
+		this.resizeObserver = new ResizeObserver(() => this.debouncedFit());
 		this.resizeObserver.observe(host);
 
 		this.xtermReady = true;
@@ -882,6 +881,8 @@ export class TerminalView extends ItemView {
 				view.host.classList.remove("is-dimmed");
 			}
 		}
+		this.themeObserver?.disconnect();
+		this.themeObserver = null;
 		this.host?.removeEventListener("focusin", this.onHostFocusIn);
 		this.host?.removeEventListener("focusout", this.onHostFocusOut);
 		this.host = null;
