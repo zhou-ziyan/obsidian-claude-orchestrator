@@ -495,6 +495,15 @@ export function findTmuxBinary(exists?: (p: string) => boolean): string {
 	return "tmux";
 }
 
+/**
+ * After editing a queue item, determine whether to auto-send.
+ * Returns true when the queue has exactly 1 item — the one just edited —
+ * so save-and-send can happen in one Enter press.
+ */
+export function shouldAutoSendAfterEdit(queueLength: number): boolean {
+	return queueLength === 1;
+}
+
 export function migrateSettings(data: Record<string, unknown>): Record<string, unknown> {
 	const out = { ...data };
 	if ("queuePanel" in out && !("simpleMode" in out)) {

@@ -17,6 +17,7 @@ import {
 	migrateSettings,
 	findTmuxBinary,
 	TMUX_SEARCH_PATHS,
+	shouldAutoSendAfterEdit,
 } from "../src/utils.ts";
 import type { ProjectRegistry } from "../src/utils.ts";
 
@@ -839,5 +840,25 @@ describe("findTmuxBinary", () => {
 	it("returns an absolute path or bare 'tmux' with real fs", () => {
 		const result = findTmuxBinary();
 		assert.ok(result === "tmux" || result.startsWith("/"));
+	});
+});
+
+// --- shouldAutoSendAfterEdit ---
+
+describe("shouldAutoSendAfterEdit", () => {
+	it("returns true when queue has exactly 1 item", () => {
+		assert.equal(shouldAutoSendAfterEdit(1), true);
+	});
+
+	it("returns false when queue is empty", () => {
+		assert.equal(shouldAutoSendAfterEdit(0), false);
+	});
+
+	it("returns false when queue has 2 items", () => {
+		assert.equal(shouldAutoSendAfterEdit(2), false);
+	});
+
+	it("returns false when queue has many items", () => {
+		assert.equal(shouldAutoSendAfterEdit(10), false);
 	});
 });
