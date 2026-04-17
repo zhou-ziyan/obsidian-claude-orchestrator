@@ -22,8 +22,10 @@ import {
 	getPtyStatus,
 	ptyStatusMessage,
 	parseQueueItemSegments,
+	autoSendAction,
+	AUTO_SEND_COUNTDOWN_MS,
 } from "./utils";
-import type { ProjectRegistry, QueueMode } from "./utils";
+import type { ProjectRegistry, QueueMode, StopReason } from "./utils";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { IPty } from "node-pty";
@@ -102,6 +104,8 @@ export class TerminalView extends ItemView {
 	private termFocusIndicator: HTMLElement | null = null;
 	private modeBtn: HTMLElement | null = null;
 	private sendBtn: HTMLElement | null = null;
+	private countdownTimer: ReturnType<typeof setTimeout> | null = null;
+	private countdownEl: HTMLElement | null = null;
 	private themeObserver: MutationObserver | null = null;
 
 	private fitAndResize(): void {
@@ -1014,6 +1018,60 @@ export class TerminalView extends ItemView {
 		});
 	}
 
+	onStopSignal(stopReason: StopReason | null): void {
+		if (!this.sessionNote) return;
+
+		if (stopReason === "done") {
+			const last = this.sessionNote.history[this.sessionNote.history.length - 1];
+			if (last && !last.completed) {
+				last.completed = true;
+				this.renderHistory();
+				void this.saveSessionNote();
+			}
+		}
+
+		const action = autoSendAction(
+			this.sessionNote.queueMode,
+			stopReason,
+			this.sessionNote.queue.length,
+		);
+
+		if (action === "send") {
+			this.startCountdown();
+		} else if (action === "notify") {
+			new Notice(`Claude finished — ${this.sessionNote.queue.length} item(s) in queue`);
+		}
+	}
+
+	private startCountdown(): void {
+		this.cancelCountdown();
+		if (!this.queuePanel) return;
+
+		this.countdownEl = this.queuePanel.createDiv({ cls: "co-countdown" });
+		this.countdownEl.textContent = "Auto-sending in 3s…";
+		const cancelBtn = this.countdownEl.createEl("button", {
+			cls: "co-text-btn co-countdown-cancel",
+			text: "Cancel",
+		});
+		cancelBtn.addEventListener("click", () => this.cancelCountdown());
+
+		this.countdownTimer = setTimeout(() => {
+			this.cancelCountdown();
+			void this.sendNext();
+		}, AUTO_SEND_COUNTDOWN_MS);
+	}
+
+	private cancelCountdown(): void {
+		if (this.countdownTimer) {
+			clearTimeout(this.countdownTimer);
+			this.countdownTimer = null;
+		}
+		if (this.countdownEl) {
+			this.countdownEl.remove();
+			this.countdownEl = null;
+		}
+	}
+
 	private onHostFocusIn = () => {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
 			const view = leaf.view;
@@ -1078,6 +1136,7 @@ export class TerminalView extends ItemView {
 		this.queuePanel = null;
 		this.queueList = null;
 		this.sendBtn = null;
+		this.cancelCountdown();
 		this.sessionNote = null;
 		this.pinLabel = null;
 		this.termFocusIndicator = null;

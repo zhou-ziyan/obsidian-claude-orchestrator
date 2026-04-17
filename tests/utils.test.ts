@@ -54,6 +54,8 @@ import {
 	parseQueueItemSegments,
 	classifyStopReason,
 	extractLastAssistantText,
+	autoSendAction,
+	AUTO_SEND_COUNTDOWN_MS,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote } from "../src/utils.ts";
 
@@ -2277,5 +2279,49 @@ describe("parseStopSignal with stop_reason", () => {
 		const signal = parseStopSignal(json);
 		assert.ok(signal);
 		assert.equal(signal.stopReason, null);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// autoSendAction
+// ---------------------------------------------------------------------------
+
+describe("autoSendAction", () => {
+	it("returns 'none' for manual mode regardless of other params", () => {
+		assert.equal(autoSendAction("manual", "done", 5), "none");
+		assert.equal(autoSendAction("manual", "asking", 5), "none");
+		assert.equal(autoSendAction("manual", null, 5), "none");
+	});
+
+	it("returns 'none' when stopReason is 'asking'", () => {
+		assert.equal(autoSendAction("auto", "asking", 5), "none");
+		assert.equal(autoSendAction("listen", "asking", 5), "none");
+	});
+
+	it("returns 'none' when queue is empty", () => {
+		assert.equal(autoSendAction("auto", "done", 0), "none");
+		assert.equal(autoSendAction("listen", "done", 0), "none");
+	});
+
+	it("returns 'send' for auto mode + done + queue non-empty", () => {
+		assert.equal(autoSendAction("auto", "done", 3), "send");
+	});
+
+	it("returns 'send' for auto mode + null reason + queue non-empty", () => {
+		assert.equal(autoSendAction("auto", null, 1), "send");
+	});
+
+	it("returns 'notify' for listen mode + done + queue non-empty", () => {
+		assert.equal(autoSendAction("listen", "done", 2), "notify");
+	});
+
+	it("returns 'notify' for listen mode + null reason + queue non-empty", () => {
+		assert.equal(autoSendAction("listen", null, 1), "notify");
+	});
+});
+
+describe("AUTO_SEND_COUNTDOWN_MS", () => {
+	it("is 3000ms", () => {
+		assert.equal(AUTO_SEND_COUNTDOWN_MS, 3000);
 	});
 });

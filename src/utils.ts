@@ -318,6 +318,23 @@ export function queueModeTooltip(mode: QueueMode): string {
 	}
 }
 
+export type AutoSendAction = "send" | "notify" | "none";
+
+export function autoSendAction(
+	mode: QueueMode,
+	stopReason: StopReason | null,
+	queueLength: number,
+): AutoSendAction {
+	if (mode === "manual") return "none";
+	if (stopReason === "asking") return "none";
+	if (queueLength === 0) return "none";
+	if (mode === "auto") return "send";
+	if (mode === "listen") return "notify";
+	return "none";
+}
+
+export const AUTO_SEND_COUNTDOWN_MS = 3000;
+
 function isQueueMode(s: string): s is QueueMode {
 	return s === "manual" || s === "listen" || s === "auto";
 }
