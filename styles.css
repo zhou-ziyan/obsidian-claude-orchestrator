@@ -800,6 +800,12 @@
     color: var(--co-text);
     margin-bottom: 2px;
 }
+.co-sm-rename-input {
+    font-size: 12px;
+    padding: 1px 4px;
+    min-width: 80px;
+    max-width: 180px;
+}
 
 .co-sm-dot {
     font-size: 8px;

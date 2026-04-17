@@ -584,6 +584,7 @@ describe("serializeSessionNote", () => {
 			status: "waiting_for_user" as const,
 			pinnedNote: "01_Projects/15_Claude_Orchestrator/15_Claude_Orchestrator.md",
 			queueMode: "manual" as const,
+			displayName: "",
 			notes: "",
 			hidden: false,
 			history: [
@@ -603,6 +604,7 @@ describe("serializeSessionNote", () => {
 			status: "idle" as const,
 			pinnedNote: null,
 			queueMode: "manual" as const,
+			displayName: "",
 			notes: "",
 			hidden: false,
 			history: [],
@@ -2424,5 +2426,32 @@ describe("createDefaultSessionNote hidden", () => {
 		assert.ok(!content.includes("hidden"));
 		const parsed = parseSessionNote(content);
 		assert.equal(parsed.hidden, false);
+	});
+});
+
+// --- SessionNote displayName ---
+
+describe("parseSessionNote displayName", () => {
+	it("defaults to empty string when no displayName", () => {
+		const note = parseSessionNote("---\nsession: test\nstatus: idle\n---\n\n## Notes\n\n## History\n\n## Queue\n");
+		assert.equal(note.displayName, "");
+	});
+
+	it("parses displayName from frontmatter", () => {
+		const note = parseSessionNote("---\nsession: test\nstatus: idle\ndisplayName: My Custom Name\n---\n\n## Notes\n\n## History\n\n## Queue\n");
+		assert.equal(note.displayName, "My Custom Name");
+	});
+
+	it("round-trips displayName through serialize", () => {
+		const note = parseSessionNote("---\nsession: test\nstatus: idle\ndisplayName: PTY Manager\n---\n\n## Notes\n\n## History\n\n## Queue\n");
+		const serialized = serializeSessionNote(note);
+		const reparsed = parseSessionNote(serialized);
+		assert.equal(reparsed.displayName, "PTY Manager");
+	});
+
+	it("omits displayName from frontmatter when empty", () => {
+		const note = parseSessionNote("---\nsession: test\nstatus: idle\n---\n\n## Notes\n\n## History\n\n## Queue\n");
+		const serialized = serializeSessionNote(note);
+		assert.ok(!serialized.includes("displayName"));
 	});
 });

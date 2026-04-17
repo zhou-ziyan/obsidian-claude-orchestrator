@@ -178,6 +178,7 @@ export class SessionManagerView extends ItemView {
 			lastActivity: string | null;
 			preview: string | null;
 			notesSummary: string | null;
+			displayName: string | null;
 			hidden: boolean;
 		}>();
 
@@ -213,6 +214,7 @@ export class SessionManagerView extends ItemView {
 					lastActivity,
 					preview: extractSessionPreview(note),
 					notesSummary: firstLine,
+					displayName: note.displayName || null,
 					hidden: note.hidden,
 				});
 			} catch {
@@ -410,7 +412,12 @@ export class SessionManagerView extends ItemView {
 			cls: `co-sm-dot ${session.hasPanel ? "co-sm-dot-active" : ""}`,
 			text: "●",
 		});
-		nameRow.createSpan({ text: session.name.replace(/-(\d+)$/, " #$1") });
+		const displayLabel = session.displayName || session.name.replace(/-(\d+)$/, " #$1");
+		const nameSpan = nameRow.createSpan({ text: displayLabel });
+		nameSpan.addEventListener("dblclick", (e) => {
+			e.stopPropagation();
+			this.showInlineRename(nameSpan, session);
+		});
 
 		const hideBtn = topRow.createEl("button", {
 			cls: "co-icon-btn",
@@ -496,6 +503,45 @@ export class SessionManagerView extends ItemView {
 			});
 		}
 
+	}
+
+	private showInlineRename(nameSpan: HTMLElement, session: SessionInfo) {
+		const current = session.displayName || "";
+		const input = document.createElement("input");
+		input.type = "text";
+		input.value = current;
+		input.placeholder = session.name.replace(/-(\d+)$/, " #$1");
+		input.classList.add("co-sm-form-input", "co-sm-rename-input");
+		nameSpan.replaceWith(input);
+		input.focus();
+		input.select();
+
+		const save = () => {
+			const newName = input.value.trim();
+			const project = projectFromSessionName(session.name, this.plugin.settings.projects);
+			if (project) {
+				const config = this.plugin.settings.projects[project];
+				if (config) {
+					const notePath = sessionNotePath(config.vaultFolder, session.name);
+					const file = this.app.vault.getAbstractFileByPath(notePath);
+					if (file instanceof TFile) {
+						void (async () => {
+							const content = await this.app.vault.read(file);
+							const note = parseSessionNote(content, session.name);
+							note.displayName = newName;
+							await this.app.vault.modify(file, serializeSessionNote(note));
+							void this.refresh();
+						})();
+					}
+				}
+			}
+		};
+
+		input.addEventListener("keydown", (e) => {
+			if (e.key === "Enter") { e.preventDefault(); save(); }
+			if (e.key === "Escape") { e.preventDefault(); void this.refresh(); }
+		});
+		input.addEventListener("blur", () => save());
 	}
 
 	private showKillConfirm(card: HTMLElement, sessionName: string) {
