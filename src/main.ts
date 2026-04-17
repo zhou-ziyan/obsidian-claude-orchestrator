@@ -1,7 +1,7 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs } from "./utils";
+import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage } from "./utils";
 import type { ProjectRegistry } from "./utils";
 import { StopHookWatcher } from "./stop-hook-watcher";
 
@@ -371,6 +371,16 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		project: string | null,
 		sessionName: string | null,
 	): Promise<void> {
+		const usage = await fetchPtyUsage();
+		const ptyStatus = getPtyStatus(usage);
+		if (ptyStatus === "exhausted") {
+			new Notice(ptyStatusMessage(usage, ptyStatus));
+			return;
+		}
+		if (ptyStatus === "warning") {
+			new Notice(ptyStatusMessage(usage, ptyStatus));
+		}
+
 		const { workspace } = this.app;
 
 		// Find existing terminals to decide placement.

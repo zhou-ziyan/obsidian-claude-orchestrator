@@ -18,6 +18,9 @@ import {
 	cancelCopyModeArgs,
 	nextQueueMode,
 	queueModeLabel,
+	fetchPtyUsage,
+	getPtyStatus,
+	ptyStatusMessage,
 } from "./utils";
 import type { ProjectRegistry, QueueMode } from "./utils";
 import { Terminal } from "@xterm/xterm";
@@ -158,7 +161,7 @@ export class TerminalView extends ItemView {
 		}
 		await super.setState(state, result);
 		if (this.xtermReady && !this.ptyProcess) {
-			this.spawnShell();
+			void this.spawnShell();
 		}
 	}
 
@@ -191,7 +194,7 @@ export class TerminalView extends ItemView {
 		(this.leaf as any).updateHeader?.();
 		/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 		if (this.xtermReady) {
-			this.spawnShell();
+			void this.spawnShell();
 			void this.loadSessionNote();
 		}
 	}
@@ -503,7 +506,7 @@ export class TerminalView extends ItemView {
 		this.term.onData((data) => {
 			if (this.awaitingRestart) {
 				this.awaitingRestart = false;
-				this.spawnShell();
+				void this.spawnShell();
 				return;
 			}
 			this.ptyProcess?.write(data);
@@ -518,7 +521,7 @@ export class TerminalView extends ItemView {
 		// onOpen). For fresh-creation via activateView, setProject will be
 		// called immediately after and drives the spawn.
 		if (this.stateSeenPreOpen) {
-			this.spawnShell();
+			void this.spawnShell();
 			void this.loadSessionNote();
 		}
 	}
@@ -539,7 +542,7 @@ export class TerminalView extends ItemView {
 		return os.homedir();
 	}
 
-	private spawnShell() {
+	private async spawnShell() {
 		if (!this.term || !this.ptyModule) return;
 
 		// Kill any existing pty; the generation guard below ensures its
@@ -595,7 +598,11 @@ export class TerminalView extends ItemView {
 		} catch (err) {
 			this.term.writeln("\x1b[31mFailed to spawn:\x1b[0m");
 			this.term.writeln(String(err));
-			if (this.sessionName) {
+			const usage = await fetchPtyUsage();
+			const ptyStatus = getPtyStatus(usage);
+			if (ptyStatus === "exhausted" || ptyStatus === "warning") {
+				this.term.writeln(`\x1b[33m${ptyStatusMessage(usage, ptyStatus)}\x1b[0m`);
+			} else if (this.sessionName) {
 				this.term.writeln(`Tried: tmux new-session -A -s ${this.sessionName}`);
 				this.term.writeln("Is tmux installed and in PATH?");
 			}

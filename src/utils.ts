@@ -654,7 +654,7 @@ export function computeDisplayText(project: string | null, sessionName: string |
 	return project;
 }
 
-// --- PTY usage ---
+// --- PTY usage (dashboard) ---
 
 export const PTY_THRESHOLD_WARNING = 0.7;
 export const PTY_THRESHOLD_CRITICAL = 0.9;
@@ -699,6 +699,62 @@ export function getPtyUsage(): Promise<{ used: number; max: number }> {
 				}
 			},
 		);
+	});
+}
+
+// --- PTY budget (pre-spawn check) ---
+
+export const PTY_WARNING_THRESHOLD = 0.9;
+export const PTY_DEFAULT_MAX = 511;
+
+export interface PtyUsage {
+	used: number;
+	max: number;
+}
+
+export type PtyStatus = "ok" | "warning" | "exhausted";
+
+export function getPtyStatus(usage: PtyUsage): PtyStatus {
+	if (usage.used >= usage.max) return "exhausted";
+	if (usage.used > usage.max * PTY_WARNING_THRESHOLD) return "warning";
+	return "ok";
+}
+
+export function ptyStatusMessage(usage: PtyUsage, status: PtyStatus): string {
+	switch (status) {
+		case "exhausted":
+			return `PTY exhausted (${usage.used}/${usage.max}). Close unused terminals before creating new ones.`;
+		case "warning":
+			return `PTY usage high (${usage.used}/${usage.max}). Consider closing unused terminals.`;
+		case "ok":
+			return "";
+	}
+}
+
+export function parsePtyUsed(wcOutput: string): number {
+	const n = parseInt(wcOutput.trim(), 10);
+	return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+export function fetchPtyUsage(): Promise<PtyUsage> {
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- child_process from require
+	const cp = require("child_process");
+	const run = (cmd: string): Promise<string> =>
+		new Promise((resolve) => {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+			cp.exec(cmd, (_err: Error | null, stdout: string) => {
+				resolve(stdout ?? "");
+			});
+		});
+	return Promise.all([
+		run("sysctl -n kern.tty.ptmx_max"),
+		run("ls /dev/ttys* 2>/dev/null | wc -l"),
+	]).then(([maxOut, usedOut]) => {
+		const max = parsePtyMax(maxOut);
+		return {
+			used: parsePtyUsed(usedOut),
+			max: max > 0 ? max : PTY_DEFAULT_MAX,
+		};
 	});
 }
 
