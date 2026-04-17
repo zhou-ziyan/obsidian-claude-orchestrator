@@ -218,6 +218,24 @@ export class TerminalView extends ItemView {
 		container.style.flexDirection = "column";
 		container.style.overflow = "hidden";
 
+		this.registerSessionNoteEvents();
+
+		const queueEnabled = !(this.getSettings?.().simpleMode ?? false);
+
+		if (queueEnabled) {
+			this.createHistoryPanel(container);
+		}
+
+		this.createTerminalHost(container);
+
+		if (queueEnabled) {
+			this.createQueuePanel(container);
+		}
+
+		this.initializeTerminal();
+	}
+
+	private registerSessionNoteEvents(): void {
 		const isMySessionNote = (filePath: string): boolean => {
 			if (!this.sessionName) return false;
 			const folder = this.vaultFolder();
@@ -242,69 +260,64 @@ export class TerminalView extends ItemView {
 				}
 			}),
 		);
+	}
 
-		const queueEnabled = !(this.getSettings?.().simpleMode ?? false);
-
-		// --- History panel (top, collapsible) ---
-		if (queueEnabled) {
-			this.historyPanel = container.createDiv({ cls: "co-history-panel" });
-			const header = this.historyPanel.createDiv({ cls: "co-panel-header" });
-			const arrow = header.createSpan({ cls: "co-panel-arrow", text: "▾" });
-			header.createSpan({ text: " History" });
-			header.addEventListener("click", () => {
-				const content = this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null;
-				if (content) {
-					const collapsed = content.style.display === "none";
-					content.style.display = collapsed ? "block" : "none";
-					arrow.textContent = collapsed ? "▾" : "▸";
-					if (collapsed) {
-						// Scroll to bottom to show most recent
-						requestAnimationFrame(() => {
-							content.scrollTop = content.scrollHeight;
-						});
-					}
+	private createHistoryPanel(container: HTMLElement): void {
+		this.historyPanel = container.createDiv({ cls: "co-history-panel" });
+		const header = this.historyPanel.createDiv({ cls: "co-panel-header" });
+		const arrow = header.createSpan({ cls: "co-panel-arrow", text: "▾" });
+		header.createSpan({ text: " History" });
+		header.addEventListener("click", () => {
+			const content = this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null;
+			if (content) {
+				const collapsed = content.style.display === "none";
+				content.style.display = collapsed ? "block" : "none";
+				arrow.textContent = collapsed ? "▾" : "▸";
+				if (collapsed) {
+					requestAnimationFrame(() => {
+						content.scrollTop = content.scrollHeight;
+					});
 				}
-			});
-			this.historyPanel.createDiv({ cls: "co-history-content" });
-		}
+			}
+		});
+		this.historyPanel.createDiv({ cls: "co-history-content" });
 
-		// --- Resize handle between history and terminal ---
-		if (queueEnabled) {
-			const historyResize = container.createDiv({ cls: "co-resize-handle" });
-			let startY = 0;
-			let startHeight = 0;
+		// Resize handle between history and terminal
+		const historyResize = container.createDiv({ cls: "co-resize-handle" });
+		let startY = 0;
+		let startHeight = 0;
 
-			const onMouseMove = (e: MouseEvent) => {
-				const delta = e.clientY - startY;
-				const newHeight = Math.max(HISTORY_ITEM_MIN_HEIGHT, Math.min(300, startHeight + delta));
-				const content = this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null;
-				if (content) {
-					content.style.maxHeight = `${newHeight}px`;
-				}
-				this.debouncedFit();
-			};
+		const onMouseMove = (e: MouseEvent) => {
+			const delta = e.clientY - startY;
+			const newHeight = Math.max(HISTORY_ITEM_MIN_HEIGHT, Math.min(300, startHeight + delta));
+			const content = this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null;
+			if (content) {
+				content.style.maxHeight = `${newHeight}px`;
+			}
+			this.debouncedFit();
+		};
 
-			const onMouseUp = () => {
-				document.removeEventListener("mousemove", onMouseMove);
-				document.removeEventListener("mouseup", onMouseUp);
-				document.body.style.cursor = "";
-				document.body.style.userSelect = "";
-				this.fitAndResize();
-			};
+		const onMouseUp = () => {
+			document.removeEventListener("mousemove", onMouseMove);
+			document.removeEventListener("mouseup", onMouseUp);
+			document.body.style.cursor = "";
+			document.body.style.userSelect = "";
+			this.fitAndResize();
+		};
 
-			historyResize.addEventListener("mousedown", (e) => {
-				e.preventDefault();
-				startY = e.clientY;
-				const content = this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null;
-				startHeight = content?.offsetHeight ?? 120;
-				document.body.style.cursor = "row-resize";
-				document.body.style.userSelect = "none";
-				document.addEventListener("mousemove", onMouseMove);
-				document.addEventListener("mouseup", onMouseUp);
-			});
-		}
+		historyResize.addEventListener("mousedown", (e) => {
+			e.preventDefault();
+			startY = e.clientY;
+			const content = this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null;
+			startHeight = content?.offsetHeight ?? 120;
+			document.body.style.cursor = "row-resize";
+			document.body.style.userSelect = "none";
+			document.addEventListener("mousemove", onMouseMove);
+			document.addEventListener("mouseup", onMouseUp);
+		});
+	}
 
-		// --- Terminal host (middle, flex: 1) ---
+	private createTerminalHost(container: HTMLElement): void {
 		const host = container.createDiv({ cls: "claude-orchestrator-term-host" });
 		host.style.width = "100%";
 		host.style.flex = "1";
@@ -315,193 +328,191 @@ export class TerminalView extends ItemView {
 
 		host.addEventListener("focusin", this.onHostFocusIn);
 		host.addEventListener("focusout", this.onHostFocusOut);
+	}
 
-		// --- Resize handle between terminal and queue ---
-		if (queueEnabled) {
-			const resizeHandle = container.createDiv({ cls: "co-resize-handle" });
-			let startY = 0;
-			let startHeight = 0;
+	private createQueuePanel(container: HTMLElement): void {
+		// Resize handle between terminal and queue
+		const resizeHandle = container.createDiv({ cls: "co-resize-handle" });
+		let startY = 0;
+		let startHeight = 0;
 
-			const onMouseMove = (e: MouseEvent) => {
-				const delta = startY - e.clientY;
-				const newHeight = Math.max(80, Math.min(400, startHeight + delta));
-				if (this.queuePanel) {
-					this.queuePanel.style.height = `${newHeight}px`;
+		const onMouseMove = (e: MouseEvent) => {
+			const delta = startY - e.clientY;
+			const newHeight = Math.max(80, Math.min(400, startHeight + delta));
+			if (this.queuePanel) {
+				this.queuePanel.style.height = `${newHeight}px`;
+			}
+			this.debouncedFit();
+		};
+
+		const onMouseUp = () => {
+			document.removeEventListener("mousemove", onMouseMove);
+			document.removeEventListener("mouseup", onMouseUp);
+			document.body.style.cursor = "";
+			document.body.style.userSelect = "";
+			this.fitAndResize();
+		};
+
+		resizeHandle.addEventListener("mousedown", (e) => {
+			e.preventDefault();
+			startY = e.clientY;
+			startHeight = this.queuePanel?.offsetHeight ?? 150;
+			document.body.style.cursor = "row-resize";
+			document.body.style.userSelect = "none";
+			document.addEventListener("mousemove", onMouseMove);
+			document.addEventListener("mouseup", onMouseUp);
+		});
+
+		// Queue panel
+		this.queuePanel = container.createDiv({ cls: "co-queue-panel" });
+		const queueHeader = this.queuePanel.createDiv({ cls: "co-panel-header co-queue-header" });
+
+		const queueTitle = queueHeader.createSpan();
+		queueTitle.textContent = "Queue";
+
+		const headerRight = queueHeader.createDiv({ cls: "co-queue-header-right" });
+
+		this.termFocusIndicator = headerRight.createSpan({ cls: "co-term-indicator", text: "▴" });
+		this.termFocusIndicator.style.display = "none";
+
+		// Pin note
+		const pinGroup = headerRight.createDiv({ cls: "co-pin-group" });
+		const pinBtn = pinGroup.createEl("button", {
+			cls: "co-icon-btn",
+			text: "📌",
+		});
+		this.pinLabel = pinGroup.createSpan({ cls: "co-pin-label" });
+		this.pinLabel.textContent = "No note pinned";
+
+		pinBtn.addEventListener("click", () => {
+			let filePath: string | null = null;
+			for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+				if (leaf.getRoot() === this.app.workspace.rootSplit) {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access -- Obsidian MarkdownView.file not in public typings
+					const file = (leaf.view as any)?.file as { path: string } | undefined;
+					filePath = file?.path ?? null;
+					break;
 				}
-				this.debouncedFit();
-			};
+			}
+			if (filePath) {
+				this.pinnedNote = filePath;
+				this.updatePinLabel();
+				void this.saveSessionNote();
+			}
+		});
+		this.pinLabel.addEventListener("click", () => {
+			if (this.pinnedNote) {
+				this.pinnedNote = null;
+				this.updatePinLabel();
+				void this.saveSessionNote();
+			}
+		});
 
-			const onMouseUp = () => {
-				document.removeEventListener("mousemove", onMouseMove);
-				document.removeEventListener("mouseup", onMouseUp);
-				document.body.style.cursor = "";
-				document.body.style.userSelect = "";
-				this.fitAndResize();
-			};
+		this.modeBtn = headerRight.createEl("button", {
+			cls: "co-text-btn co-mode-btn",
+			text: queueModeLabel(this.sessionNote?.queueMode ?? "manual"),
+		});
+		this.modeBtn.title = "Click to cycle queue mode";
+		this.modeBtn.addEventListener("click", () => {
+			if (!this.sessionNote) return;
+			this.sessionNote.queueMode = nextQueueMode(this.sessionNote.queueMode);
+			this.cancelCountdown();
+			this.updateModeBtn();
+			void this.saveSessionNote();
+			this.checkAutoSend();
+		});
 
-			resizeHandle.addEventListener("mousedown", (e) => {
-				e.preventDefault();
-				startY = e.clientY;
-				startHeight = this.queuePanel?.offsetHeight ?? 150;
-				document.body.style.cursor = "row-resize";
-				document.body.style.userSelect = "none";
-				document.addEventListener("mousemove", onMouseMove);
-				document.addEventListener("mouseup", onMouseUp);
+		const quickReplyGroup = headerRight.createDiv({ cls: "co-quick-reply-group" });
+		const keys = this.getSettings?.().quickReplyKeys ?? [...QUICK_REPLY_KEYS];
+		for (const key of keys) {
+			const btn = quickReplyGroup.createEl("button", {
+				cls: "co-text-btn co-quick-reply-btn",
+				text: key,
 			});
+			btn.addEventListener("click", () => { void this.sendQuickReply(key); });
 		}
 
-		// --- Queue panel (bottom) ---
-		if (queueEnabled) {
-			this.queuePanel = container.createDiv({ cls: "co-queue-panel" });
-			const queueHeader = this.queuePanel.createDiv({ cls: "co-panel-header co-queue-header" });
-
-			const queueTitle = queueHeader.createSpan();
-			queueTitle.textContent = "Queue";
-
-			const headerRight = queueHeader.createDiv({ cls: "co-queue-header-right" });
-
-			// --- Terminal focus indicator ---
-			this.termFocusIndicator = headerRight.createSpan({ cls: "co-term-indicator", text: "▴" });
-			this.termFocusIndicator.style.display = "none";
-
-			// --- Pin note ---
-			const pinGroup = headerRight.createDiv({ cls: "co-pin-group" });
-			const pinBtn = pinGroup.createEl("button", {
-				cls: "co-icon-btn",
-				text: "📌",
-			});
-			this.pinLabel = pinGroup.createSpan({ cls: "co-pin-label" });
-			this.pinLabel.textContent = "No note pinned";
-
-			pinBtn.addEventListener("click", () => {
-				// Find the markdown leaf in the main area
-				let filePath: string | null = null;
-				for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-					if (leaf.getRoot() === this.app.workspace.rootSplit) {
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access -- Obsidian MarkdownView.file not in public typings
-						const file = (leaf.view as any)?.file as { path: string } | undefined;
-						filePath = file?.path ?? null;
-						break;
-					}
-				}
-				if (filePath) {
-					this.pinnedNote = filePath;
-					this.updatePinLabel();
-					void this.saveSessionNote();
-				}
-			});
-			this.pinLabel.addEventListener("click", () => {
-				if (this.pinnedNote) {
-					this.pinnedNote = null;
-					this.updatePinLabel();
-					void this.saveSessionNote();
-				}
-			});
-
-			this.modeBtn = headerRight.createEl("button", {
-				cls: "co-text-btn co-mode-btn",
-				text: queueModeLabel(this.sessionNote?.queueMode ?? "manual"),
-			});
-			this.modeBtn.title = "Click to cycle queue mode";
-			this.modeBtn.addEventListener("click", () => {
-				if (!this.sessionNote) return;
-				this.sessionNote.queueMode = nextQueueMode(this.sessionNote.queueMode);
+		this.sendBtn = headerRight.createEl("button", {
+			cls: "co-text-btn",
+			text: "Send next ▶",
+		});
+		this.sendBtn.addEventListener("click", () => {
+			if (this.countdownTimer) {
 				this.cancelCountdown();
-				this.updateModeBtn();
-				void this.saveSessionNote();
-				this.checkAutoSend();
-			});
-
-			const quickReplyGroup = headerRight.createDiv({ cls: "co-quick-reply-group" });
-			const keys = this.getSettings?.().quickReplyKeys ?? [...QUICK_REPLY_KEYS];
-			for (const key of keys) {
-				const btn = quickReplyGroup.createEl("button", {
-					cls: "co-text-btn co-quick-reply-btn",
-					text: key,
-				});
-				btn.addEventListener("click", () => { void this.sendQuickReply(key); });
+			} else {
+				void this.sendNext();
 			}
+		});
 
-			this.sendBtn = headerRight.createEl("button", {
-				cls: "co-text-btn",
-				text: "Send next ▶",
-			});
-			this.sendBtn.addEventListener("click", () => {
-				if (this.countdownTimer) {
-					this.cancelCountdown();
-				} else {
-					void this.sendNext();
-				}
-			});
+		this.queueList = this.queuePanel.createDiv({ cls: "co-queue-list" });
 
-			this.queueList = this.queuePanel.createDiv({ cls: "co-queue-list" });
-
-			const addRow = this.queuePanel.createDiv({ cls: "co-queue-add" });
-			const input = addRow.createEl("textarea", {
-				placeholder: "Add task...",
-				cls: "co-queue-input",
-			});
-			input.rows = 1;
-			// Auto-grow textarea height
-			const autoResize = () => {
-				input.style.height = "auto";
-				input.style.height = `${input.scrollHeight}px`;
-			};
-			input.addEventListener("input", autoResize);
-			input.addEventListener("paste", (e) => {
-				const files = e.clipboardData?.files;
-				if (files && files.length > 0) {
-					const imageFile = Array.from(files).find((f) => f.type.startsWith("image/"));
-					if (imageFile) {
-						e.preventDefault();
-						void (async () => {
-							const buf = await imageFile.arrayBuffer();
-							const ext = imageFile.type.split("/")[1] ?? "png";
-							const name = `paste-${Date.now()}.${ext}`;
-							const folder = (this.app.vault as unknown as { getConfig(k: string): string }).getConfig("attachmentFolderPath") || "";
-							const destPath = folder ? `${folder}/${name}` : name;
-							await this.app.vault.createBinary(destPath, buf);
-							const pos = input.selectionStart ?? input.value.length;
-							const ref = `![[${name}]]`;
-							input.value = input.value.slice(0, pos) + ref + input.value.slice(pos);
-							requestAnimationFrame(autoResize);
-						})();
-						return;
-					}
-				}
-				requestAnimationFrame(autoResize);
-			});
-
-			const addBtn = addRow.createEl("button", {
-				cls: "co-icon-btn",
-				text: "+",
-			});
-			const doAdd = () => {
-				const text = input.value.trim();
-				if (!text) {
-					// Empty input + Enter → send next if queue has items
-					if (this.sessionNote && this.sessionNote.queue.length > 0) {
-						void this.sendNext();
-					}
+		// Add row with textarea input
+		const addRow = this.queuePanel.createDiv({ cls: "co-queue-add" });
+		const input = addRow.createEl("textarea", {
+			placeholder: "Add task...",
+			cls: "co-queue-input",
+		});
+		input.rows = 1;
+		const autoResize = () => {
+			input.style.height = "auto";
+			input.style.height = `${input.scrollHeight}px`;
+		};
+		input.addEventListener("input", autoResize);
+		input.addEventListener("paste", (e) => {
+			const files = e.clipboardData?.files;
+			if (files && files.length > 0) {
+				const imageFile = Array.from(files).find((f) => f.type.startsWith("image/"));
+				if (imageFile) {
+					e.preventDefault();
+					void (async () => {
+						const buf = await imageFile.arrayBuffer();
+						const ext = imageFile.type.split("/")[1] ?? "png";
+						const name = `paste-${Date.now()}.${ext}`;
+						const folder = (this.app.vault as unknown as { getConfig(k: string): string }).getConfig("attachmentFolderPath") || "";
+						const destPath = folder ? `${folder}/${name}` : name;
+						await this.app.vault.createBinary(destPath, buf);
+						const pos = input.selectionStart ?? input.value.length;
+						const ref = `![[${name}]]`;
+						input.value = input.value.slice(0, pos) + ref + input.value.slice(pos);
+						requestAnimationFrame(autoResize);
+					})();
 					return;
 				}
-				if (!this.sessionNote) return;
-				this.sessionNote.queue.push(`[${nowStamp()}] ${text}`);
-				input.value = "";
-				input.style.height = "auto";
-				this.renderQueue();
-				void this.saveSessionNote();
-				this.checkAutoSend();
-			};
-			let composing = false;
-			input.addEventListener("compositionstart", () => { composing = true; });
-			input.addEventListener("compositionend", () => { composing = false; });
-			addBtn.addEventListener("click", doAdd);
-			input.addEventListener("keydown", (e) => {
-				if (e.key === "Enter" && !e.shiftKey && !composing && !e.isComposing) { e.preventDefault(); doAdd(); }
-			});
+			}
+			requestAnimationFrame(autoResize);
+		});
 
-		}
+		const addBtn = addRow.createEl("button", {
+			cls: "co-icon-btn",
+			text: "+",
+		});
+		const doAdd = () => {
+			const text = input.value.trim();
+			if (!text) {
+				if (this.sessionNote && this.sessionNote.queue.length > 0) {
+					void this.sendNext();
+				}
+				return;
+			}
+			if (!this.sessionNote) return;
+			this.sessionNote.queue.push(`[${nowStamp()}] ${text}`);
+			input.value = "";
+			input.style.height = "auto";
+			this.renderQueue();
+			void this.saveSessionNote();
+			this.checkAutoSend();
+		};
+		let composing = false;
+		input.addEventListener("compositionstart", () => { composing = true; });
+		input.addEventListener("compositionend", () => { composing = false; });
+		addBtn.addEventListener("click", doAdd);
+		input.addEventListener("keydown", (e) => {
+			if (e.key === "Enter" && !e.shiftKey && !composing && !e.isComposing) { e.preventDefault(); doAdd(); }
+		});
+	}
+
+	private initializeTerminal(): void {
+		if (!this.host) return;
 
 		const isDark = document.body.classList.contains("theme-dark");
 		this.term = new Terminal({
@@ -515,7 +526,7 @@ export class TerminalView extends ItemView {
 		});
 		this.fitAddon = new FitAddon();
 		this.term.loadAddon(this.fitAddon);
-		this.term.open(host);
+		this.term.open(this.host);
 		requestAnimationFrame(() => this.fitAddon?.fit());
 
 		this.themeObserver = new MutationObserver(() => {
@@ -526,7 +537,6 @@ export class TerminalView extends ItemView {
 		});
 		this.themeObserver.observe(document.body, { attributes: true, attributeFilter: ["class"] });
 
-		// Show green ▲ indicator when terminal has keyboard focus
 		this.term.textarea?.addEventListener("focus", () => {
 			if (this.termFocusIndicator) this.termFocusIndicator.style.display = "";
 		});
@@ -552,13 +562,10 @@ export class TerminalView extends ItemView {
 		});
 
 		this.resizeObserver = new ResizeObserver(() => this.debouncedFit());
-		this.resizeObserver.observe(host);
+		this.resizeObserver.observe(this.host);
 
 		this.xtermReady = true;
 
-		// Only auto-spawn on the state-restore path (setState fired before
-		// onOpen). For fresh-creation via activateView, setProject will be
-		// called immediately after and drives the spawn.
 		if (this.stateSeenPreOpen) {
 			void this.spawnShell();
 			void this.loadSessionNote();
@@ -826,143 +833,140 @@ export class TerminalView extends ItemView {
 		}
 
 		this.sessionNote.queue.forEach((text, idx) => {
-			const row = this.queueList!.createDiv({ cls: "co-queue-item" });
-			row.dataset.idx = String(idx);
+			this.renderQueueItem(this.queueList!, text, idx);
+		});
+	}
 
-			const { stamp, body } = extractTimestamp(text);
-			if (stamp) {
-				row.createSpan({ cls: "co-timestamp", text: stamp });
-			}
-			const textSpan = row.createSpan({ cls: "co-queue-text co-collapsed" });
-			const segments = parseQueueItemSegments(body);
-			if (segments.some((s) => s.type === "image")) {
-				textSpan.createSpan({ text: `${idx + 1}. ` });
-				for (const seg of segments) {
-					if (seg.type === "text") {
-						textSpan.createSpan({ text: seg.content });
+	private renderQueueItem(parent: HTMLElement, text: string, idx: number): void {
+		const row = parent.createDiv({ cls: "co-queue-item" });
+		row.dataset.idx = String(idx);
+
+		const { stamp, body } = extractTimestamp(text);
+		if (stamp) {
+			row.createSpan({ cls: "co-timestamp", text: stamp });
+		}
+		const textSpan = row.createSpan({ cls: "co-queue-text co-collapsed" });
+		const segments = parseQueueItemSegments(body);
+		if (segments.some((s) => s.type === "image")) {
+			textSpan.createSpan({ text: `${idx + 1}. ` });
+			for (const seg of segments) {
+				if (seg.type === "text") {
+					textSpan.createSpan({ text: seg.content });
+				} else {
+					const img = textSpan.createEl("img", { cls: "co-queue-img" });
+					img.alt = seg.content.split("/").pop() ?? seg.content;
+					const file = this.app.metadataCache.getFirstLinkpathDest(seg.content, "");
+					if (file) {
+						img.src = this.app.vault.getResourcePath(file);
 					} else {
-						const img = textSpan.createEl("img", { cls: "co-queue-img" });
-						img.alt = seg.content.split("/").pop() ?? seg.content;
-						const file = this.app.metadataCache.getFirstLinkpathDest(seg.content, "");
-						if (file) {
-							img.src = this.app.vault.getResourcePath(file);
-						} else {
-							img.src = seg.content;
-						}
+						img.src = seg.content;
 					}
 				}
-			} else {
-				textSpan.textContent = `${idx + 1}. ${body}`;
 			}
-			textSpan.addEventListener("click", () => {
-				textSpan.classList.toggle("co-collapsed");
+		} else {
+			textSpan.textContent = `${idx + 1}. ${body}`;
+		}
+		textSpan.addEventListener("click", () => {
+			textSpan.classList.toggle("co-collapsed");
+		});
+
+		const actions = row.createDiv({ cls: "co-queue-actions" });
+
+		if (idx > 0) {
+			const upBtn = actions.createEl("button", {
+				cls: "co-icon-btn co-move-btn",
+				text: "▴",
 			});
-
-			const actions = row.createDiv({ cls: "co-queue-actions" });
-
-			// Up/down reorder buttons (before edit/remove)
-			if (idx > 0) {
-				const upBtn = actions.createEl("button", {
-					cls: "co-icon-btn co-move-btn",
-					text: "▴",
-				});
-				upBtn.addEventListener("click", () => {
-					if (!this.sessionNote) return;
-					const [item] = this.sessionNote.queue.splice(idx, 1);
-					if (item !== undefined) this.sessionNote.queue.splice(idx - 1, 0, item);
-					this.renderQueue();
-					void this.saveSessionNote();
-				});
-			} else {
-				actions.createSpan({ cls: "co-btn-spacer" });
-			}
-			if (this.sessionNote && idx < this.sessionNote.queue.length - 1) {
-				const downBtn = actions.createEl("button", {
-					cls: "co-icon-btn co-move-btn",
-					text: "▾",
-				});
-				downBtn.addEventListener("click", () => {
-					if (!this.sessionNote) return;
-					const [item] = this.sessionNote.queue.splice(idx, 1);
-					if (item !== undefined) this.sessionNote.queue.splice(idx + 1, 0, item);
-					this.renderQueue();
-					void this.saveSessionNote();
-				});
-			} else {
-				actions.createSpan({ cls: "co-btn-spacer" });
-			}
-
-			const editBtn = actions.createEl("button", {
-				cls: "co-icon-btn co-success",
-				text: "✎",
-			});
-			editBtn.addEventListener("click", () => {
-				// Replace row content with an inline editor
-				row.empty();
-				// Strip timestamp for editing, preserve it for saving back
-				const tsMatch = text.match(/^(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] )/);
-				const tsPrefix = tsMatch?.[1] ?? "";
-				const editableText = tsPrefix ? text.slice(tsPrefix.length) : text;
-
-				const input = row.createEl("textarea", {
-					cls: "co-queue-input co-queue-edit-input",
-				});
-				input.value = editableText;
-				input.rows = 1;
-				// Auto-grow
-				const autoResize = () => {
-					input.style.height = "auto";
-					input.style.height = `${input.scrollHeight}px`;
-				};
-				input.addEventListener("input", autoResize);
-				input.addEventListener("paste", () => {
-					requestAnimationFrame(autoResize);
-				});
-
-				const saveBtn = row.createEl("button", {
-					cls: "co-icon-btn co-success",
-					text: "✓",
-				});
-				const cancel = () => {
-					this.renderQueue();
-				};
-				const save = () => {
-					const newText = input.value.trim();
-					if (newText && this.sessionNote) {
-						this.sessionNote.queue[idx] = `${tsPrefix}${newText}`;
-						void this.saveSessionNote();
-						// Single-item queue: save + send in one Enter press
-						if (shouldAutoSendAfterEdit(this.sessionNote.queue.length)) {
-							void this.sendNext();
-							return; // sendNext renders queue/history
-						}
-					}
-					this.renderQueue();
-				};
-				let editComposing = false;
-				input.addEventListener("compositionstart", () => { editComposing = true; });
-				input.addEventListener("compositionend", () => { editComposing = false; });
-				saveBtn.addEventListener("click", save);
-				input.addEventListener("keydown", (e) => {
-					if (e.key === "Enter" && !e.shiftKey && !editComposing && !e.isComposing) { e.preventDefault(); save(); }
-					if (e.key === "Escape") cancel();
-				});
-				input.focus();
-				input.select();
-				// Trigger initial resize to fit content
-				requestAnimationFrame(autoResize);
-			});
-
-			const removeBtn = actions.createEl("button", {
-				cls: "co-icon-btn co-danger",
-				text: "×",
-			});
-			removeBtn.addEventListener("click", () => {
-				this.sessionNote?.queue.splice(idx, 1);
+			upBtn.addEventListener("click", () => {
+				if (!this.sessionNote) return;
+				const [item] = this.sessionNote.queue.splice(idx, 1);
+				if (item !== undefined) this.sessionNote.queue.splice(idx - 1, 0, item);
 				this.renderQueue();
 				void this.saveSessionNote();
 			});
+		} else {
+			actions.createSpan({ cls: "co-btn-spacer" });
+		}
+		if (this.sessionNote && idx < this.sessionNote.queue.length - 1) {
+			const downBtn = actions.createEl("button", {
+				cls: "co-icon-btn co-move-btn",
+				text: "▾",
+			});
+			downBtn.addEventListener("click", () => {
+				if (!this.sessionNote) return;
+				const [item] = this.sessionNote.queue.splice(idx, 1);
+				if (item !== undefined) this.sessionNote.queue.splice(idx + 1, 0, item);
+				this.renderQueue();
+				void this.saveSessionNote();
+			});
+		} else {
+			actions.createSpan({ cls: "co-btn-spacer" });
+		}
 
+		const editBtn = actions.createEl("button", {
+			cls: "co-icon-btn co-success",
+			text: "✎",
+		});
+		editBtn.addEventListener("click", () => {
+			row.empty();
+			const tsMatch = text.match(/^(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] )/);
+			const tsPrefix = tsMatch?.[1] ?? "";
+			const editableText = tsPrefix ? text.slice(tsPrefix.length) : text;
+
+			const input = row.createEl("textarea", {
+				cls: "co-queue-input co-queue-edit-input",
+			});
+			input.value = editableText;
+			input.rows = 1;
+			const autoResize = () => {
+				input.style.height = "auto";
+				input.style.height = `${input.scrollHeight}px`;
+			};
+			input.addEventListener("input", autoResize);
+			input.addEventListener("paste", () => {
+				requestAnimationFrame(autoResize);
+			});
+
+			const saveBtn = row.createEl("button", {
+				cls: "co-icon-btn co-success",
+				text: "✓",
+			});
+			const cancel = () => {
+				this.renderQueue();
+			};
+			const save = () => {
+				const newText = input.value.trim();
+				if (newText && this.sessionNote) {
+					this.sessionNote.queue[idx] = `${tsPrefix}${newText}`;
+					void this.saveSessionNote();
+					if (shouldAutoSendAfterEdit(this.sessionNote.queue.length)) {
+						void this.sendNext();
+						return;
+					}
+				}
+				this.renderQueue();
+			};
+			let editComposing = false;
+			input.addEventListener("compositionstart", () => { editComposing = true; });
+			input.addEventListener("compositionend", () => { editComposing = false; });
+			saveBtn.addEventListener("click", save);
+			input.addEventListener("keydown", (e) => {
+				if (e.key === "Enter" && !e.shiftKey && !editComposing && !e.isComposing) { e.preventDefault(); save(); }
+				if (e.key === "Escape") cancel();
+			});
+			input.focus();
+			input.select();
+			requestAnimationFrame(autoResize);
+		});
+
+		const removeBtn = actions.createEl("button", {
+			cls: "co-icon-btn co-danger",
+			text: "×",
+		});
+		removeBtn.addEventListener("click", () => {
+			this.sessionNote?.queue.splice(idx, 1);
+			this.renderQueue();
+			void this.saveSessionNote();
 		});
 	}
 
