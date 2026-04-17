@@ -1965,28 +1965,23 @@ describe("extractSessionPreview", () => {
 		assert.equal(extractSessionPreview(note), "按钮样式需要修改");
 	});
 
-	it("prioritizes notes over queue and history", () => {
+	it("ignores notes and shows queue item", () => {
 		const note = mkNote(
 			["[2026-04-17 10:00] queue item"],
 			[{ text: "history item", completed: false }],
 			"This session handles PTY management",
 		);
-		assert.equal(extractSessionPreview(note), "This session handles PTY management");
+		assert.equal(extractSessionPreview(note), "queue item");
 	});
 
-	it("uses first line of multiline notes", () => {
-		const note = mkNote([], [], "First line\nSecond line\nThird line");
-		assert.equal(extractSessionPreview(note), "First line");
+	it("ignores notes and shows history when queue is empty", () => {
+		const note = mkNote([], [{ text: "history item", completed: false }], "Some notes content");
+		assert.equal(extractSessionPreview(note), "history item");
 	});
 
-	it("falls back to queue when notes is empty", () => {
-		const note = mkNote(["[2026-04-17 10:00] task"], [], "");
-		assert.equal(extractSessionPreview(note), "task");
-	});
-
-	it("falls back to queue when notes is whitespace only", () => {
-		const note = mkNote(["[2026-04-17 10:00] task"], [], "  \n  ");
-		assert.equal(extractSessionPreview(note), "task");
+	it("returns null when only notes exist (no queue/history)", () => {
+		const note = mkNote([], [], "Some notes");
+		assert.equal(extractSessionPreview(note), null);
 	});
 
 	it("prioritizes summary over notes, queue, and history", () => {
@@ -1999,9 +1994,9 @@ describe("extractSessionPreview", () => {
 		assert.equal(extractSessionPreview(note), "PTY management session");
 	});
 
-	it("falls back to notes when summary is empty", () => {
+	it("does not fall back to notes when summary is empty", () => {
 		const note = mkNote([], [], "Notes fallback", "");
-		assert.equal(extractSessionPreview(note), "Notes fallback");
+		assert.equal(extractSessionPreview(note), null);
 	});
 });
 
