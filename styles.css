@@ -876,9 +876,9 @@
     opacity: 1;
 }
 
-.co-sm-mode-manual { color: var(--co-text-dim); }
-.co-sm-mode-listen { color: var(--co-listen); }
-.co-sm-mode-auto { color: var(--co-auto); }
+.co-sm-badge.co-sm-mode-manual { color: var(--co-text-dim); }
+.co-sm-badge.co-sm-mode-listen { color: var(--co-listen); }
+.co-sm-badge.co-sm-mode-auto { color: var(--co-auto); }
 
 .co-sm-card-pin {
     font-size: 11px;
