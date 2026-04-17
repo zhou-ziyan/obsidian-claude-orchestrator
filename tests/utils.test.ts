@@ -63,6 +63,7 @@ import {
 	applySortOrder,
 	parseSkillMd,
 	BUILTIN_SLASH_COMMANDS,
+	stripTimestamp,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote, SlashCommandEntry } from "../src/utils.ts";
 
@@ -2720,5 +2721,31 @@ describe("applySortOrder", () => {
 		const items = [{ name: "a" }, { name: "b" }];
 		const result = applySortOrder(items, ["z", "b", "a"]);
 		assert.deepEqual(result.map(i => i.name), ["b", "a"]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// stripTimestamp
+// ---------------------------------------------------------------------------
+
+describe("stripTimestamp", () => {
+	it("strips [YYYY-MM-DD HH:MM] prefix", () => {
+		assert.equal(stripTimestamp("[2026-04-17 10:30] do the thing"), "do the thing");
+	});
+
+	it("returns text unchanged when no timestamp prefix", () => {
+		assert.equal(stripTimestamp("plain text"), "plain text");
+	});
+
+	it("returns empty string for timestamp-only text", () => {
+		assert.equal(stripTimestamp("[2026-04-17 10:30] "), "");
+	});
+
+	it("handles multiline — only strips first line prefix", () => {
+		assert.equal(stripTimestamp("[2026-04-17 10:30] line1\nline2"), "line1\nline2");
+	});
+
+	it("returns empty string for empty input", () => {
+		assert.equal(stripTimestamp(""), "");
 	});
 });
