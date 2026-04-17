@@ -839,7 +839,7 @@ export class TerminalView extends ItemView {
 		const content = await this.app.vault.read(file);
 		this.sessionNote = parseSessionNote(content, this.sessionName);
 		this.pinnedNote = this.sessionNote.pinnedNote;
-		this.claudeIdle = false;
+		this.claudeIdle = this.sessionNote.status === "idle";
 		this.loadedAt = Date.now();
 		this.sessionNoteLoaded = true;
 		this.renderHistory();
@@ -850,6 +850,9 @@ export class TerminalView extends ItemView {
 		(this.leaf as any).updateHeader?.();
 		/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 		this.checkAutoSend();
+		if (this.claudeIdle && this.sessionNote.queue.length > 0) {
+			setTimeout(() => this.checkAutoSend(), 5500);
+		}
 	}
 
 	private async saveSessionNote(): Promise<void> {
