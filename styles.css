@@ -1036,9 +1036,9 @@
 .co-sm-pty {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 4px 10px;
-    font-size: 11px;
+    gap: 6px;
+    padding: 3px 10px;
+    font-size: 10px;
     border-top: 1px solid var(--co-border);
     flex-shrink: 0;
 }
@@ -1056,7 +1056,7 @@
 
 .co-sm-pty-bar {
     flex: 1;
-    height: 4px;
+    height: 3px;
     background: var(--co-border);
     border-radius: 2px;
     overflow: hidden;
