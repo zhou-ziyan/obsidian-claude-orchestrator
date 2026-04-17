@@ -52,6 +52,8 @@ import {
 	extractSessionPreview,
 	bumpPatchVersion,
 	parseQueueItemSegments,
+	classifyStopReason,
+	extractLastAssistantText,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote } from "../src/utils.ts";
 
@@ -2103,5 +2105,177 @@ describe("parseQueueItemSegments", () => {
 	it("only matches image extensions", () => {
 		const result = parseQueueItemSegments("![[data.csv]] text");
 		assert.deepEqual(result, [{ type: "text", content: "![[data.csv]] text" }]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Done vs. Asking detection
+// ---------------------------------------------------------------------------
+
+describe("classifyStopReason", () => {
+	it("returns 'done' for plain completion text", () => {
+		assert.equal(classifyStopReason("I've made the changes. The tests pass."), "done");
+	});
+
+	it("returns 'done' for empty string", () => {
+		assert.equal(classifyStopReason(""), "done");
+	});
+
+	it("returns 'asking' when text ends with a question mark", () => {
+		assert.equal(classifyStopReason("Would you like me to proceed?"), "asking");
+	});
+
+	it("returns 'asking' for question mark at end of a line (not last line)", () => {
+		assert.equal(classifyStopReason("Should I continue?\nLet me know."), "asking");
+	});
+
+	it("returns 'asking' for Y/n confirmation prompt", () => {
+		assert.equal(classifyStopReason("Do you want to apply this change? (Y/n)"), "asking");
+	});
+
+	it("returns 'asking' for y/N confirmation prompt", () => {
+		assert.equal(classifyStopReason("Proceed with deletion? (y/N)"), "asking");
+	});
+
+	it("returns 'asking' for numbered options", () => {
+		const text = "Which approach do you prefer?\n1. Option A\n2. Option B\n3. Option C";
+		assert.equal(classifyStopReason(text), "asking");
+	});
+
+	it("does not false-positive on question marks in code blocks", () => {
+		const text = "I fixed the URL parsing.\n```\nconst url = `https://example.com/search?q=test`;\n```\nAll tests pass now.";
+		assert.equal(classifyStopReason(text), "done");
+	});
+
+	it("does not false-positive on question marks in URLs mid-text", () => {
+		assert.equal(classifyStopReason("Updated the endpoint https://api.example.com/v1?key=abc successfully."), "done");
+	});
+
+	it("only checks the tail of long text", () => {
+		const longDone = "x".repeat(1000) + "\nAll done.";
+		assert.equal(classifyStopReason(longDone), "done");
+		const longAsk = "x".repeat(1000) + "\nShould I continue?";
+		assert.equal(classifyStopReason(longAsk), "asking");
+	});
+
+	it("returns 'asking' for question with trailing whitespace", () => {
+		assert.equal(classifyStopReason("Want me to fix this?  \n"), "asking");
+	});
+
+	it("returns 'done' for numbered list that is not options", () => {
+		const text = "Here's what I changed:\n1. Fixed the bug\n2. Added tests\n3. Updated docs\n\nEverything looks good.";
+		assert.equal(classifyStopReason(text), "done");
+	});
+});
+
+describe("extractLastAssistantText", () => {
+	it("extracts text from last assistant message", () => {
+		const jsonl = [
+			JSON.stringify({ type: "human", message: { role: "user", content: [{ type: "text", text: "Fix the bug" }] } }),
+			JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "I found the issue." }] } }),
+		].join("\n");
+		assert.equal(extractLastAssistantText(jsonl), "I found the issue.");
+	});
+
+	it("returns last assistant message when multiple exist", () => {
+		const jsonl = [
+			JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "First response" }] } }),
+			JSON.stringify({ type: "human", message: { role: "user", content: [{ type: "text", text: "Do more" }] } }),
+			JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Second response" }] } }),
+		].join("\n");
+		assert.equal(extractLastAssistantText(jsonl), "Second response");
+	});
+
+	it("joins multiple text content blocks", () => {
+		const jsonl = JSON.stringify({
+			type: "assistant",
+			message: {
+				role: "assistant",
+				content: [
+					{ type: "text", text: "Part one." },
+					{ type: "tool_use", id: "t1", name: "bash", input: {} },
+					{ type: "text", text: "Part two." },
+				],
+			},
+		});
+		assert.equal(extractLastAssistantText(jsonl), "Part one.\nPart two.");
+	});
+
+	it("returns null for empty input", () => {
+		assert.equal(extractLastAssistantText(""), null);
+	});
+
+	it("returns null when no assistant messages exist", () => {
+		const jsonl = JSON.stringify({ type: "human", message: { role: "user", content: [{ type: "text", text: "Hello" }] } });
+		assert.equal(extractLastAssistantText(jsonl), null);
+	});
+
+	it("skips malformed JSON lines", () => {
+		const jsonl = [
+			JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Good" }] } }),
+			"not valid json{{{",
+		].join("\n");
+		assert.equal(extractLastAssistantText(jsonl), "Good");
+	});
+
+	it("returns null when assistant message has no text content", () => {
+		const jsonl = JSON.stringify({
+			type: "assistant",
+			message: {
+				role: "assistant",
+				content: [{ type: "tool_use", id: "t1", name: "bash", input: {} }],
+			},
+		});
+		assert.equal(extractLastAssistantText(jsonl), null);
+	});
+
+	it("handles trailing newline in JSONL", () => {
+		const jsonl = JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Done" }] } }) + "\n";
+		assert.equal(extractLastAssistantText(jsonl), "Done");
+	});
+});
+
+describe("parseStopSignal with stop_reason", () => {
+	it("parses stop_reason: done", () => {
+		const json = JSON.stringify({
+			tmux_session: "proj-1",
+			timestamp: 100,
+			stop_reason: "done",
+		});
+		const signal = parseStopSignal(json);
+		assert.ok(signal);
+		assert.equal(signal.stopReason, "done");
+	});
+
+	it("parses stop_reason: asking", () => {
+		const json = JSON.stringify({
+			tmux_session: "proj-1",
+			timestamp: 100,
+			stop_reason: "asking",
+		});
+		const signal = parseStopSignal(json);
+		assert.ok(signal);
+		assert.equal(signal.stopReason, "asking");
+	});
+
+	it("defaults stopReason to null when missing", () => {
+		const json = JSON.stringify({
+			tmux_session: "proj-1",
+			timestamp: 100,
+		});
+		const signal = parseStopSignal(json);
+		assert.ok(signal);
+		assert.equal(signal.stopReason, null);
+	});
+
+	it("defaults stopReason to null for invalid value", () => {
+		const json = JSON.stringify({
+			tmux_session: "proj-1",
+			timestamp: 100,
+			stop_reason: "unknown",
+		});
+		const signal = parseStopSignal(json);
+		assert.ok(signal);
+		assert.equal(signal.stopReason, null);
 	});
 });
