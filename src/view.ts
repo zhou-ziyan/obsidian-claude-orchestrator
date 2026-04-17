@@ -13,6 +13,8 @@ import {
 	shouldAutoSendAfterEdit,
 	computeDisplayText,
 	SessionNote,
+	QUICK_REPLY_KEYS,
+	buildQuickReplyTmuxArgs,
 } from "./utils";
 import type { ProjectRegistry } from "./utils";
 import { Terminal } from "@xterm/xterm";
@@ -377,6 +379,15 @@ export class TerminalView extends ItemView {
 					void this.saveSessionNote();
 				}
 			});
+
+			const quickReplyGroup = headerRight.createDiv({ cls: "co-quick-reply-group" });
+			for (const key of QUICK_REPLY_KEYS) {
+				const btn = quickReplyGroup.createEl("button", {
+					cls: "co-text-btn co-quick-reply-btn",
+					text: key,
+				});
+				btn.addEventListener("click", () => { void this.sendQuickReply(key); });
+			}
 
 			const sendBtn = headerRight.createEl("button", {
 				cls: "co-text-btn co-accent",
@@ -898,6 +909,31 @@ export class TerminalView extends ItemView {
 				}, 150);
 			},
 		);
+	}
+
+	private async sendQuickReply(key: string): Promise<void> {
+		if (!this.sessionName) return;
+
+		const tmux = findTmuxBinary();
+		const { textArgs, enterArgs } = buildQuickReplyTmuxArgs(this.sessionName, key);
+
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- child_process from require
+		const { execFile } = require("child_process");
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped from require
+		execFile(tmux, textArgs, (err: Error | null) => {
+			if (err) {
+				new Notice(`Quick reply failed: ${err.message}`);
+				return;
+			}
+			setTimeout(() => {
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped
+				execFile(tmux, enterArgs, (err2: Error | null) => {
+					if (err2) {
+						new Notice(`Enter failed: ${err2.message}`);
+					}
+				});
+			}, 150);
+		});
 	}
 
 	private onHostFocusIn = () => {

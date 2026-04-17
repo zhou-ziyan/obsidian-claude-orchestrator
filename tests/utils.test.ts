@@ -28,6 +28,8 @@ import {
 	normalizeVaultFolder,
 	computeDisplayText,
 	sessionDirPath,
+	QUICK_REPLY_KEYS,
+	buildQuickReplyTmuxArgs,
 } from "../src/utils.ts";
 import type { ProjectRegistry } from "../src/utils.ts";
 
@@ -1319,5 +1321,40 @@ describe("restorableSessionNames", () => {
 	it("returns empty array for group with no sessions", () => {
 		const group = { project: "proj", sessions: [] };
 		assert.deepEqual(restorableSessionNames(group), []);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Quick Reply
+// ---------------------------------------------------------------------------
+
+describe("QUICK_REPLY_KEYS", () => {
+	it("contains expected default keys", () => {
+		assert.deepEqual([...QUICK_REPLY_KEYS], ["1", "2", "3", "Y", "N"]);
+	});
+
+	it("all keys are single characters", () => {
+		for (const k of QUICK_REPLY_KEYS) {
+			assert.equal(k.length, 1, `key "${k}" should be a single character`);
+		}
+	});
+});
+
+describe("buildQuickReplyTmuxArgs", () => {
+	it("builds correct text and enter args", () => {
+		const result = buildQuickReplyTmuxArgs("my-session", "Y");
+		assert.deepEqual(result.textArgs, ["send-keys", "-l", "-t", "my-session", "Y"]);
+		assert.deepEqual(result.enterArgs, ["send-keys", "-t", "my-session", "Enter"]);
+	});
+
+	it("uses -l flag for literal text", () => {
+		const result = buildQuickReplyTmuxArgs("test", "1");
+		assert.ok(result.textArgs.includes("-l"));
+	});
+
+	it("targets the correct session", () => {
+		const result = buildQuickReplyTmuxArgs("15_Claude_Orchestrator-2", "N");
+		assert.ok(result.textArgs.includes("15_Claude_Orchestrator-2"));
+		assert.ok(result.enterArgs.includes("15_Claude_Orchestrator-2"));
 	});
 });

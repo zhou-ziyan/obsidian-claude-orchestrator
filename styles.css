@@ -486,6 +486,18 @@
     gap: 6px;
 }
 
+.co-quick-reply-group {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+}
+.co-quick-reply-btn {
+    min-width: 24px;
+    padding: 2px 6px !important;
+    font-size: 11px !important;
+    font-weight: 600;
+}
+
 .co-term-indicator {
     color: #4caf50;
     font-size: 16px;

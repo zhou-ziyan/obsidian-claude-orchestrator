@@ -522,6 +522,18 @@ export function copyHistoryItemToQueue(text: string, queue: string[]): number {
 
 export const TMUX_SEARCH_PATHS = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"];
 
+export const QUICK_REPLY_KEYS = ["1", "2", "3", "Y", "N"] as const;
+
+export function buildQuickReplyTmuxArgs(
+	sessionName: string,
+	key: string,
+): { textArgs: string[]; enterArgs: string[] } {
+	return {
+		textArgs: ["send-keys", "-l", "-t", sessionName, key],
+		enterArgs: ["send-keys", "-t", sessionName, "Enter"],
+	};
+}
+
 export function findTmuxBinary(exists?: (p: string) => boolean): string {
 	const check = exists ?? ((p: string): boolean => {
 		try { accessSync(p); return true; } catch { return false; }
