@@ -60,14 +60,15 @@ export class SessionManagerView extends ItemView {
 		// Header
 		const header = container.createDiv({ cls: "co-sm-header" });
 		header.createSpan({ cls: "co-sm-title", text: "Sessions" });
-		const refreshBtn = header.createEl("button", {
+		const headerActions = header.createDiv({ cls: "co-sm-header-actions" });
+		const refreshBtn = headerActions.createEl("button", {
 			cls: "co-icon-btn",
 			text: "↻",
 		});
 		refreshBtn.title = "Refresh";
 		refreshBtn.addEventListener("click", () => { void this.refresh(); });
 
-		const addBtn = header.createEl("button", {
+		const addBtn = headerActions.createEl("button", {
 			cls: "co-icon-btn",
 			text: "+",
 		});
@@ -176,8 +177,6 @@ export class SessionManagerView extends ItemView {
 		if (!this.listEl) return;
 		this.listEl.empty();
 
-		const activeProjectNames = new Set(this.groups.map((g) => g.project));
-
 		if (this.groups.length === 0 && Object.keys(this.plugin.settings.projects).length === 0) {
 			this.listEl.createDiv({
 				cls: "co-sm-empty",
@@ -188,12 +187,6 @@ export class SessionManagerView extends ItemView {
 
 		for (const group of this.groups) {
 			this.renderGroup(group);
-		}
-
-		for (const [key, config] of Object.entries(this.plugin.settings.projects)) {
-			if (!activeProjectNames.has(key)) {
-				this.renderIdleProject(key, config);
-			}
 		}
 	}
 
@@ -246,25 +239,6 @@ export class SessionManagerView extends ItemView {
 		for (const session of group.sessions) {
 			this.renderSessionCard(groupEl, session);
 		}
-	}
-
-	private renderIdleProject(key: string, _config: ProjectConfig) {
-		if (!this.listEl) return;
-		const groupEl = this.listEl.createDiv({ cls: "co-sm-group" });
-		const groupHeader = groupEl.createDiv({ cls: "co-sm-group-header" });
-		groupHeader.createSpan({ cls: "co-sm-arrow", text: "▸" });
-		groupHeader.createSpan({ cls: "co-sm-group-name co-sm-idle", text: key });
-		groupHeader.createSpan({ cls: "co-sm-group-count", text: "0" });
-
-		const gearBtn = groupHeader.createEl("button", {
-			cls: "co-icon-btn co-sm-gear",
-			text: "⚙",
-		});
-		gearBtn.title = "Edit project";
-		gearBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			this.showProjectForm(key);
-		});
 	}
 
 	private renderSessionCard(parent: HTMLElement, session: SessionInfo) {
@@ -485,22 +459,16 @@ export class SessionManagerView extends ItemView {
 		}
 
 		const folderRow = form.createDiv({ cls: "co-sm-form-row" });
-		folderRow.createSpan({ cls: "co-sm-form-label", text: "Vault folder" });
+		folderRow.createSpan({ cls: "co-sm-form-label", text: "Note folder" });
 		const folderInput = folderRow.createEl("input", { cls: "co-sm-form-input", type: "text" });
 		folderInput.placeholder = "e.g. 01_Projects/MyProject";
 		if (config) folderInput.value = config.vaultFolder;
 
 		const cwdRow = form.createDiv({ cls: "co-sm-form-row" });
-		cwdRow.createSpan({ cls: "co-sm-form-label", text: "Working dir" });
+		cwdRow.createSpan({ cls: "co-sm-form-label", text: "Code folder" });
 		const cwdInput = cwdRow.createEl("input", { cls: "co-sm-form-input", type: "text" });
 		cwdInput.placeholder = "(optional)";
 		if (config?.workingDirectory) cwdInput.value = config.workingDirectory;
-
-		const linkedRow = form.createDiv({ cls: "co-sm-form-row" });
-		linkedRow.createSpan({ cls: "co-sm-form-label", text: "Linked file" });
-		const linkedInput = linkedRow.createEl("input", { cls: "co-sm-form-input", type: "text" });
-		linkedInput.placeholder = "(optional — e.g. CLAUDE.md)";
-		if (config?.linkedFile) linkedInput.value = config.linkedFile;
 
 		const errorEl = form.createDiv({ cls: "co-sm-form-error" });
 		errorEl.style.display = "none";
@@ -528,7 +496,6 @@ export class SessionManagerView extends ItemView {
 			const key = nameInput.value.trim();
 			const vaultFolder = normalizeVaultFolder(folderInput.value.trim());
 			const workingDirectory = cwdInput.value.trim() || undefined;
-			const linkedFile = linkedInput.value.trim() || undefined;
 
 			if (!isEdit) {
 				const err = validateProjectKey(key, new Set(Object.keys(this.plugin.settings.projects)));
@@ -539,7 +506,7 @@ export class SessionManagerView extends ItemView {
 				}
 			}
 
-			const newConfig: ProjectConfig = { vaultFolder, workingDirectory, linkedFile };
+			const newConfig: ProjectConfig = { vaultFolder, workingDirectory };
 
 			if (isEdit) {
 				this.plugin.settings.projects = updateProjectConfig(this.plugin.settings.projects, existingKey, newConfig);

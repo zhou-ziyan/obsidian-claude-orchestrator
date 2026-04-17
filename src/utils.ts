@@ -4,7 +4,6 @@ export interface ProjectConfig {
 	vaultFolder: string;
 	workingDirectory?: string;
 	mainNote?: string;
-	linkedFile?: string;
 }
 
 export type ProjectRegistry = Record<string, ProjectConfig>;

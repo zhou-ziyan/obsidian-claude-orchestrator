@@ -541,6 +541,12 @@
     flex-shrink: 0;
 }
 
+.co-sm-header-actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
 .co-sm-title {
     font-size: 12px;
     font-weight: 600;

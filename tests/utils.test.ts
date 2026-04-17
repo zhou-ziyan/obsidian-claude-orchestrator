@@ -1120,7 +1120,6 @@ describe("addProject", () => {
 			vaultFolder: "work/proj",
 			workingDirectory: "/Users/me/code/proj",
 			mainNote: "work/proj/README.md",
-			linkedFile: "work/proj/CLAUDE.md",
 		};
 		const result = addProject({}, "proj", config);
 		assert.deepEqual(result["proj"], config);
