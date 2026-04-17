@@ -1051,6 +1051,7 @@ export class TerminalView extends ItemView {
 		if (!this.sessionNote || !this.sessionName) return;
 		if (this.sessionNote.queue.length === 0) return;
 
+		this.cancelCountdown();
 		this.claudeIdle = false;
 		this.sessionNote.status = "running";
 		const task = this.sessionNote.queue.shift()!;
