@@ -41,32 +41,32 @@ const TEST_PROJECTS: ProjectRegistry = {
 // --- generateSessionName ---
 
 describe("generateSessionName", () => {
-	it("returns base name when nothing exists", () => {
+	it("returns -1 suffix when nothing exists", () => {
 		assert.equal(
 			generateSessionName("15_Claude_Orchestrator", new Set()),
-			"15_Claude_Orchestrator",
+			"15_Claude_Orchestrator-1",
 		);
 	});
 
-	it("returns base name when other projects exist but not this one", () => {
+	it("returns -1 when other projects exist but not this one", () => {
 		const existing = new Set(["14_Mobile_Claude_Code"]);
 		assert.equal(
 			generateSessionName("15_Claude_Orchestrator", existing),
-			"15_Claude_Orchestrator",
+			"15_Claude_Orchestrator-1",
 		);
 	});
 
-	it("returns -2 when base name is taken", () => {
-		const existing = new Set(["15_Claude_Orchestrator"]);
+	it("returns -2 when -1 is taken", () => {
+		const existing = new Set(["15_Claude_Orchestrator-1"]);
 		assert.equal(
 			generateSessionName("15_Claude_Orchestrator", existing),
 			"15_Claude_Orchestrator-2",
 		);
 	});
 
-	it("returns -3 when base and -2 are taken", () => {
+	it("returns -3 when -1 and -2 are taken", () => {
 		const existing = new Set([
-			"15_Claude_Orchestrator",
+			"15_Claude_Orchestrator-1",
 			"15_Claude_Orchestrator-2",
 		]);
 		assert.equal(
@@ -75,9 +75,9 @@ describe("generateSessionName", () => {
 		);
 	});
 
-	it("fills gaps (base + -3 taken, returns -2)", () => {
+	it("fills gaps (-1 + -3 taken, returns -2)", () => {
 		const existing = new Set([
-			"15_Claude_Orchestrator",
+			"15_Claude_Orchestrator-1",
 			"15_Claude_Orchestrator-3",
 		]);
 		assert.equal(
@@ -88,17 +88,31 @@ describe("generateSessionName", () => {
 
 	it("handles many existing sessions", () => {
 		const existing = new Set<string>();
-		for (let i = 0; i <= 10; i++) {
-			existing.add(
-				i === 0
-					? "15_Claude_Orchestrator"
-					: `15_Claude_Orchestrator-${i + 1}`,
-			);
+		for (let i = 1; i <= 11; i++) {
+			existing.add(`15_Claude_Orchestrator-${i}`);
 		}
-		// 2 through 11 are taken, next is 12
 		assert.equal(
 			generateSessionName("15_Claude_Orchestrator", existing),
 			"15_Claude_Orchestrator-12",
+		);
+	});
+
+	it("skips legacy bare name when taken", () => {
+		const existing = new Set(["15_Claude_Orchestrator"]);
+		assert.equal(
+			generateSessionName("15_Claude_Orchestrator", existing),
+			"15_Claude_Orchestrator-1",
+		);
+	});
+
+	it("skips legacy bare name and finds next gap", () => {
+		const existing = new Set([
+			"15_Claude_Orchestrator",
+			"15_Claude_Orchestrator-1",
+		]);
+		assert.equal(
+			generateSessionName("15_Claude_Orchestrator", existing),
+			"15_Claude_Orchestrator-2",
 		);
 	});
 });
@@ -1266,7 +1280,11 @@ describe("computeDisplayText", () => {
 		assert.equal(computeDisplayText("MyProject", null), "Claude Orchestrator");
 	});
 
-	it("returns project name for single session", () => {
+	it("returns project #1 for -1 numbered session", () => {
+		assert.equal(computeDisplayText("15_Claude_Orchestrator", "15_Claude_Orchestrator-1"), "15_Claude_Orchestrator #1");
+	});
+
+	it("returns project name for legacy bare session name", () => {
 		assert.equal(computeDisplayText("15_Claude_Orchestrator", "15_Claude_Orchestrator"), "15_Claude_Orchestrator");
 	});
 

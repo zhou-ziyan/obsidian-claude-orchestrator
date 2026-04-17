@@ -19,9 +19,7 @@ export function generateSessionName(
 	project: string,
 	existingNames: Set<string>,
 ): string {
-	if (!existingNames.has(project)) return project;
-
-	for (let i = 2; ; i++) {
+	for (let i = 1; ; i++) {
 		const candidate = `${project}-${i}`;
 		if (!existingNames.has(candidate)) return candidate;
 	}
