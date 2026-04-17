@@ -307,8 +307,8 @@
 
 .co-queue-panel {
     flex-shrink: 0;
-    height: 200px;
-    overflow: hidden;
+    min-height: 120px;
+    max-height: 400px;
     display: flex;
     flex-direction: column;
     padding-bottom: 28px; /* clear Obsidian's bottom status bar */
@@ -430,9 +430,11 @@
     font-family: inherit;
     border-radius: 3px;
     resize: none;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     line-height: 1.4;
     min-height: 22px;
+    max-height: 200px;
 }
 .co-queue-input:focus {
     border-color: #4caf50;

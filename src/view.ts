@@ -9,6 +9,7 @@ import {
 	nowStamp,
 	copyHistoryItemToQueue,
 	HISTORY_ITEM_MIN_HEIGHT,
+	shouldAutoSendAfterEdit,
 	SessionNote,
 } from "./utils";
 import type { ProjectRegistry } from "./utils";
@@ -375,6 +376,11 @@ export class TerminalView extends ItemView {
 				input.style.height = `${input.scrollHeight}px`;
 			};
 			input.addEventListener("input", autoResize);
+			input.addEventListener("paste", () => {
+				// Paste updates the DOM asynchronously; wait a frame for
+				// scrollHeight to reflect the new content.
+				requestAnimationFrame(autoResize);
+			});
 
 			const addBtn = addRow.createEl("button", {
 				cls: "co-icon-btn",
@@ -767,6 +773,9 @@ export class TerminalView extends ItemView {
 					input.style.height = `${input.scrollHeight}px`;
 				};
 				input.addEventListener("input", autoResize);
+				input.addEventListener("paste", () => {
+					requestAnimationFrame(autoResize);
+				});
 
 				const saveBtn = row.createEl("button", {
 					cls: "co-icon-btn co-success",
@@ -780,6 +789,11 @@ export class TerminalView extends ItemView {
 					if (newText && this.sessionNote) {
 						this.sessionNote.queue[idx] = `${tsPrefix}${newText}`;
 						void this.saveSessionNote();
+						// Single-item queue: save + send in one Enter press
+						if (shouldAutoSendAfterEdit(this.sessionNote.queue.length)) {
+							void this.sendNext();
+							return; // sendNext renders queue/history
+						}
 					}
 					this.renderQueue();
 				};

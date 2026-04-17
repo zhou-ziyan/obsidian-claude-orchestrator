@@ -19,6 +19,7 @@ import {
 	TMUX_SEARCH_PATHS,
 	HISTORY_ITEM_MIN_HEIGHT,
 	copyHistoryItemToQueue,
+	shouldAutoSendAfterEdit,
 } from "../src/utils.ts";
 import type { ProjectRegistry } from "../src/utils.ts";
 
@@ -903,5 +904,25 @@ describe("copyHistoryItemToQueue", () => {
 		const queue = ["existing"];
 		const idx = copyHistoryItemToQueue("new item", queue);
 		assert.equal(idx, 1);
+	});
+});
+
+// --- shouldAutoSendAfterEdit ---
+
+describe("shouldAutoSendAfterEdit", () => {
+	it("returns true when queue has exactly 1 item", () => {
+		assert.equal(shouldAutoSendAfterEdit(1), true);
+	});
+
+	it("returns false when queue is empty", () => {
+		assert.equal(shouldAutoSendAfterEdit(0), false);
+	});
+
+	it("returns false when queue has 2 items", () => {
+		assert.equal(shouldAutoSendAfterEdit(2), false);
+	});
+
+	it("returns false when queue has many items", () => {
+		assert.equal(shouldAutoSendAfterEdit(10), false);
 	});
 });
