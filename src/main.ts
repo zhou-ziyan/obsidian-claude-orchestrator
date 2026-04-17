@@ -4,11 +4,11 @@ import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager
 import { PROJECT_PATH_RE, generateSessionName, parseTmuxSessionsForProject, tmuxLs } from "./utils";
 
 interface OrchestratorSettings {
-	queuePanel: boolean;
+	simpleMode: boolean;
 }
 
 const DEFAULT_SETTINGS: OrchestratorSettings = {
-	queuePanel: false,
+	simpleMode: false,
 };
 
 export default class ClaudeOrchestratorPlugin extends Plugin {
@@ -51,13 +51,15 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		});
 
 		this.addCommand({
-			id: "toggle-queue-panel",
-			name: "Toggle queue panel",
+			id: "toggle-simple-mode",
+			name: "Toggle simple mode (hide queue & history)",
 			callback: async () => {
-				this.settings.queuePanel = !this.settings.queuePanel;
+				this.settings.simpleMode = !this.settings.simpleMode;
 				await this.saveSettings();
 				new Notice(
-					`Queue panel: ${this.settings.queuePanel ? "on — reload plugin to apply" : "off — reload plugin to apply"}`,
+					this.settings.simpleMode
+						? "Simple mode — reload plugin to apply"
+						: "Full mode (queue & history) — reload plugin to apply",
 				);
 			},
 		});
@@ -110,8 +112,12 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 	async loadSettings() {
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Obsidian loadData() returns any
-		const data: Partial<OrchestratorSettings> = await this.loadData() ?? {};
-		this.settings = { ...DEFAULT_SETTINGS, ...data };
+		const data: Record<string, unknown> = await this.loadData() ?? {};
+		if ("queuePanel" in data && !("simpleMode" in data)) {
+			data.simpleMode = !data.queuePanel;
+			delete data.queuePanel;
+		}
+		this.settings = { ...DEFAULT_SETTINGS, ...data as Partial<OrchestratorSettings> };
 	}
 
 	async saveSettings() {
@@ -390,15 +396,15 @@ class OrchestratorSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		new Setting(containerEl)
-			.setName("Queue panel")
+			.setName("Simple mode")
 			.setDesc(
-				"Show history and queue panels above/below the terminal. Enables task queuing per session.",
+				"Hide queue and history panels. Terminal only.",
 			)
 			.addToggle((toggle) =>
 				toggle
-					.setValue(this.plugin.settings.queuePanel)
+					.setValue(this.plugin.settings.simpleMode)
 					.onChange(async (value) => {
-						this.plugin.settings.queuePanel = value;
+						this.plugin.settings.simpleMode = value;
 						await this.plugin.saveSettings();
 					}),
 			);

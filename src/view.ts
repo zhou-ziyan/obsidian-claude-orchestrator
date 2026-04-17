@@ -77,7 +77,7 @@ export class TerminalView extends ItemView {
 	private stateSeenPreOpen = false;
 	private host: HTMLElement | null = null;
 	private onTerminalFocus?: (project: string, sessionName: string) => void;
-	private getSettings?: () => { queuePanel: boolean };
+	private getSettings?: () => { simpleMode: boolean };
 	private historyPanel: HTMLElement | null = null;
 	private queuePanel: HTMLElement | null = null;
 	private queueList: HTMLElement | null = null;
@@ -101,7 +101,7 @@ export class TerminalView extends ItemView {
 		leaf: WorkspaceLeaf,
 		pluginDir: string,
 		onTerminalFocus?: (project: string, sessionName: string) => void,
-		getSettings?: () => { queuePanel: boolean },
+		getSettings?: () => { simpleMode: boolean },
 	) {
 		super(leaf);
 		this.pluginDir = pluginDir;
@@ -189,7 +189,7 @@ export class TerminalView extends ItemView {
 		container.style.flexDirection = "column";
 		container.style.overflow = "hidden";
 
-		const queueEnabled = this.getSettings?.().queuePanel ?? false;
+		const queueEnabled = !(this.getSettings?.().simpleMode ?? false);
 
 		// --- History panel (top, collapsible) ---
 		if (queueEnabled) {
