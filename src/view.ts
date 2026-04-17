@@ -1,6 +1,6 @@
 import { debounce, FileSystemAdapter, ItemView, TFile, TFolder, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import {
-	PROJECTS_DIR,
+	findTmuxBinary,
 	normalizeViewState,
 	sessionNotePath,
 	createDefaultSessionNote,
@@ -9,6 +9,7 @@ import {
 	nowStamp,
 	SessionNote,
 } from "./utils";
+import type { ProjectRegistry } from "./utils";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { IPty } from "node-pty";
@@ -77,7 +78,7 @@ export class TerminalView extends ItemView {
 	private stateSeenPreOpen = false;
 	private host: HTMLElement | null = null;
 	private onTerminalFocus?: (project: string, sessionName: string) => void;
-	private getSettings?: () => { simpleMode: boolean };
+	private getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry };
 	private historyPanel: HTMLElement | null = null;
 	private queuePanel: HTMLElement | null = null;
 	private queueList: HTMLElement | null = null;
@@ -100,11 +101,7 @@ export class TerminalView extends ItemView {
 
 	private refreshTmuxClient(): void {
 		const { execFile } = require("child_process") as typeof import("child_process");
-		const tmuxPaths = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "tmux"];
-		const tmux = tmuxPaths.find((p) => {
-			try { (require("fs") as { accessSync: (p: string) => void }).accessSync(p); return true; } catch { return false; }
-		}) ?? "tmux";
-		execFile(tmux, ["refresh-client", "-t", this.sessionName!], () => {});
+		execFile(findTmuxBinary(), ["refresh-client", "-t", this.sessionName!], () => {});
 	}
 
 	private debouncedFit = debounce(() => this.fitAndResize(), 150, true);
@@ -113,7 +110,7 @@ export class TerminalView extends ItemView {
 		leaf: WorkspaceLeaf,
 		pluginDir: string,
 		onTerminalFocus?: (project: string, sessionName: string) => void,
-		getSettings?: () => { simpleMode: boolean },
+		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry },
 	) {
 		super(leaf);
 		this.pluginDir = pluginDir;
@@ -471,9 +468,13 @@ export class TerminalView extends ItemView {
 
 	private computeCwd(): string {
 		if (this.project) {
+			const config = this.getSettings?.().projects[this.project];
+			if (config?.workingDirectory) {
+				return config.workingDirectory;
+			}
 			const adapter = this.app.vault.adapter;
-			if (adapter instanceof FileSystemAdapter) {
-				return path.join(adapter.getBasePath(), "01_Projects", this.project);
+			if (adapter instanceof FileSystemAdapter && config?.vaultFolder) {
+				return path.join(adapter.getBasePath(), config.vaultFolder);
 			}
 		}
 		return os.homedir();
@@ -516,11 +517,7 @@ export class TerminalView extends ItemView {
 		let file: string;
 		let args: string[];
 		if (this.sessionName) {
-			// Use absolute path — Electron's PATH may not include /opt/homebrew/bin
-			const tmuxPaths = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "tmux"];
-			file = tmuxPaths.find((p) => {
-				try { (require("fs") as { accessSync: (p: string) => void }).accessSync(p); return true; } catch { return false; }
-			}) ?? "tmux";
+			file = findTmuxBinary();
 			args = ["new-session", "-A", "-s", this.sessionName];
 		} else {
 			file = shell;
@@ -562,13 +559,19 @@ export class TerminalView extends ItemView {
 
 	// --- Session note I/O ---
 
+	private vaultFolder(): string | null {
+		if (!this.project) return null;
+		return this.getSettings?.().projects[this.project]?.vaultFolder ?? null;
+	}
+
 	private async ensureSessionNote(): Promise<void> {
 		if (!this.project || !this.sessionName) return;
-		const notePath = sessionNotePath(this.project, this.sessionName);
+		const folder = this.vaultFolder();
+		if (!folder) return;
+		const notePath = sessionNotePath(folder, this.sessionName);
 		const existing = this.app.vault.getAbstractFileByPath(notePath);
 		if (!existing) {
-			// Ensure sessions/ directory exists
-			const dirPath = `${PROJECTS_DIR}/${this.project}/sessions`;
+			const dirPath = `${folder}/sessions`;
 			if (!this.app.vault.getAbstractFileByPath(dirPath)) {
 				await this.app.vault.createFolder(dirPath);
 			}
@@ -585,7 +588,9 @@ export class TerminalView extends ItemView {
 		if (!this.project || !this.sessionName) return;
 		this.sessionNoteLoaded = false;
 		await this.ensureSessionNote();
-		const notePath = sessionNotePath(this.project, this.sessionName);
+		const folder = this.vaultFolder();
+		if (!folder) return;
+		const notePath = sessionNotePath(folder, this.sessionName);
 		const file = this.app.vault.getAbstractFileByPath(notePath);
 		if (!file || file instanceof TFolder) {
 			this.sessionNote = parseSessionNote("", this.sessionName);
@@ -605,7 +610,9 @@ export class TerminalView extends ItemView {
 	private async saveSessionNote(): Promise<void> {
 		if (!this.project || !this.sessionName || !this.sessionNote) return;
 		this.sessionNote.pinnedNote = this.pinnedNote;
-		const notePath = sessionNotePath(this.project, this.sessionName);
+		const folder = this.vaultFolder();
+		if (!folder) return;
+		const notePath = sessionNotePath(folder, this.sessionName);
 		const file = this.app.vault.getAbstractFileByPath(notePath);
 		if (file instanceof TFile) {
 			await this.app.vault.modify(

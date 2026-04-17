@@ -115,10 +115,13 @@ export class SessionManagerView extends ItemView {
 			lastActivity: string | null;
 		}>();
 
+		const projects = this.plugin.settings.projects;
 		for (const s of allSessions) {
-			const project = projectFromSessionName(s.name);
+			const project = projectFromSessionName(s.name, projects);
 			if (!project) continue;
-			const notePath = sessionNotePath(project, s.name);
+			const config = projects[project];
+			if (!config) continue;
+			const notePath = sessionNotePath(config.vaultFolder, s.name);
 			const file = this.app.vault.getAbstractFileByPath(notePath);
 			if (!(file instanceof TFile)) continue;
 			try {
@@ -148,7 +151,7 @@ export class SessionManagerView extends ItemView {
 		}
 
 		// 4. Group
-		this.groups = groupSessionsByProject(allSessions, openNames, noteData);
+		this.groups = groupSessionsByProject(allSessions, openNames, noteData, projects);
 
 		// 5. Render
 		this.render();
@@ -220,7 +223,7 @@ export class SessionManagerView extends ItemView {
 			cls: `co-sm-dot ${session.hasPanel ? "co-sm-dot-active" : ""}`,
 			text: "●",
 		});
-		nameRow.createSpan({ text: session.name.replace(/^\d+_/, "").replace(/-(\d+)$/, " #$1") });
+		nameRow.createSpan({ text: session.name.replace(/-(\d+)$/, " #$1") });
 
 		// Kill × in top-right, far from action buttons
 		const killBtn = topRow.createEl("button", {
@@ -355,7 +358,7 @@ export class SessionManagerView extends ItemView {
 	}
 
 	private async attachSession(session: SessionInfo) {
-		const project = projectFromSessionName(session.name);
+		const project = projectFromSessionName(session.name, this.plugin.settings.projects);
 		const { workspace } = this.app;
 
 		const leaf = workspace.getRightLeaf(false);

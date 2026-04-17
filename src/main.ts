@@ -1,14 +1,17 @@
-import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
+import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { PROJECT_PATH_RE, generateSessionName, migrateSettings, parseTmuxSessionsForProject, tmuxLs } from "./utils";
+import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs } from "./utils";
+import type { ProjectRegistry } from "./utils";
 
-interface OrchestratorSettings {
+export interface OrchestratorSettings {
 	simpleMode: boolean;
+	projects: ProjectRegistry;
 }
 
 const DEFAULT_SETTINGS: OrchestratorSettings = {
 	simpleMode: false,
+	projects: {},
 };
 
 export default class ClaudeOrchestratorPlugin extends Plugin {
@@ -16,6 +19,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
+		await this.autoDiscoverProjects();
 
 		const pluginDir = this.resolvePluginDir();
 
@@ -51,16 +55,30 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		});
 
 		this.addCommand({
-			id: "toggle-simple-mode",
-			name: "Toggle simple mode (hide queue & history)",
-			callback: async () => {
-				this.settings.simpleMode = !this.settings.simpleMode;
-				await this.saveSettings();
-				new Notice(
-					this.settings.simpleMode
-						? "Simple mode — reload plugin to apply"
-						: "Full mode (queue & history) — reload plugin to apply",
-				);
+			id: "switch-to-simple-mode",
+			name: "Switch to simple mode (terminal only)",
+			checkCallback: (checking) => {
+				if (this.settings.simpleMode) return false;
+				if (!checking) {
+					this.settings.simpleMode = true;
+					void this.saveSettings();
+					new Notice("Simple mode — reload plugin to apply");
+				}
+				return true;
+			},
+		});
+
+		this.addCommand({
+			id: "switch-to-full-mode",
+			name: "Switch to full mode (queue & history)",
+			checkCallback: (checking) => {
+				if (!this.settings.simpleMode) return false;
+				if (!checking) {
+					this.settings.simpleMode = false;
+					void this.saveSettings();
+					new Notice("Full mode — reload plugin to apply");
+				}
+				return true;
 			},
 		});
 
@@ -362,8 +380,23 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 	private resolveActiveProject(): string | null {
 		const activeFile = this.app.workspace.getActiveFile();
 		if (!activeFile) return null;
-		const match = activeFile.path.match(PROJECT_PATH_RE);
-		return match?.[1] ?? null;
+		return resolveProjectFromPath(activeFile.path, this.settings.projects);
+	}
+
+	private async autoDiscoverProjects(): Promise<void> {
+		if (Object.keys(this.settings.projects).length > 0) return;
+		const folder = this.app.vault.getAbstractFileByPath("01_Projects");
+		if (!(folder instanceof TFolder)) return;
+		for (const child of folder.children) {
+			if (child instanceof TFolder && /^\d+_/.test(child.name)) {
+				this.settings.projects[child.name] = {
+					vaultFolder: child.path,
+				};
+			}
+		}
+		if (Object.keys(this.settings.projects).length > 0) {
+			await this.saveSettings();
+		}
 	}
 
 	private resolvePluginDir(): string {

@@ -1,7 +1,13 @@
-const PROJECTS_DIR = "01_Projects";
-const PROJECT_PATH_RE = new RegExp(`(?:^|/)${PROJECTS_DIR}/([^/]+)/`);
+import { accessSync } from "fs";
 
-export { PROJECTS_DIR, PROJECT_PATH_RE };
+export interface ProjectConfig {
+	vaultFolder: string;
+	workingDirectory?: string;
+	mainNote?: string;
+	linkedFile?: string;
+}
+
+export type ProjectRegistry = Record<string, ProjectConfig>;
 
 /**
  * Given a project name and the set of session names already in use,
@@ -23,12 +29,26 @@ export function generateSessionName(
 }
 
 /**
- * Extract the project folder name from a vault-relative note path.
- * Returns null if the path is not under 01_Projects/<name>/.
+ * Find the project whose vaultFolder is a prefix of the given file path.
+ * If multiple projects match, the longest (most specific) folder wins.
  */
-export function resolveProjectFromPath(filePath: string): string | null {
-	const match = filePath.match(PROJECT_PATH_RE);
-	return match?.[1] ?? null;
+export function resolveProjectFromPath(
+	filePath: string,
+	projects: ProjectRegistry,
+): string | null {
+	let bestMatch: string | null = null;
+	let bestLen = 0;
+	for (const [key, config] of Object.entries(projects)) {
+		const folder = config.vaultFolder;
+		if (
+			(filePath.startsWith(folder + "/") || filePath === folder) &&
+			folder.length > bestLen
+		) {
+			bestMatch = key;
+			bestLen = folder.length;
+		}
+	}
+	return bestMatch;
 }
 
 /**
@@ -184,16 +204,16 @@ export interface SessionGroup {
 }
 
 /**
- * Derive the project name from a tmux session name.
- * "15_Claude_Orchestrator" → "15_Claude_Orchestrator"
- * "15_Claude_Orchestrator-2" → "15_Claude_Orchestrator"
- * Names not matching `<NN>_<Name>` pattern → null (unmanaged).
+ * Derive the project key from a tmux session name by matching against
+ * the project registry. Strips the `-N` suffix before checking.
  */
-export function projectFromSessionName(sessionName: string): string | null {
-	// Strip -N suffix
+export function projectFromSessionName(
+	sessionName: string,
+	projects: ProjectRegistry,
+): string | null {
+	if (sessionName in projects) return sessionName;
 	const base = sessionName.replace(/-\d+$/, "");
-	// Must look like a project folder: digits + underscore + name
-	return /^\d+_/.test(base) ? base : null;
+	return base in projects ? base : null;
 }
 
 /**
@@ -208,12 +228,13 @@ export function groupSessionsByProject(
 	allSessions: { name: string; activity: number }[],
 	openSessionNames: Set<string>,
 	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null }>,
+	projects: ProjectRegistry,
 ): SessionGroup[] {
 	const projectMap = new Map<string, SessionInfo[]>();
 	const unmanaged: SessionInfo[] = [];
 
 	for (const s of allSessions) {
-		const project = projectFromSessionName(s.name);
+		const project = projectFromSessionName(s.name, projects);
 		const nd = noteData.get(s.name);
 		const info: SessionInfo = {
 			name: s.name,
@@ -268,12 +289,13 @@ export interface SessionNote {
 
 /**
  * Vault-relative path for a session note.
+ * `vaultFolder` is the project's vault-relative folder path.
  */
 export function sessionNotePath(
-	project: string,
+	vaultFolder: string,
 	sessionName: string,
 ): string {
-	return `${PROJECTS_DIR}/${project}/sessions/${sessionName}.md`;
+	return `${vaultFolder}/sessions/${sessionName}.md`;
 }
 
 /**
@@ -459,6 +481,15 @@ export function formatRelativeTime(stamp: string, now?: Date): string {
 	if (diffHr < 24) return `${diffHr}h ago`;
 	const diffDay = Math.floor(diffHr / 24);
 	return `${diffDay}d ago`;
+}
+
+const TMUX_SEARCH_PATHS = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"];
+
+export function findTmuxBinary(): string {
+	for (const p of TMUX_SEARCH_PATHS) {
+		try { accessSync(p); return p; } catch { /* not found */ }
+	}
+	return "tmux";
 }
 
 export function migrateSettings(data: Record<string, unknown>): Record<string, unknown> {

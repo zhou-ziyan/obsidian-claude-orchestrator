@@ -15,7 +15,14 @@ import {
 	nowStamp,
 	formatRelativeTime,
 	migrateSettings,
+	findTmuxBinary,
 } from "../src/utils.ts";
+import type { ProjectRegistry } from "../src/utils.ts";
+
+const TEST_PROJECTS: ProjectRegistry = {
+	"15_Claude_Orchestrator": { vaultFolder: "01_Projects/15_Claude_Orchestrator" },
+	"14_Mobile_Claude_Code": { vaultFolder: "01_Projects/14_Mobile_Claude_Code" },
+};
 
 // --- generateSessionName ---
 
@@ -89,6 +96,7 @@ describe("resolveProjectFromPath", () => {
 		assert.equal(
 			resolveProjectFromPath(
 				"01_Projects/15_Claude_Orchestrator/15_Claude_Orchestrator.md",
+				TEST_PROJECTS,
 			),
 			"15_Claude_Orchestrator",
 		);
@@ -98,30 +106,57 @@ describe("resolveProjectFromPath", () => {
 		assert.equal(
 			resolveProjectFromPath(
 				"01_Projects/15_Claude_Orchestrator/sessions/session-2.md",
+				TEST_PROJECTS,
 			),
 			"15_Claude_Orchestrator",
 		);
 	});
 
 	it("returns null for non-project paths", () => {
-		assert.equal(resolveProjectFromPath("02_Areas/someNote.md"), null);
+		assert.equal(resolveProjectFromPath("02_Areas/someNote.md", TEST_PROJECTS), null);
 	});
 
 	it("returns null for root-level files", () => {
-		assert.equal(resolveProjectFromPath("README.md"), null);
+		assert.equal(resolveProjectFromPath("README.md", TEST_PROJECTS), null);
 	});
 
-	it("returns null for path that mentions 01_Projects but no subfolder", () => {
-		assert.equal(resolveProjectFromPath("01_Projects/"), null);
+	it("returns null for unregistered project folders", () => {
+		assert.equal(resolveProjectFromPath("01_Projects/99_Unknown/note.md", TEST_PROJECTS), null);
 	});
 
 	it("handles different project names", () => {
 		assert.equal(
 			resolveProjectFromPath(
 				"01_Projects/14_Mobile_Claude_Code/notes.md",
+				TEST_PROJECTS,
 			),
 			"14_Mobile_Claude_Code",
 		);
+	});
+
+	it("works with arbitrary folder names", () => {
+		const projects: ProjectRegistry = {
+			"My Project": { vaultFolder: "work/my-project" },
+		};
+		assert.equal(
+			resolveProjectFromPath("work/my-project/notes.md", projects),
+			"My Project",
+		);
+	});
+
+	it("picks the most specific (longest) match for nested folders", () => {
+		const projects: ProjectRegistry = {
+			"Parent": { vaultFolder: "projects" },
+			"Child": { vaultFolder: "projects/sub" },
+		};
+		assert.equal(
+			resolveProjectFromPath("projects/sub/note.md", projects),
+			"Child",
+		);
+	});
+
+	it("returns null for empty registry", () => {
+		assert.equal(resolveProjectFromPath("any/path.md", {}), null);
 	});
 });
 
@@ -285,15 +320,22 @@ describe("parseTmuxSessionsForProject", () => {
 describe("sessionNotePath", () => {
 	it("returns correct vault-relative path", () => {
 		assert.equal(
-			sessionNotePath("15_Claude_Orchestrator", "15_Claude_Orchestrator"),
+			sessionNotePath("01_Projects/15_Claude_Orchestrator", "15_Claude_Orchestrator"),
 			"01_Projects/15_Claude_Orchestrator/sessions/15_Claude_Orchestrator.md",
 		);
 	});
 
 	it("handles numbered session names", () => {
 		assert.equal(
-			sessionNotePath("15_Claude_Orchestrator", "15_Claude_Orchestrator-2"),
+			sessionNotePath("01_Projects/15_Claude_Orchestrator", "15_Claude_Orchestrator-2"),
 			"01_Projects/15_Claude_Orchestrator/sessions/15_Claude_Orchestrator-2.md",
+		);
+	});
+
+	it("works with arbitrary vault folders", () => {
+		assert.equal(
+			sessionNotePath("work/my-project", "my-project"),
+			"work/my-project/sessions/my-project.md",
 		);
 	});
 });
@@ -483,28 +525,36 @@ describe("parseAllTmuxSessions", () => {
 // --- projectFromSessionName ---
 
 describe("projectFromSessionName", () => {
-	it("returns project for standard session name", () => {
-		assert.equal(projectFromSessionName("15_Claude_Orchestrator"), "15_Claude_Orchestrator");
+	it("returns project for exact match", () => {
+		assert.equal(projectFromSessionName("15_Claude_Orchestrator", TEST_PROJECTS), "15_Claude_Orchestrator");
 	});
 
 	it("strips -N suffix", () => {
-		assert.equal(projectFromSessionName("15_Claude_Orchestrator-2"), "15_Claude_Orchestrator");
+		assert.equal(projectFromSessionName("15_Claude_Orchestrator-2", TEST_PROJECTS), "15_Claude_Orchestrator");
 	});
 
 	it("strips -N for higher numbers", () => {
-		assert.equal(projectFromSessionName("15_Claude_Orchestrator-15"), "15_Claude_Orchestrator");
+		assert.equal(projectFromSessionName("15_Claude_Orchestrator-15", TEST_PROJECTS), "15_Claude_Orchestrator");
 	});
 
-	it("returns null for names without digit-underscore prefix", () => {
-		assert.equal(projectFromSessionName("my-random-session"), null);
+	it("returns null for unregistered session name", () => {
+		assert.equal(projectFromSessionName("my-random-session", TEST_PROJECTS), null);
 	});
 
-	it("returns null for bare word", () => {
-		assert.equal(projectFromSessionName("scratch"), null);
+	it("returns null for bare word not in registry", () => {
+		assert.equal(projectFromSessionName("scratch", TEST_PROJECTS), null);
 	});
 
-	it("handles single-digit project number", () => {
-		assert.equal(projectFromSessionName("1_Quick"), "1_Quick");
+	it("matches arbitrary project names in registry", () => {
+		const projects: ProjectRegistry = {
+			"my-project": { vaultFolder: "work/my-project" },
+		};
+		assert.equal(projectFromSessionName("my-project", projects), "my-project");
+		assert.equal(projectFromSessionName("my-project-2", projects), "my-project");
+	});
+
+	it("returns null for empty registry", () => {
+		assert.equal(projectFromSessionName("anything", {}), null);
 	});
 });
 
@@ -526,6 +576,7 @@ describe("groupSessionsByProject", () => {
 				["15_Claude_Orchestrator", { pinnedNote: "note.md", queueCount: 2, lastActivity: "2026-04-15 14:30" }],
 				["14_Mobile_Claude_Code", { pinnedNote: null, queueCount: 0, lastActivity: null }],
 			]),
+			TEST_PROJECTS,
 		);
 
 		assert.equal(groups.length, 3); // 14_, 15_, Unmanaged
@@ -542,6 +593,7 @@ describe("groupSessionsByProject", () => {
 			sessions,
 			new Set(["15_Claude_Orchestrator"]),
 			new Map(),
+			TEST_PROJECTS,
 		);
 		const orch = groups.find((g) => g.project === "15_Claude_Orchestrator")!;
 		assert.equal(orch.sessions[0].hasPanel, true);  // 15_Claude_Orchestrator
@@ -555,6 +607,7 @@ describe("groupSessionsByProject", () => {
 			new Map([
 				["15_Claude_Orchestrator", { pinnedNote: "a.md", queueCount: 3, lastActivity: "2026-04-15 10:00" }],
 			]),
+			TEST_PROJECTS,
 		);
 		const orch = groups.find((g) => g.project === "15_Claude_Orchestrator")!;
 		assert.equal(orch.sessions[0].hasNote, true);
@@ -565,11 +618,15 @@ describe("groupSessionsByProject", () => {
 	});
 
 	it("returns empty array for no sessions", () => {
-		const groups = groupSessionsByProject([], new Set(), new Map());
+		const groups = groupSessionsByProject([], new Set(), new Map(), TEST_PROJECTS);
 		assert.deepEqual(groups, []);
 	});
 
 	it("sorts projects alphabetically and sessions within each project", () => {
+		const sortProjects: ProjectRegistry = {
+			"10_A_Project": { vaultFolder: "01_Projects/10_A_Project" },
+			"20_Z_Project": { vaultFolder: "01_Projects/20_Z_Project" },
+		};
 		const groups = groupSessionsByProject(
 			[
 				{ name: "20_Z_Project-3", activity: 0 },
@@ -578,6 +635,7 @@ describe("groupSessionsByProject", () => {
 			],
 			new Set(),
 			new Map(),
+			sortProjects,
 		);
 		assert.equal(groups[0].project, "10_A_Project");
 		assert.equal(groups[1].project, "20_Z_Project");
@@ -743,5 +801,29 @@ describe("migrateSettings", () => {
 		migrateSettings(input);
 		assert.equal("queuePanel" in input, true);
 		assert.equal("simpleMode" in input, false);
+	});
+});
+
+// --- findTmuxBinary ---
+
+describe("findTmuxBinary", () => {
+	it("returns a string", () => {
+		const result = findTmuxBinary();
+		assert.equal(typeof result, "string");
+		assert.ok(result.length > 0);
+	});
+
+	it("returns an absolute path or bare 'tmux'", () => {
+		const result = findTmuxBinary();
+		assert.ok(result === "tmux" || result.startsWith("/"));
+	});
+
+	it("returns a path that ends with 'tmux'", () => {
+		const result = findTmuxBinary();
+		assert.ok(result.endsWith("tmux"));
+	});
+
+	it("returns a consistent result on repeated calls", () => {
+		assert.equal(findTmuxBinary(), findTmuxBinary());
 	});
 });
