@@ -352,6 +352,14 @@
     line-height: 1.4;
     cursor: pointer;
 }
+.co-queue-img {
+    max-width: 200px;
+    max-height: 120px;
+    border-radius: 4px;
+    vertical-align: middle;
+    margin: 2px 0;
+}
+
 .co-queue-text.co-collapsed,
 .co-history-text.co-collapsed {
     display: -webkit-box;

@@ -21,6 +21,7 @@ import {
 	fetchPtyUsage,
 	getPtyStatus,
 	ptyStatusMessage,
+	parseQueueItemSegments,
 } from "./utils";
 import type { ProjectRegistry, QueueMode } from "./utils";
 import { Terminal } from "@xterm/xterm";
@@ -429,9 +430,27 @@ export class TerminalView extends ItemView {
 				input.style.height = `${input.scrollHeight}px`;
 			};
 			input.addEventListener("input", autoResize);
-			input.addEventListener("paste", () => {
-				// Paste updates the DOM asynchronously; wait a frame for
-				// scrollHeight to reflect the new content.
+			input.addEventListener("paste", (e) => {
+				const files = e.clipboardData?.files;
+				if (files && files.length > 0) {
+					const imageFile = Array.from(files).find((f) => f.type.startsWith("image/"));
+					if (imageFile) {
+						e.preventDefault();
+						void (async () => {
+							const buf = await imageFile.arrayBuffer();
+							const ext = imageFile.type.split("/")[1] ?? "png";
+							const name = `paste-${Date.now()}.${ext}`;
+							const folder = (this.app.vault as unknown as { getConfig(k: string): string }).getConfig("attachmentFolderPath") || "";
+							const destPath = folder ? `${folder}/${name}` : name;
+							await this.app.vault.createBinary(destPath, buf);
+							const pos = input.selectionStart ?? input.value.length;
+							const ref = `![[${name}]]`;
+							input.value = input.value.slice(0, pos) + ref + input.value.slice(pos);
+							requestAnimationFrame(autoResize);
+						})();
+						return;
+					}
+				}
 				requestAnimationFrame(autoResize);
 			});
 
@@ -784,10 +803,27 @@ export class TerminalView extends ItemView {
 			if (stamp) {
 				row.createSpan({ cls: "co-timestamp", text: stamp });
 			}
-			const textSpan = row.createSpan({
-				cls: "co-queue-text co-collapsed",
-				text: `${idx + 1}. ${body}`,
-			});
+			const textSpan = row.createSpan({ cls: "co-queue-text co-collapsed" });
+			const segments = parseQueueItemSegments(body);
+			if (segments.some((s) => s.type === "image")) {
+				textSpan.createSpan({ text: `${idx + 1}. ` });
+				for (const seg of segments) {
+					if (seg.type === "text") {
+						textSpan.createSpan({ text: seg.content });
+					} else {
+						const img = textSpan.createEl("img", { cls: "co-queue-img" });
+						img.alt = seg.content.split("/").pop() ?? seg.content;
+						const file = this.app.metadataCache.getFirstLinkpathDest(seg.content, "");
+						if (file) {
+							img.src = this.app.vault.getResourcePath(file);
+						} else {
+							img.src = seg.content;
+						}
+					}
+				}
+			} else {
+				textSpan.textContent = `${idx + 1}. ${body}`;
+			}
 			textSpan.addEventListener("click", () => {
 				textSpan.classList.toggle("co-collapsed");
 			});
