@@ -1,7 +1,7 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage } from "./utils";
+import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, parseSessionNote, serializeSessionNote } from "./utils";
 import type { ProjectRegistry } from "./utils";
 import { StopHookWatcher } from "./stop-hook-watcher";
 
@@ -133,7 +133,13 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		// Stop hook watcher
 		this.stopHookWatcher = new StopHookWatcher(() => this.settings.projects);
 		this.stopHookWatcher.onSignal((signal, project) => {
-			new Notice(`Claude stopped in ${project} (${signal.tmuxSession})`);
+			const reason = signal.stopReason ?? "done";
+			if (reason === "asking") {
+				new Notice(`Claude is asking a question (${signal.tmuxSession})`);
+			} else {
+				new Notice(`Claude finished (${signal.tmuxSession})`);
+			}
+			void this.updateSessionStatus(project, signal.tmuxSession, reason);
 			this.refreshSessionManager();
 		});
 		this.stopHookWatcher.start();
@@ -357,6 +363,18 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 				view.highlightSession(sessionName);
 			}
 		}
+	}
+
+	private async updateSessionStatus(project: string, sessionName: string, reason: "done" | "asking"): Promise<void> {
+		const config = this.settings.projects[project];
+		if (!config) return;
+		const notePath = sessionNotePath(config.vaultFolder, sessionName);
+		const file = this.app.vault.getAbstractFileByPath(notePath);
+		if (!file || !(file instanceof TFile)) return;
+		const content = await this.app.vault.read(file);
+		const note = parseSessionNote(content, sessionName);
+		note.status = reason === "asking" ? "waiting_for_user" : "idle";
+		await this.app.vault.modify(file, serializeSessionNote(note));
 	}
 
 	private refreshSessionManager() {
