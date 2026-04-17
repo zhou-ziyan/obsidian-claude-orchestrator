@@ -206,6 +206,7 @@ export interface SessionInfo {
 	lastActivity: string | null;
 	tmuxActivity: number;
 	preview: string | null;
+	hidden: boolean;
 }
 
 export interface SessionGroup {
@@ -237,7 +238,7 @@ export function projectFromSessionName(
 export function groupSessionsByProject(
 	allSessions: { name: string; activity: number }[],
 	openSessionNames: Set<string>,
-	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null }>,
+	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null; hidden: boolean }>,
 	projects: ProjectRegistry,
 ): SessionGroup[] {
 	const projectMap = new Map<string, SessionInfo[]>();
@@ -255,6 +256,7 @@ export function groupSessionsByProject(
 			lastActivity: nd?.lastActivity ?? null,
 			tmuxActivity: s.activity,
 			preview: nd?.preview ?? null,
+			hidden: nd?.hidden ?? false,
 		};
 
 		if (project) {
@@ -330,6 +332,7 @@ export interface SessionNote {
 	status: SessionStatus;
 	pinnedNote: string | null;
 	queueMode: QueueMode;
+	hidden: boolean;
 	history: HistoryItem[];
 	queue: string[];
 }
@@ -382,6 +385,7 @@ export function parseSessionNote(
 		status: "idle",
 		pinnedNote: null,
 		queueMode: "manual",
+		hidden: false,
 		history: [],
 		queue: [],
 	};
@@ -405,6 +409,8 @@ export function parseSessionNote(
 					note.pinnedNote = value;
 				if (key === "queueMode" && isQueueMode(value))
 					note.queueMode = value;
+				if (key === "hidden" && value === "true")
+					note.hidden = true;
 			}
 			i++;
 		}
@@ -487,10 +493,9 @@ export function serializeSessionNote(note: SessionNote): string {
 		`status: ${note.status}`,
 		`pinnedNote: ${note.pinnedNote ?? ""}`,
 		`queueMode: ${note.queueMode}`,
-		"---",
-		"",
-		"## History",
 	];
+	if (note.hidden) lines.push("hidden: true");
+	lines.push("---", "", "## History");
 
 	for (const item of note.history) {
 		const mark = item.completed ? "x" : " ";

@@ -578,6 +578,7 @@ describe("serializeSessionNote", () => {
 			status: "waiting_for_user" as const,
 			pinnedNote: "01_Projects/15_Claude_Orchestrator/15_Claude_Orchestrator.md",
 			queueMode: "manual" as const,
+			hidden: false,
 			history: [
 				{ text: "task A", completed: true },
 				{ text: "task B", completed: false },
@@ -595,6 +596,7 @@ describe("serializeSessionNote", () => {
 			status: "idle" as const,
 			pinnedNote: null,
 			queueMode: "manual" as const,
+			hidden: false,
 			history: [],
 			queue: [],
 		};
@@ -1933,5 +1935,100 @@ describe("groupSessionsByProject preview", () => {
 		);
 		const orch = groups.find((g) => g.project === "15_Claude_Orchestrator")!;
 		assert.equal(orch.sessions[0].preview, null);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Session note hidden field
+// ---------------------------------------------------------------------------
+
+describe("parseSessionNote hidden field", () => {
+	it("defaults hidden to false when field is absent", () => {
+		const note = parseSessionNote("---\nsession: test\nstatus: idle\n---\n\n## History\n\n## Queue\n");
+		assert.equal(note.hidden, false);
+	});
+
+	it("parses hidden: true from frontmatter", () => {
+		const note = parseSessionNote("---\nsession: test\nstatus: idle\nhidden: true\n---\n\n## History\n\n## Queue\n");
+		assert.equal(note.hidden, true);
+	});
+
+	it("parses hidden: false from frontmatter", () => {
+		const note = parseSessionNote("---\nsession: test\nstatus: idle\nhidden: false\n---\n\n## History\n\n## Queue\n");
+		assert.equal(note.hidden, false);
+	});
+
+	it("ignores invalid hidden values", () => {
+		const note = parseSessionNote("---\nsession: test\nstatus: idle\nhidden: maybe\n---\n\n## History\n\n## Queue\n");
+		assert.equal(note.hidden, false);
+	});
+});
+
+describe("serializeSessionNote hidden field", () => {
+	it("writes hidden: true to frontmatter", () => {
+		const note: SessionNote = {
+			session: "test",
+			status: "idle",
+			pinnedNote: null,
+			queueMode: "manual",
+			hidden: true,
+			history: [],
+			queue: [],
+		};
+		const md = serializeSessionNote(note);
+		assert.ok(md.includes("hidden: true"));
+	});
+
+	it("omits hidden field when false", () => {
+		const note: SessionNote = {
+			session: "test",
+			status: "idle",
+			pinnedNote: null,
+			queueMode: "manual",
+			hidden: false,
+			history: [],
+			queue: [],
+		};
+		const md = serializeSessionNote(note);
+		assert.ok(!md.includes("hidden"));
+	});
+
+	it("round-trips hidden: true through parse", () => {
+		const note: SessionNote = {
+			session: "test",
+			status: "idle",
+			pinnedNote: null,
+			queueMode: "manual",
+			hidden: true,
+			history: [],
+			queue: [],
+		};
+		const md = serializeSessionNote(note);
+		const reparsed = parseSessionNote(md);
+		assert.equal(reparsed.hidden, true);
+	});
+
+	it("round-trips hidden: false (omitted) through parse", () => {
+		const note: SessionNote = {
+			session: "test",
+			status: "idle",
+			pinnedNote: null,
+			queueMode: "manual",
+			hidden: false,
+			history: [],
+			queue: [],
+		};
+		const md = serializeSessionNote(note);
+		const reparsed = parseSessionNote(md);
+		assert.equal(reparsed.hidden, false);
+	});
+});
+
+describe("createDefaultSessionNote hidden", () => {
+	it("does not include hidden field in default note", () => {
+		const content = createDefaultSessionNote("test-session");
+		assert.ok(!content.includes("hidden"));
+		const parsed = parseSessionNote(content);
+		assert.equal(parsed.hidden, false);
 	});
 });
