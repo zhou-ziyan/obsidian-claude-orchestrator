@@ -837,10 +837,6 @@
     background: var(--co-bg-card-focused-hover);
 }
 
-.co-sm-card-editing > :not(.co-sm-card-top) {
-    display: none;
-}
-
 .co-sm-card-name {
     display: flex;
     align-items: center;
@@ -913,6 +909,8 @@
     opacity: 0.5;
 }
 .co-sm-notes-editing {
+    display: flex;
+    flex-direction: column;
     white-space: normal;
     overflow: visible;
 }
@@ -928,6 +926,12 @@
     padding: 4px 6px;
     resize: vertical;
     min-height: 40px;
+}
+.co-sm-notes-save {
+    align-self: flex-end;
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--co-green);
 }
 
 .co-sm-card-info {
