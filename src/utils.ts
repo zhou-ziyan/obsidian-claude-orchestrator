@@ -343,6 +343,7 @@ export interface SessionNote {
 	pinnedNote: string | null;
 	queueMode: QueueMode;
 	displayName: string;
+	summary: string;
 	notes: string;
 	history: HistoryItem[];
 	queue: string[];
@@ -399,6 +400,7 @@ export function parseSessionNote(
 		pinnedNote: null,
 		queueMode: "manual",
 		displayName: "",
+		summary: "",
 		notes: "",
 		history: [],
 		queue: [],
@@ -425,6 +427,8 @@ export function parseSessionNote(
 					note.queueMode = value;
 				if (key === "displayName" && value)
 					note.displayName = value;
+				if (key === "summary" && value)
+					note.summary = value;
 			}
 			i++;
 		}
@@ -526,6 +530,7 @@ export function serializeSessionNote(note: SessionNote): string {
 		`queueMode: ${note.queueMode}`,
 	];
 	if (note.displayName) lines.push(`displayName: ${note.displayName}`);
+	if (note.summary) lines.push(`summary: ${note.summary}`);
 	lines.push("---", "", "## Notes");
 
 	if (note.notes) {
@@ -566,6 +571,8 @@ export function stripTimestamp(text: string): string {
 const PREVIEW_SKIP_RE = /^(按照\s|按\s\S+\s执行|##+ |---\s*$)/;
 
 export function extractSessionPreview(note: SessionNote): string | null {
+	if (note.summary) return note.summary;
+
 	const notesLine = note.notes.split("\n").find((l) => l.trim().length > 0);
 	if (notesLine) return notesLine.trim();
 

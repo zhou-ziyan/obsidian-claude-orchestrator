@@ -593,6 +593,7 @@ describe("serializeSessionNote", () => {
 			pinnedNote: "01_Projects/15_Claude_Orchestrator/15_Claude_Orchestrator.md",
 			queueMode: "manual" as const,
 			displayName: "",
+			summary: "",
 			notes: "",
 			history: [
 				{ text: "task A", completed: true },
@@ -612,6 +613,7 @@ describe("serializeSessionNote", () => {
 			pinnedNote: null,
 			queueMode: "manual" as const,
 			displayName: "",
+			summary: "",
 			notes: "",
 			history: [],
 			queue: [],
@@ -1859,12 +1861,13 @@ describe("PTY_DEFAULT_MAX", () => {
 // ---------------------------------------------------------------------------
 
 describe("extractSessionPreview", () => {
-	const mkNote = (queue: string[], history: Array<{ text: string; completed: boolean }>, notes = ""): SessionNote => ({
+	const mkNote = (queue: string[], history: Array<{ text: string; completed: boolean }>, notes = "", summary = ""): SessionNote => ({
 		session: "test",
 		status: "idle",
 		pinnedNote: null,
 		queueMode: "manual",
 		displayName: "",
+		summary,
 		notes,
 		history,
 		queue,
@@ -1985,6 +1988,21 @@ describe("extractSessionPreview", () => {
 		const note = mkNote(["[2026-04-17 10:00] task"], [], "  \n  ");
 		assert.equal(extractSessionPreview(note), "task");
 	});
+
+	it("prioritizes summary over notes, queue, and history", () => {
+		const note = mkNote(
+			["[2026-04-17 10:00] queue item"],
+			[{ text: "history item", completed: false }],
+			"Notes content here",
+			"PTY management session",
+		);
+		assert.equal(extractSessionPreview(note), "PTY management session");
+	});
+
+	it("falls back to notes when summary is empty", () => {
+		const note = mkNote([], [], "Notes fallback", "");
+		assert.equal(extractSessionPreview(note), "Notes fallback");
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -2066,6 +2084,37 @@ describe("parseSessionNote notes", () => {
 		const serialized = serializeSessionNote(note);
 		const reparsed = parseSessionNote(serialized);
 		assert.equal(reparsed.notes, "My important note");
+	});
+});
+
+describe("parseSessionNote summary", () => {
+	it("parses summary from frontmatter", () => {
+		const md = "---\nsession: test\nsummary: PTY manager\n---\n\n## Notes\n\n## History\n\n## Queue\n";
+		const note = parseSessionNote(md);
+		assert.equal(note.summary, "PTY manager");
+	});
+
+	it("defaults summary to empty string when absent", () => {
+		const md = "---\nsession: test\n---\n\n## Notes\n\n## History\n\n## Queue\n";
+		const note = parseSessionNote(md);
+		assert.equal(note.summary, "");
+	});
+
+	it("round-trips summary through serialize", () => {
+		const md = "---\nsession: test\nsummary: My summary\n---\n\n## Notes\n\n## History\n\n## Queue\n";
+		const note = parseSessionNote(md);
+		assert.equal(note.summary, "My summary");
+		const serialized = serializeSessionNote(note);
+		const reparsed = parseSessionNote(serialized);
+		assert.equal(reparsed.summary, "My summary");
+	});
+
+	it("omits summary from frontmatter when empty", () => {
+		const md = "---\nsession: test\n---\n\n## Notes\n\n## History\n\n## Queue\n";
+		const note = parseSessionNote(md);
+		note.summary = "";
+		const serialized = serializeSessionNote(note);
+		assert.ok(!serialized.includes("summary:"));
 	});
 });
 
