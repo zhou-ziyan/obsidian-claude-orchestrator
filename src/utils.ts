@@ -206,7 +206,11 @@ export interface SessionInfo {
 	lastActivity: string | null;
 	tmuxActivity: number;
 	preview: string | null;
+<<<<<<< HEAD
 	notesSummary: string | null;
+=======
+	hidden: boolean;
+>>>>>>> feat/sm-card-actions
 }
 
 export interface SessionGroup {
@@ -238,7 +242,11 @@ export function projectFromSessionName(
 export function groupSessionsByProject(
 	allSessions: { name: string; activity: number }[],
 	openSessionNames: Set<string>,
+<<<<<<< HEAD
 	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null; notesSummary: string | null }>,
+=======
+	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null; hidden: boolean }>,
+>>>>>>> feat/sm-card-actions
 	projects: ProjectRegistry,
 ): SessionGroup[] {
 	const projectMap = new Map<string, SessionInfo[]>();
@@ -256,7 +264,11 @@ export function groupSessionsByProject(
 			lastActivity: nd?.lastActivity ?? null,
 			tmuxActivity: s.activity,
 			preview: nd?.preview ?? null,
+<<<<<<< HEAD
 			notesSummary: nd?.notesSummary ?? null,
+=======
+			hidden: nd?.hidden ?? false,
+>>>>>>> feat/sm-card-actions
 		};
 
 		if (project) {
@@ -349,7 +361,11 @@ export interface SessionNote {
 	status: SessionStatus;
 	pinnedNote: string | null;
 	queueMode: QueueMode;
+<<<<<<< HEAD
 	notes: string;
+=======
+	hidden: boolean;
+>>>>>>> feat/sm-card-actions
 	history: HistoryItem[];
 	queue: string[];
 }
@@ -404,7 +420,11 @@ export function parseSessionNote(
 		status: "idle",
 		pinnedNote: null,
 		queueMode: "manual",
+<<<<<<< HEAD
 		notes: "",
+=======
+		hidden: false,
+>>>>>>> feat/sm-card-actions
 		history: [],
 		queue: [],
 	};
@@ -428,6 +448,8 @@ export function parseSessionNote(
 					note.pinnedNote = value;
 				if (key === "queueMode" && isQueueMode(value))
 					note.queueMode = value;
+				if (key === "hidden" && value === "true")
+					note.hidden = true;
 			}
 			i++;
 		}
@@ -527,10 +549,15 @@ export function serializeSessionNote(note: SessionNote): string {
 		`status: ${note.status}`,
 		`pinnedNote: ${note.pinnedNote ?? ""}`,
 		`queueMode: ${note.queueMode}`,
+<<<<<<< HEAD
 		"---",
 		"",
 		"## Notes",
+=======
+>>>>>>> feat/sm-card-actions
 	];
+	if (note.hidden) lines.push("hidden: true");
+	lines.push("---", "", "## History");
 
 	if (note.notes) {
 		lines.push(note.notes);
