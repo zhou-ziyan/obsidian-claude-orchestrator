@@ -111,6 +111,7 @@ export class TerminalView extends ItemView {
 	private countdownRemaining = 0;
 	private escHandler: ((e: KeyboardEvent) => void) | null = null;
 	private claudeIdle = false;
+	private loadedAt = 0;
 	private themeObserver: MutationObserver | null = null;
 
 	private fitAndResize(): void {
@@ -798,6 +799,7 @@ export class TerminalView extends ItemView {
 		this.sessionNote = parseSessionNote(content, this.sessionName);
 		this.pinnedNote = this.sessionNote.pinnedNote;
 		this.claudeIdle = this.sessionNote.status === "idle";
+		this.loadedAt = Date.now();
 		this.sessionNoteLoaded = true;
 		this.renderHistory();
 		this.renderQueue();
@@ -1098,15 +1100,17 @@ export class TerminalView extends ItemView {
 		if (!this.sessionNote) return;
 
 		this.claudeIdle = stopReason !== "asking";
+		this.sessionNote.status = stopReason === "asking" ? "waiting_for_user" : "idle";
 
 		if (stopReason === "done") {
 			const last = this.sessionNote.history[this.sessionNote.history.length - 1];
 			if (last && !last.completed) {
 				last.completed = true;
-				this.renderHistory();
-				void this.saveSessionNote();
 			}
 		}
+
+		this.renderHistory();
+		void this.saveSessionNote();
 
 		const action = autoSendAction(
 			this.sessionNote.queueMode,
@@ -1170,6 +1174,7 @@ export class TerminalView extends ItemView {
 		if (!this.claudeIdle) return;
 		if (!this.sessionNote) return;
 		if (this.countdownRemaining > 0) return;
+		if (Date.now() - this.loadedAt < 5000) return;
 
 		const action = autoSendAction(
 			this.sessionNote.queueMode,
