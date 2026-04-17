@@ -830,6 +830,24 @@
 .co-sm-idle {
     opacity: 0.5;
 }
+.co-sm-inactive-section {
+    margin-top: 8px;
+    border-top: 1px solid #333;
+    padding-top: 4px;
+}
+.co-sm-inactive-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    color: #888;
+    cursor: pointer;
+    user-select: none;
+}
+.co-sm-inactive-header:hover {
+    color: #bbb;
+}
 
 /* PTY usage indicator */
 .co-sm-pty {
@@ -1084,6 +1102,15 @@
 }
 .theme-light .co-sm-idle-badge {
     color: #997;
+}
+.theme-light .co-sm-inactive-section {
+    border-top-color: #ccc;
+}
+.theme-light .co-sm-inactive-header {
+    color: #999;
+}
+.theme-light .co-sm-inactive-header:hover {
+    color: #666;
 }
 
 /* xterm viewport background for light theme */

@@ -318,7 +318,10 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			new Notice("No project context — open a project note first.");
 			return;
 		}
+		await this.createNewTerminalForProject(project);
+	}
 
+	async createNewTerminalForProject(project: string) {
 		const sessionName = generateSessionName(
 			project,
 			this.collectSessionNames(),

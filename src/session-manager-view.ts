@@ -217,6 +217,8 @@ export class SessionManagerView extends ItemView {
 		this.render();
 	}
 
+	private inactiveCollapsed = true;
+
 	private render() {
 		if (!this.listEl) return;
 		this.listEl.empty();
@@ -229,7 +231,42 @@ export class SessionManagerView extends ItemView {
 			return;
 		}
 
+		const active: SessionGroup[] = [];
+		const inactive: SessionGroup[] = [];
 		for (const group of this.groups) {
+			if (group.project === "Unmanaged" || group.sessions.length > 0) {
+				active.push(group);
+			} else {
+				inactive.push(group);
+			}
+		}
+
+		for (const group of active) {
+			this.renderGroup(group);
+		}
+
+		if (inactive.length > 0) {
+			this.renderInactiveSection(inactive);
+		}
+	}
+
+	private renderInactiveSection(groups: SessionGroup[]) {
+		if (!this.listEl) return;
+		const section = this.listEl.createDiv({ cls: "co-sm-inactive-section" });
+		const header = section.createDiv({ cls: "co-sm-inactive-header" });
+		header.createSpan({
+			cls: "co-sm-arrow",
+			text: this.inactiveCollapsed ? "▸" : "▾",
+		});
+		header.createSpan({ text: `Inactive projects (${groups.length})` });
+		header.addEventListener("click", () => {
+			this.inactiveCollapsed = !this.inactiveCollapsed;
+			this.render();
+		});
+
+		if (this.inactiveCollapsed) return;
+
+		for (const group of groups) {
 			this.renderGroup(group);
 		}
 	}
@@ -284,6 +321,18 @@ export class SessionManagerView extends ItemView {
 					});
 				});
 			}
+
+			const newBtn = groupHeader.createEl("button", {
+				cls: "co-icon-btn co-sm-gear",
+				text: "+",
+			});
+			newBtn.title = "New session";
+			newBtn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				void this.plugin.createNewTerminalForProject(group.project).then(() => {
+					setTimeout(() => { void this.refresh(); }, 500);
+				});
+			});
 
 			const gearBtn = groupHeader.createEl("button", {
 				cls: "co-icon-btn co-sm-gear",
@@ -392,15 +441,6 @@ export class SessionManagerView extends ItemView {
 		const actions = card.createDiv({ cls: "co-sm-card-actions" });
 
 		if (session.hasPanel) {
-			const focusBtn = actions.createEl("button", {
-				cls: "co-text-btn",
-				text: "Focus",
-			});
-			focusBtn.addEventListener("click", (e) => {
-				e.stopPropagation();
-				this.focusSession(session.name);
-			});
-
 			if (session.queueCount > 0) {
 				const sendBtn = actions.createEl("button", {
 					cls: "co-text-btn co-accent",
