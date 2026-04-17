@@ -817,6 +817,7 @@
 .co-sm-dot-running { color: var(--co-green); }
 .co-sm-dot-waiting_for_user { color: #e8a838; }
 
+.co-sm-mode-manual { color: var(--co-text-dim); }
 .co-sm-mode-listen { color: var(--co-listen); }
 .co-sm-mode-auto { color: var(--co-auto); }
 

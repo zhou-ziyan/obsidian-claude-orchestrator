@@ -445,12 +445,10 @@ export class SessionManagerView extends ItemView {
 				cls: "co-sm-badge",
 				text: `Queue: ${session.queueCount}`,
 			});
-			if (session.queueMode !== "manual") {
-				infoRow.createSpan({
-					cls: `co-sm-badge co-sm-mode-${session.queueMode}`,
-					text: queueModeLabel(session.queueMode),
-				});
-			}
+			infoRow.createSpan({
+				cls: `co-sm-badge co-sm-mode-${session.queueMode}`,
+				text: queueModeLabel(session.queueMode),
+			});
 			if (session.lastActivity) {
 				infoRow.createSpan({
 					cls: "co-sm-time",
