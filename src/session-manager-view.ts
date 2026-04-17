@@ -177,11 +177,8 @@ export class SessionManagerView extends ItemView {
 			queueCount: number;
 			lastActivity: string | null;
 			preview: string | null;
-<<<<<<< HEAD
 			notesSummary: string | null;
-=======
 			hidden: boolean;
->>>>>>> feat/sm-card-actions
 		}>();
 
 		const projects = this.plugin.settings.projects;
@@ -215,11 +212,8 @@ export class SessionManagerView extends ItemView {
 					queueCount: note.queue.length,
 					lastActivity,
 					preview: extractSessionPreview(note),
-<<<<<<< HEAD
 					notesSummary: firstLine,
-=======
 					hidden: note.hidden,
->>>>>>> feat/sm-card-actions
 				});
 			} catch {
 				// Note read failed — skip

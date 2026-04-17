@@ -584,11 +584,8 @@ describe("serializeSessionNote", () => {
 			status: "waiting_for_user" as const,
 			pinnedNote: "01_Projects/15_Claude_Orchestrator/15_Claude_Orchestrator.md",
 			queueMode: "manual" as const,
-<<<<<<< HEAD
 			notes: "",
-=======
 			hidden: false,
->>>>>>> feat/sm-card-actions
 			history: [
 				{ text: "task A", completed: true },
 				{ text: "task B", completed: false },
@@ -606,11 +603,8 @@ describe("serializeSessionNote", () => {
 			status: "idle" as const,
 			pinnedNote: null,
 			queueMode: "manual" as const,
-<<<<<<< HEAD
 			notes: "",
-=======
 			hidden: false,
->>>>>>> feat/sm-card-actions
 			history: [],
 			queue: [],
 		};
@@ -1952,7 +1946,6 @@ describe("groupSessionsByProject preview", () => {
 	});
 });
 
-<<<<<<< HEAD
 // --- SessionNote notes field ---
 
 describe("parseSessionNote notes", () => {
@@ -2332,7 +2325,9 @@ describe("autoSendAction", () => {
 describe("AUTO_SEND_COUNTDOWN_MS", () => {
 	it("is 3000ms", () => {
 		assert.equal(AUTO_SEND_COUNTDOWN_MS, 3000);
-=======
+	});
+});
+
 // ---------------------------------------------------------------------------
 // Session note hidden field
 // ---------------------------------------------------------------------------
@@ -2366,6 +2361,7 @@ describe("serializeSessionNote hidden field", () => {
 			status: "idle",
 			pinnedNote: null,
 			queueMode: "manual",
+			notes: "",
 			hidden: true,
 			history: [],
 			queue: [],
@@ -2380,6 +2376,7 @@ describe("serializeSessionNote hidden field", () => {
 			status: "idle",
 			pinnedNote: null,
 			queueMode: "manual",
+			notes: "",
 			hidden: false,
 			history: [],
 			queue: [],
@@ -2394,6 +2391,7 @@ describe("serializeSessionNote hidden field", () => {
 			status: "idle",
 			pinnedNote: null,
 			queueMode: "manual",
+			notes: "",
 			hidden: true,
 			history: [],
 			queue: [],
@@ -2409,6 +2407,7 @@ describe("serializeSessionNote hidden field", () => {
 			status: "idle",
 			pinnedNote: null,
 			queueMode: "manual",
+			notes: "",
 			hidden: false,
 			history: [],
 			queue: [],
@@ -2425,6 +2424,5 @@ describe("createDefaultSessionNote hidden", () => {
 		assert.ok(!content.includes("hidden"));
 		const parsed = parseSessionNote(content);
 		assert.equal(parsed.hidden, false);
->>>>>>> feat/sm-card-actions
 	});
 });
