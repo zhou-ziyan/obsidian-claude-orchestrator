@@ -56,6 +56,7 @@ import {
 	extractLastAssistantText,
 	autoSendAction,
 	AUTO_SEND_COUNTDOWN_MS,
+	ensureStopHookConfig,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote } from "../src/utils.ts";
 
@@ -2453,5 +2454,108 @@ describe("parseSessionNote displayName", () => {
 		const note = parseSessionNote("---\nsession: test\nstatus: idle\n---\n\n## Notes\n\n## History\n\n## Queue\n");
 		const serialized = serializeSessionNote(note);
 		assert.ok(!serialized.includes("displayName"));
+	});
+});
+
+// ---------------------------------------------------------------------------
+// ensureStopHookConfig
+// ---------------------------------------------------------------------------
+
+describe("ensureStopHookConfig", () => {
+	const SCRIPT = "/path/to/plugins/claude-orchestrator/scripts/co-stop-hook.sh";
+
+	const parse = (s: string) => JSON.parse(s) as Record<string, Record<string, Array<{ matcher: string; hooks: Array<{ command: string; timeout?: number }> }>>>;
+
+	it("adds hook when settings has no hooks", () => {
+		const result = ensureStopHookConfig(JSON.stringify({ model: "test" }), SCRIPT);
+		assert.equal(result.updated, true);
+		const parsed = parse(result.content);
+		assert.equal(parsed.hooks.Stop.length, 1);
+		assert.equal(parsed.hooks.Stop[0].hooks[0].command, SCRIPT);
+		assert.equal(parsed.hooks.Stop[0].matcher, "*");
+		assert.equal((parsed as unknown as Record<string, string>).model, "test");
+	});
+
+	it("adds hook when hooks exists but no Stop event", () => {
+		const input = JSON.stringify({
+			hooks: {
+				SessionEnd: [{ matcher: "*", hooks: [{ type: "command", command: "other.sh" }] }],
+			},
+		});
+		const result = ensureStopHookConfig(input, SCRIPT);
+		assert.equal(result.updated, true);
+		const parsed = parse(result.content);
+		assert.ok(parsed.hooks.SessionEnd);
+		assert.equal(parsed.hooks.Stop.length, 1);
+	});
+
+	it("adds hook when Stop exists but doesn't reference our script", () => {
+		const input = JSON.stringify({
+			hooks: {
+				Stop: [{ matcher: "*", hooks: [{ type: "command", command: "/other/script.sh" }] }],
+			},
+		});
+		const result = ensureStopHookConfig(input, SCRIPT);
+		assert.equal(result.updated, true);
+		const parsed = parse(result.content);
+		assert.equal(parsed.hooks.Stop.length, 2);
+	});
+
+	it("does not add when co-stop-hook.sh already registered", () => {
+		const input = JSON.stringify({
+			hooks: {
+				Stop: [{ matcher: "*", hooks: [{ type: "command", command: "/old/path/co-stop-hook.sh", timeout: 10 }] }],
+			},
+		});
+		const result = ensureStopHookConfig(input, SCRIPT);
+		assert.equal(result.updated, false);
+	});
+
+	it("preserves all existing settings", () => {
+		const input = JSON.stringify({
+			model: "opus",
+			permissions: { allow: ["Bash(git:*)"] },
+			hooks: { SessionEnd: [{ matcher: "*", hooks: [] }] },
+		});
+		const result = ensureStopHookConfig(input, SCRIPT);
+		assert.equal(result.updated, true);
+		const parsed = parse(result.content);
+		assert.equal((parsed as unknown as Record<string, string>).model, "opus");
+		assert.deepEqual((parsed as unknown as Record<string, Record<string, string[]>>).permissions, { allow: ["Bash(git:*)"] });
+		assert.ok(parsed.hooks.SessionEnd);
+	});
+
+	it("returns unchanged for malformed JSON", () => {
+		const result = ensureStopHookConfig("not json {{{", SCRIPT);
+		assert.equal(result.updated, false);
+		assert.equal(result.content, "not json {{{");
+	});
+
+	it("sets timeout to 10", () => {
+		const result = ensureStopHookConfig("{}", SCRIPT);
+		const parsed = parse(result.content);
+		assert.equal(parsed.hooks.Stop[0].hooks[0].timeout, 10);
+	});
+
+	it("handles empty string input", () => {
+		const result = ensureStopHookConfig("", SCRIPT);
+		assert.equal(result.updated, false);
+		assert.equal(result.content, "");
+	});
+
+	it("detects co-stop-hook.sh in nested matcher arrays", () => {
+		const input = JSON.stringify({
+			hooks: {
+				Stop: [
+					{ matcher: "project-a", hooks: [{ type: "command", command: "/a.sh" }] },
+					{ matcher: "*", hooks: [
+						{ type: "command", command: "/b.sh" },
+						{ type: "command", command: "/somewhere/co-stop-hook.sh" },
+					]},
+				],
+			},
+		});
+		const result = ensureStopHookConfig(input, SCRIPT);
+		assert.equal(result.updated, false);
 	});
 });
