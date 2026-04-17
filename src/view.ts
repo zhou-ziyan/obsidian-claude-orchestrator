@@ -1,4 +1,4 @@
-import { debounce, FileSystemAdapter, ItemView, setIcon, TFile, TFolder, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { debounce, FileSystemAdapter, ItemView, Notice, setIcon, TFile, TFolder, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import {
 	findTmuxBinary,
 	normalizeViewState,
@@ -845,33 +845,30 @@ export class TerminalView extends ItemView {
 		// Strip timestamp prefix before injecting (e.g. "[2026-04-15 23:15] actual text")
 		const taskText = task.replace(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] /, "");
 
-		// Inject into tmux session via send-keys.
-		// Send text first, then Enter after a short delay so the
-		// receiving application (e.g. Claude Code) has time to
-		// process the pasted text before the newline arrives.
-		const prependPath = ["/opt/homebrew/bin", "/usr/local/bin"];
-		const existingPath = process.env.PATH || "/usr/bin:/bin";
-		const entries = existingPath.split(":");
-		for (const p of prependPath) {
-			if (!entries.includes(p)) entries.unshift(p);
-		}
-		const env = { ...process.env, PATH: entries.join(":") };
+		const tmux = findTmuxBinary();
+		const target = this.sessionName;
 
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- child_process from require
 		const { execFile } = require("child_process");
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped from require
 		execFile(
-			"tmux",
-			["send-keys", "-t", this.sessionName, taskText],
-			{ env },
-			() => {
+			tmux,
+			["send-keys", "-l", "-t", target, taskText],
+			(err: Error | null) => {
+				if (err) {
+					new Notice(`Send failed: ${err.message}`);
+					return;
+				}
 				setTimeout(() => {
 					// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped
 					execFile(
-						"tmux",
-						["send-keys", "-t", this.sessionName, "Enter"],
-						{ env },
-						() => { /* fire and forget */ },
+						tmux,
+						["send-keys", "-t", target, "Enter"],
+						(err2: Error | null) => {
+							if (err2) {
+								new Notice(`Enter failed: ${err2.message}`);
+							}
+						},
 					);
 				}, 150);
 			},
