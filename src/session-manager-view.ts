@@ -343,6 +343,21 @@ export class SessionManagerView extends ItemView {
 				});
 			}
 
+			const panelCount = group.sessions.filter((s) => s.hasPanel).length;
+			if (panelCount >= 2) {
+				const gatherBtn = groupHeader.createEl("button", {
+					cls: "co-icon-btn co-sm-gear",
+					text: "⊞",
+				});
+				gatherBtn.title = "Gather terminals into one tab group";
+				gatherBtn.addEventListener("click", (e) => {
+					e.stopPropagation();
+					void this.plugin.gatherProjectTerminals(group.project).then(() => {
+						setTimeout(() => { void this.refresh(); }, 500);
+					});
+				});
+			}
+
 			const newBtn = groupHeader.createEl("button", {
 				cls: "co-icon-btn co-sm-gear",
 				text: "+",

@@ -313,6 +313,33 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		await this.createTerminalLeaf(project, sessionName);
 	}
 
+	async gatherProjectTerminals(project: string): Promise<void> {
+		const { workspace } = this.app;
+		const leaves: { leaf: import("obsidian").WorkspaceLeaf; sessionName: string | null }[] = [];
+		for (const leaf of workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
+			const view = leaf.view;
+			if (view instanceof TerminalView && view.getProject() === project) {
+				leaves.push({ leaf, sessionName: view.getSessionName() });
+			}
+		}
+		if (leaves.length <= 1) return;
+
+		const anchor = leaves[0]!.leaf;
+		const scattered = leaves.filter((l) => l.leaf.parent !== anchor.parent);
+		if (scattered.length === 0) return;
+
+		for (const { leaf, sessionName } of scattered) {
+			leaf.detach();
+			workspace.setActiveLeaf(anchor, { focus: false });
+			const newLeaf = workspace.getLeaf("tab");
+			await newLeaf.setViewState({ type: VIEW_TYPE_TERMINAL, active: false });
+			const newView = newLeaf.view;
+			if (newView instanceof TerminalView) {
+				newView.setProject(project, sessionName ?? undefined);
+			}
+		}
+	}
+
 	// --- "Open session manager" ---
 	async openSessionManager() {
 		const { workspace } = this.app;
