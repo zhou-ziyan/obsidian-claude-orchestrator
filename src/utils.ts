@@ -527,6 +527,10 @@ export const TMUX_SEARCH_PATHS = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux
 
 export const QUICK_REPLY_KEYS = ["1", "2", "3", "Y", "N"] as const;
 
+export function cancelCopyModeArgs(sessionName: string): string[] {
+	return ["send-keys", "-t", sessionName, "-X", "cancel"];
+}
+
 export function buildQuickReplyTmuxArgs(
 	sessionName: string,
 	key: string,

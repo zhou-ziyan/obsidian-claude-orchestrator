@@ -30,6 +30,7 @@ import {
 	sessionDirPath,
 	QUICK_REPLY_KEYS,
 	buildQuickReplyTmuxArgs,
+	cancelCopyModeArgs,
 } from "../src/utils.ts";
 import type { ProjectRegistry } from "../src/utils.ts";
 
@@ -1383,5 +1384,21 @@ describe("buildQuickReplyTmuxArgs", () => {
 		const result = buildQuickReplyTmuxArgs("15_Claude_Orchestrator-2", "N");
 		assert.ok(result.textArgs.includes("15_Claude_Orchestrator-2"));
 		assert.ok(result.enterArgs.includes("15_Claude_Orchestrator-2"));
+	});
+});
+
+// --- cancelCopyModeArgs ---
+
+describe("cancelCopyModeArgs", () => {
+	it("builds correct cancel args for a session", () => {
+		const args = cancelCopyModeArgs("15_Claude_Orchestrator");
+		assert.deepEqual(args, ["send-keys", "-t", "15_Claude_Orchestrator", "-X", "cancel"]);
+	});
+
+	it("targets the correct session name", () => {
+		const args = cancelCopyModeArgs("my-session-3");
+		assert.ok(args.includes("my-session-3"));
+		assert.ok(args.includes("-X"));
+		assert.ok(args.includes("cancel"));
 	});
 });
