@@ -60,6 +60,7 @@ import {
 	parseQuickReplyKeys,
 	SLASH_COMMANDS,
 	filterSlashCommands,
+	applySortOrder,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote } from "../src/utils.ts";
 
@@ -2562,5 +2563,38 @@ describe("filterSlashCommands", () => {
 	it("handles / with trailing space as no match", () => {
 		const result = filterSlashCommands("/ ");
 		assert.deepEqual(result, []);
+	});
+});
+
+// --- applySortOrder ---
+
+describe("applySortOrder", () => {
+	it("returns items unchanged when order is empty", () => {
+		const items = [{ name: "b" }, { name: "a" }];
+		assert.deepEqual(applySortOrder(items, []), items);
+	});
+
+	it("sorts items by custom order", () => {
+		const items = [{ name: "a" }, { name: "b" }, { name: "c" }];
+		const result = applySortOrder(items, ["c", "a", "b"]);
+		assert.deepEqual(result.map(i => i.name), ["c", "a", "b"]);
+	});
+
+	it("puts unknown items at end alphabetically", () => {
+		const items = [{ name: "x" }, { name: "a" }, { name: "b" }];
+		const result = applySortOrder(items, ["b"]);
+		assert.deepEqual(result.map(i => i.name), ["b", "a", "x"]);
+	});
+
+	it("does not mutate original array", () => {
+		const items = [{ name: "b" }, { name: "a" }];
+		applySortOrder(items, ["a", "b"]);
+		assert.equal(items[0]!.name, "b");
+	});
+
+	it("handles order with extra names not in items", () => {
+		const items = [{ name: "a" }, { name: "b" }];
+		const result = applySortOrder(items, ["z", "b", "a"]);
+		assert.deepEqual(result.map(i => i.name), ["b", "a"]);
 	});
 });

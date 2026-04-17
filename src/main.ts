@@ -13,12 +13,14 @@ export interface OrchestratorSettings {
 	simpleMode: boolean;
 	projects: ProjectRegistry;
 	quickReplyKeys: string[];
+	sessionOrder: Record<string, string[]>;
 }
 
 const DEFAULT_SETTINGS: OrchestratorSettings = {
 	simpleMode: false,
 	projects: {},
 	quickReplyKeys: [...QUICK_REPLY_KEYS],
+	sessionOrder: {},
 };
 
 export default class ClaudeOrchestratorPlugin extends Plugin {

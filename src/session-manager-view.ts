@@ -22,6 +22,7 @@ import {
 	extractSessionPreview,
 	execTmux,
 	queueModeLabel,
+	applySortOrder,
 	SessionGroup,
 	SessionInfo,
 } from "./utils";
@@ -381,20 +382,26 @@ export class SessionManagerView extends ItemView {
 
 		if (collapsed) return;
 
-		for (const session of group.sessions) {
-			this.renderSessionCard(groupEl, session);
+		const sorted = applySortOrder(group.sessions, this.plugin.settings.sessionOrder[group.project] ?? []);
+		for (const session of sorted) {
+			this.renderSessionCard(groupEl, session, group.project);
 		}
 	}
 
-	private renderSessionCard(parent: HTMLElement, session: SessionInfo) {
+	private renderSessionCard(parent: HTMLElement, session: SessionInfo, project?: string) {
 		const isFocused = session.name === this.focusedSession;
 		const idle = isSessionIdle(session.tmuxActivity);
 		let cls = "co-sm-card";
 		if (isFocused) cls += " co-sm-card-focused";
 		if (idle) cls += " co-sm-card-idle";
 		const card = parent.createDiv({ cls });
+		card.dataset.sessionName = session.name;
 		if (isFocused) {
 			requestAnimationFrame(() => card.scrollIntoView({ block: "nearest" }));
+		}
+
+		if (project) {
+			this.attachDragHandlers(card, parent, project);
 		}
 
 		// Top row: name + kill button in top-right corner
@@ -514,6 +521,88 @@ export class SessionManagerView extends ItemView {
 				btn.classList.add("co-accent");
 			}
 		}
+	}
+
+	private attachDragHandlers(card: HTMLElement, groupEl: HTMLElement, project: string): void {
+		let startY = 0;
+		let dragging = false;
+		let placeholder: HTMLElement | null = null;
+
+		const onMouseMove = (e: MouseEvent) => {
+			if (!dragging) {
+				if (Math.abs(e.clientY - startY) < 5) return;
+				dragging = true;
+				card.classList.add("co-sm-card-dragging");
+				document.body.style.userSelect = "none";
+				document.body.style.cursor = "grabbing";
+			}
+
+			const cards = Array.from(groupEl.querySelectorAll<HTMLElement>(".co-sm-card"));
+			placeholder?.remove();
+			placeholder = null;
+
+			for (const c of cards) {
+				if (c === card) continue;
+				const rect = c.getBoundingClientRect();
+				const midY = rect.top + rect.height / 2;
+				if (e.clientY < midY) {
+					placeholder = document.createElement("div");
+					placeholder.classList.add("co-sm-drop-indicator");
+					c.before(placeholder);
+					return;
+				}
+			}
+			const lastCard = cards[cards.length - 1];
+			if (lastCard && lastCard !== card) {
+				placeholder = document.createElement("div");
+				placeholder.classList.add("co-sm-drop-indicator");
+				lastCard.after(placeholder);
+			}
+		};
+
+		const onMouseUp = () => {
+			document.removeEventListener("mousemove", onMouseMove);
+			document.removeEventListener("mouseup", onMouseUp);
+			document.body.style.userSelect = "";
+			document.body.style.cursor = "";
+			card.classList.remove("co-sm-card-dragging");
+
+			if (!dragging) { placeholder?.remove(); return; }
+			dragging = false;
+
+			const cards = Array.from(groupEl.querySelectorAll<HTMLElement>(".co-sm-card"));
+			const newOrder = cards.map(c => c.dataset.sessionName).filter((n): n is string => !!n);
+
+			if (placeholder) {
+				const phIdx = Array.from(groupEl.children).indexOf(placeholder);
+				const cardName = card.dataset.sessionName;
+				if (cardName) {
+					const filtered = newOrder.filter(n => n !== cardName);
+					const insertBefore = phIdx >= 0
+						? Array.from(groupEl.children)
+							.slice(phIdx + 1)
+							.find(el => el instanceof HTMLElement && el.classList.contains("co-sm-card") && el.dataset.sessionName)
+						: null;
+					const insertIdx = insertBefore instanceof HTMLElement && insertBefore.dataset.sessionName
+						? filtered.indexOf(insertBefore.dataset.sessionName)
+						: filtered.length;
+					filtered.splice(insertIdx, 0, cardName);
+					this.plugin.settings.sessionOrder[project] = filtered;
+					void this.plugin.saveSettings();
+				}
+			}
+			placeholder?.remove();
+			placeholder = null;
+			this.render();
+		};
+
+		card.addEventListener("mousedown", (e) => {
+			if ((e.target as HTMLElement).closest("button, input, .co-sm-card-actions")) return;
+			e.preventDefault();
+			startY = e.clientY;
+			document.addEventListener("mousemove", onMouseMove);
+			document.addEventListener("mouseup", onMouseUp);
+		});
 	}
 
 	private showInlineRename(nameSpan: HTMLElement, session: SessionInfo) {
