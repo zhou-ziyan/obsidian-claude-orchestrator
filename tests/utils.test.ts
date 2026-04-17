@@ -61,8 +61,10 @@ import {
 	SLASH_COMMANDS,
 	filterSlashCommands,
 	applySortOrder,
+	parseSkillMd,
+	BUILTIN_SLASH_COMMANDS,
 } from "../src/utils.ts";
-import type { ProjectRegistry, SessionNote } from "../src/utils.ts";
+import type { ProjectRegistry, SessionNote, SlashCommandEntry } from "../src/utils.ts";
 
 const TEST_PROJECTS: ProjectRegistry = {
 	"15_Claude_Orchestrator": { vaultFolder: "01_Projects/15_Claude_Orchestrator" },
@@ -2545,67 +2547,146 @@ describe("parseQuickReplyKeys", () => {
 // Slash command autocomplete
 // ---------------------------------------------------------------------------
 
-describe("SLASH_COMMANDS", () => {
-	it("is a non-empty array of strings starting with /", () => {
-		assert.ok(SLASH_COMMANDS.length > 0);
-		for (const cmd of SLASH_COMMANDS) {
-			assert.ok(cmd.startsWith("/"), `${cmd} should start with /`);
+describe("BUILTIN_SLASH_COMMANDS", () => {
+	it("is a non-empty array with command starting with /", () => {
+		assert.ok(BUILTIN_SLASH_COMMANDS.length > 0);
+		for (const entry of BUILTIN_SLASH_COMMANDS) {
+			assert.ok(entry.command.startsWith("/"), `${entry.command} should start with /`);
+			assert.ok(entry.description.length > 0, `${entry.command} should have description`);
 		}
 	});
 
 	it("contains common commands", () => {
-		assert.ok(SLASH_COMMANDS.includes("/help"));
-		assert.ok(SLASH_COMMANDS.includes("/compact"));
-		assert.ok(SLASH_COMMANDS.includes("/clear"));
+		const names = BUILTIN_SLASH_COMMANDS.map((e) => e.command);
+		assert.ok(names.includes("/help"));
+		assert.ok(names.includes("/compact"));
+		assert.ok(names.includes("/clear"));
 	});
 
-	it("is sorted alphabetically", () => {
-		const sorted = [...SLASH_COMMANDS].sort();
-		assert.deepEqual(SLASH_COMMANDS, sorted);
+	it("is sorted alphabetically by command", () => {
+		const names = BUILTIN_SLASH_COMMANDS.map((e) => e.command);
+		const sorted = [...names].sort();
+		assert.deepEqual(names, sorted);
+	});
+});
+
+describe("SLASH_COMMANDS (backward compat)", () => {
+	it("is a string array of command names from builtins", () => {
+		assert.ok(SLASH_COMMANDS.length > 0);
+		for (const cmd of SLASH_COMMANDS) {
+			assert.ok(cmd.startsWith("/"));
+		}
+	});
+});
+
+describe("parseSkillMd", () => {
+	it("parses name and description from SKILL.md frontmatter", () => {
+		const content = [
+			"---",
+			"name: my-skill",
+			"description: Does something cool",
+			"---",
+			"",
+			"Body content here.",
+		].join("\n");
+		const result = parseSkillMd(content);
+		assert.deepEqual(result, { name: "my-skill", description: "Does something cool" });
+	});
+
+	it("returns null when name is missing", () => {
+		const content = "---\ndescription: No name\n---\n";
+		assert.equal(parseSkillMd(content), null);
+	});
+
+	it("returns null for empty content", () => {
+		assert.equal(parseSkillMd(""), null);
+	});
+
+	it("returns null when no frontmatter", () => {
+		assert.equal(parseSkillMd("just plain text"), null);
+	});
+
+	it("handles missing description gracefully", () => {
+		const content = "---\nname: no-desc\n---\n";
+		const result = parseSkillMd(content);
+		assert.deepEqual(result, { name: "no-desc", description: "" });
+	});
+
+	it("handles extra whitespace in values", () => {
+		const content = "---\nname:   spaced  \ndescription:  trim me  \n---\n";
+		const result = parseSkillMd(content);
+		assert.deepEqual(result, { name: "spaced", description: "trim me" });
+	});
+
+	it("handles real-world SKILL.md format", () => {
+		const content = [
+			"---",
+			"name: allow-session",
+			"description: Scan session history for Bash commands that needed approval and add them to ~/.claude/settings.json allow list",
+			"---",
+			"",
+			"# Instructions",
+			"...",
+		].join("\n");
+		const result = parseSkillMd(content);
+		assert.equal(result!.name, "allow-session");
+		assert.ok(result!.description.includes("Scan session"));
 	});
 });
 
 describe("filterSlashCommands", () => {
+	const testCmds: SlashCommandEntry[] = [
+		{ command: "/clear", description: "Clear conversation" },
+		{ command: "/compact", description: "Compact history" },
+		{ command: "/cost", description: "Show cost" },
+		{ command: "/help", description: "Show help" },
+	];
+
 	it("returns all commands for bare /", () => {
-		const result = filterSlashCommands("/");
-		assert.deepEqual(result, [...SLASH_COMMANDS]);
+		const result = filterSlashCommands("/", testCmds);
+		assert.equal(result.length, 4);
+		assert.equal(result[0].command, "/clear");
 	});
 
 	it("filters by prefix", () => {
-		const result = filterSlashCommands("/co");
-		assert.ok(result.includes("/compact"));
-		assert.ok(result.includes("/cost"));
-		assert.ok(!result.includes("/help"));
+		const result = filterSlashCommands("/co", testCmds);
+		assert.equal(result.length, 2);
+		assert.ok(result.some((e) => e.command === "/compact"));
+		assert.ok(result.some((e) => e.command === "/cost"));
 	});
 
 	it("is case-insensitive", () => {
-		const result = filterSlashCommands("/HE");
-		assert.ok(result.includes("/help"));
+		const result = filterSlashCommands("/HE", testCmds);
+		assert.equal(result.length, 1);
+		assert.equal(result[0].command, "/help");
 	});
 
 	it("returns empty for no matches", () => {
-		const result = filterSlashCommands("/zzzzz");
-		assert.deepEqual(result, []);
+		assert.deepEqual(filterSlashCommands("/zzzzz", testCmds), []);
 	});
 
 	it("returns empty for non-slash input", () => {
-		const result = filterSlashCommands("hello");
-		assert.deepEqual(result, []);
+		assert.deepEqual(filterSlashCommands("hello", testCmds), []);
 	});
 
 	it("returns empty for empty string", () => {
-		const result = filterSlashCommands("");
-		assert.deepEqual(result, []);
+		assert.deepEqual(filterSlashCommands("", testCmds), []);
 	});
 
 	it("matches exact command", () => {
-		const result = filterSlashCommands("/help");
-		assert.deepEqual(result, ["/help"]);
+		const result = filterSlashCommands("/help", testCmds);
+		assert.equal(result.length, 1);
+		assert.equal(result[0].command, "/help");
 	});
 
 	it("handles / with trailing space as no match", () => {
-		const result = filterSlashCommands("/ ");
-		assert.deepEqual(result, []);
+		assert.deepEqual(filterSlashCommands("/ ", testCmds), []);
+	});
+
+	it("uses BUILTIN_SLASH_COMMANDS when no list provided", () => {
+		const result = filterSlashCommands("/help");
+		assert.ok(result.length >= 1);
+		assert.equal(result[0].command, "/help");
 	});
 });
 
