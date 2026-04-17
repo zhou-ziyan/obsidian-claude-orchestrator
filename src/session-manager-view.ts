@@ -4,6 +4,7 @@ import {
 	tmuxLs,
 	parseAllTmuxSessions,
 	groupSessionsByProject,
+	restorableSessionNames,
 	sessionNotePath,
 	parseSessionNote,
 	projectFromSessionName,
@@ -213,6 +214,21 @@ export class SessionManagerView extends ItemView {
 		});
 
 		if (isManaged) {
+			const restorable = restorableSessionNames(group);
+			if (restorable.length > 0) {
+				const restoreBtn = groupHeader.createEl("button", {
+					cls: "co-icon-btn co-sm-gear",
+					text: "⧉",
+				});
+				restoreBtn.title = `Restore ${restorable.length} session(s)`;
+				restoreBtn.addEventListener("click", (e) => {
+					e.stopPropagation();
+					void this.plugin.restoreProjectSessions(group.project).then(() => {
+						setTimeout(() => { void this.refresh(); }, 500);
+					});
+				});
+			}
+
 			const gearBtn = groupHeader.createEl("button", {
 				cls: "co-icon-btn co-sm-gear",
 				text: "⚙",

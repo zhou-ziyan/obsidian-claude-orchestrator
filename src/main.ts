@@ -256,7 +256,13 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			new Notice("No project context — open a project note first.");
 			return;
 		}
+		const count = await this.restoreProjectSessions(project);
+		if (count === 0) {
+			new Notice("All sessions for this project are already open.");
+		}
+	}
 
+	async restoreProjectSessions(project: string): Promise<number> {
 		const openSessionNames = this.collectSessionNames();
 		const tmuxOutput = await tmuxLs();
 		const { names: aliveSessions, mostRecent } =
@@ -266,22 +272,19 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			new Notice(
 				`No alive tmux sessions found for ${project}. Use "Create new terminal" instead.`,
 			);
-			return;
+			return 0;
 		}
 
 		const missing = aliveSessions.filter((s) => !openSessionNames.has(s));
 
 		if (missing.length === 0) {
-			new Notice("All sessions for this project are already open.");
-			return;
+			return 0;
 		}
 
-		// Create tabs in alphabetical order (stable tab layout)
 		for (const sessionName of missing) {
 			await this.createTerminalLeaf(project, sessionName);
 		}
 
-		// Reveal the most recently active session
 		if (mostRecent && missing.includes(mostRecent)) {
 			for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
 				const view = leaf.view;
@@ -292,6 +295,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			}
 		}
 		new Notice(`Restored ${missing.length} terminal(s).`);
+		return missing.length;
 	}
 
 	// --- "Create new terminal for current project" ---

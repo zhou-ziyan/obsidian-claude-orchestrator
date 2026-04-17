@@ -12,6 +12,7 @@ import {
 	parseAllTmuxSessions,
 	projectFromSessionName,
 	groupSessionsByProject,
+	restorableSessionNames,
 	nowStamp,
 	formatRelativeTime,
 	migrateSettings,
@@ -1272,5 +1273,51 @@ describe("computeDisplayText", () => {
 
 	it("returns project #N for vault root numbered session", () => {
 		assert.equal(computeDisplayText("ClaudeRoot", "ClaudeRoot-2"), "ClaudeRoot #2");
+	});
+});
+
+// --- restorableSessionNames ---
+
+describe("restorableSessionNames", () => {
+	const mkSession = (name: string, hasPanel: boolean): import("../src/utils.ts").SessionInfo => ({
+		name,
+		hasPanel,
+		hasNote: true,
+		pinnedNote: null,
+		queueCount: 0,
+		lastActivity: null,
+	});
+
+	it("returns empty array when all sessions have panels", () => {
+		const group = {
+			project: "proj",
+			sessions: [mkSession("proj", true), mkSession("proj-2", true)],
+		};
+		assert.deepEqual(restorableSessionNames(group), []);
+	});
+
+	it("returns names of sessions without panels", () => {
+		const group = {
+			project: "proj",
+			sessions: [
+				mkSession("proj", true),
+				mkSession("proj-2", false),
+				mkSession("proj-3", false),
+			],
+		};
+		assert.deepEqual(restorableSessionNames(group), ["proj-2", "proj-3"]);
+	});
+
+	it("returns all names when no sessions have panels", () => {
+		const group = {
+			project: "proj",
+			sessions: [mkSession("proj", false), mkSession("proj-2", false)],
+		};
+		assert.deepEqual(restorableSessionNames(group), ["proj", "proj-2"]);
+	});
+
+	it("returns empty array for group with no sessions", () => {
+		const group = { project: "proj", sessions: [] };
+		assert.deepEqual(restorableSessionNames(group), []);
 	});
 });

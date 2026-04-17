@@ -584,6 +584,10 @@ export function removeProject(
 	return rest;
 }
 
+export function restorableSessionNames(group: SessionGroup): string[] {
+	return group.sessions.filter((s) => !s.hasPanel).map((s) => s.name);
+}
+
 export function computeDisplayText(project: string | null, sessionName: string | null): string {
 	if (!sessionName || !project) return "Claude Orchestrator";
 	const suffix = sessionName.slice(project.length);
