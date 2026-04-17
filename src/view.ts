@@ -894,10 +894,26 @@ export class TerminalView extends ItemView {
 			if (stamp) {
 				row.createSpan({ cls: "co-timestamp", text: stamp });
 			}
-			const textSpan = row.createSpan({
-				cls: "co-history-text co-collapsed",
-				text: body,
-			});
+			const textSpan = row.createSpan({ cls: "co-history-text co-collapsed" });
+			const segments = parseQueueItemSegments(body);
+			if (segments.some((s) => s.type === "image")) {
+				for (const seg of segments) {
+					if (seg.type === "text") {
+						textSpan.createSpan({ text: seg.content });
+					} else {
+						const img = textSpan.createEl("img", { cls: "co-queue-img" });
+						img.alt = seg.content.split("/").pop() ?? seg.content;
+						const file = this.app.metadataCache.getFirstLinkpathDest(seg.content, "");
+						if (file) {
+							img.src = this.app.vault.getResourcePath(file);
+						} else {
+							img.src = seg.content;
+						}
+					}
+				}
+			} else {
+				textSpan.textContent = body;
+			}
 			textSpan.addEventListener("click", () => {
 				textSpan.classList.toggle("co-collapsed");
 			});
