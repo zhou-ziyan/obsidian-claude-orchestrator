@@ -782,12 +782,19 @@ export function stopSignalFileName(tmuxSession: string, timestamp: number): stri
 	return `${timestamp}-${tmuxSession}.json`;
 }
 
+export type StopReason = "done" | "asking";
+
+function isStopReason(s: string): s is StopReason {
+	return s === "done" || s === "asking";
+}
+
 export interface StopSignal {
 	tmuxSession: string;
 	sessionId: string | null;
 	transcriptPath: string | null;
 	cwd: string | null;
 	timestamp: number;
+	stopReason: StopReason | null;
 }
 
 export function parseStopSignal(json: string): StopSignal | null {
@@ -800,13 +807,49 @@ export function parseStopSignal(json: string): StopSignal | null {
 	}
 	if (typeof data.tmux_session !== "string") return null;
 	if (typeof data.timestamp !== "number") return null;
+	const rawReason = typeof data.stop_reason === "string" ? data.stop_reason : "";
 	return {
 		tmuxSession: data.tmux_session,
 		sessionId: typeof data.session_id === "string" ? data.session_id : null,
 		transcriptPath: typeof data.transcript_path === "string" ? data.transcript_path : null,
 		cwd: typeof data.cwd === "string" ? data.cwd : null,
 		timestamp: data.timestamp,
+		stopReason: isStopReason(rawReason) ? rawReason : null,
 	};
+}
+
+// --- Done vs. Asking detection ---
+
+export function classifyStopReason(text: string): StopReason {
+	const tail = text.slice(-500);
+	if (/[Yy]\/[Nn]/.test(tail)) return "asking";
+	if (/\?\s*$/m.test(tail)) return "asking";
+	return "done";
+}
+
+export function extractLastAssistantText(jsonlContent: string): string | null {
+	const lines = jsonlContent.trimEnd().split("\n");
+	for (let i = lines.length - 1; i >= 0; i--) {
+		const line = lines[i];
+		if (!line) continue;
+		let entry: Record<string, unknown>;
+		try {
+			entry = JSON.parse(line) as Record<string, unknown>;
+		} catch {
+			continue;
+		}
+		if (entry.type !== "assistant") continue;
+		const message = entry.message as Record<string, unknown> | undefined;
+		if (!message) continue;
+		const content = message.content as Array<Record<string, unknown>> | undefined;
+		if (!Array.isArray(content)) continue;
+		const texts = content
+			.filter((c) => c.type === "text" && typeof c.text === "string")
+			.map((c) => c.text as string);
+		if (texts.length === 0) return null;
+		return texts.join("\n");
+	}
+	return null;
 }
 
 export function migrateSettings(data: Record<string, unknown>): Record<string, unknown> {
