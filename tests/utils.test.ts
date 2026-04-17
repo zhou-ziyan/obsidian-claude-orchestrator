@@ -2703,6 +2703,35 @@ describe("parseSkillMd", () => {
 		assert.equal(result!.name, "allow-session");
 		assert.ok(result!.description.includes("Scan session"));
 	});
+
+	it("parses YAML multi-line >- description", () => {
+		const content = [
+			"---",
+			"name: next-go",
+			"description: >-",
+			"  Analyze Input notes and dispatch parallel tasks.",
+			"  Use for: next go, dispatch.",
+			"---",
+		].join("\n");
+		const result = parseSkillMd(content);
+		assert.equal(result!.name, "next-go");
+		assert.ok(result!.description.includes("Analyze Input"));
+		assert.ok(!result!.description.includes("Use for:"));
+	});
+
+	it("parses YAML multi-line | description", () => {
+		const content = [
+			"---",
+			"name: test-skill",
+			"description: |",
+			"  Line one.",
+			"  Line two.",
+			"---",
+		].join("\n");
+		const result = parseSkillMd(content);
+		assert.ok(result!.description.includes("Line one."));
+		assert.ok(result!.description.includes("Line two."));
+	});
 });
 
 describe("filterSlashCommands", () => {

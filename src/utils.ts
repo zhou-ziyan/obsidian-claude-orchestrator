@@ -1013,13 +1013,26 @@ export function parseSkillMd(content: string): { name: string; description: stri
 	const frontmatter = content.slice(3, endIdx);
 	let name = "";
 	let description = "";
-	for (const line of frontmatter.split("\n")) {
+	const lines = frontmatter.split("\n");
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i]!;
 		const colonIdx = line.indexOf(":");
 		if (colonIdx === -1) continue;
 		const key = line.slice(0, colonIdx).trim();
-		const value = line.slice(colonIdx + 1).trim();
+		let value = line.slice(colonIdx + 1).trim();
+		if (value === ">-" || value === ">" || value === "|" || value === "|-") {
+			const parts: string[] = [];
+			while (i + 1 < lines.length && /^\s/.test(lines[i + 1]!)) {
+				i++;
+				parts.push(lines[i]!.trim());
+			}
+			value = parts.join(" ");
+		}
 		if (key === "name") name = value;
-		if (key === "description") description = value;
+		if (key === "description") {
+			const useForIdx = value.indexOf("Use for:");
+			description = useForIdx > 0 ? value.slice(0, useForIdx).trim() : value;
+		}
 	}
 	return name ? { name, description } : null;
 }
