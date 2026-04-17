@@ -34,6 +34,12 @@ import {
 	nextQueueMode,
 	queueModeLabel,
 	QUEUE_MODES,
+	parsePtyMax,
+	ptyLevel,
+	PTY_THRESHOLD_WARNING,
+	PTY_THRESHOLD_CRITICAL,
+	isSessionIdle,
+	IDLE_THRESHOLD_MS,
 } from "../src/utils.ts";
 import type { ProjectRegistry, QueueMode } from "../src/utils.ts";
 
@@ -1462,5 +1468,163 @@ describe("createDefaultSessionNote queueMode", () => {
 		assert.ok(content.includes("queueMode: manual"));
 		const parsed = parseSessionNote(content);
 		assert.equal(parsed.queueMode, "manual");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// PTY usage
+// ---------------------------------------------------------------------------
+
+describe("parsePtyMax", () => {
+	it("parses a valid sysctl output", () => {
+		assert.equal(parsePtyMax("511\n"), 511);
+	});
+
+	it("parses output with trailing whitespace", () => {
+		assert.equal(parsePtyMax("  999  \n"), 999);
+	});
+
+	it("returns 0 for empty string", () => {
+		assert.equal(parsePtyMax(""), 0);
+	});
+
+	it("returns 0 for non-numeric output", () => {
+		assert.equal(parsePtyMax("error: not found"), 0);
+	});
+
+	it("handles large values", () => {
+		assert.equal(parsePtyMax("2048"), 2048);
+	});
+});
+
+describe("ptyLevel", () => {
+	it("returns 'ok' when usage is below 70%", () => {
+		assert.equal(ptyLevel(100, 511), "ok");
+	});
+
+	it("returns 'ok' at 69%", () => {
+		assert.equal(ptyLevel(352, 511), "ok"); // 352/511 ≈ 68.9%
+	});
+
+	it("returns 'warning' at exactly 70%", () => {
+		// 70% of 100 = 70
+		assert.equal(ptyLevel(70, 100), "warning");
+	});
+
+	it("returns 'warning' between 70% and 90%", () => {
+		assert.equal(ptyLevel(400, 511), "warning"); // 400/511 ≈ 78.3%
+	});
+
+	it("returns 'critical' at exactly 90%", () => {
+		assert.equal(ptyLevel(90, 100), "critical");
+	});
+
+	it("returns 'critical' above 90%", () => {
+		assert.equal(ptyLevel(480, 511), "critical"); // 480/511 ≈ 93.9%
+	});
+
+	it("returns 'ok' when max is 0 (unknown)", () => {
+		assert.equal(ptyLevel(50, 0), "ok");
+	});
+
+	it("returns 'ok' when max is negative", () => {
+		assert.equal(ptyLevel(50, -1), "ok");
+	});
+
+	it("returns 'critical' at 100%", () => {
+		assert.equal(ptyLevel(511, 511), "critical");
+	});
+
+	it("thresholds match exported constants", () => {
+		assert.equal(PTY_THRESHOLD_WARNING, 0.7);
+		assert.equal(PTY_THRESHOLD_CRITICAL, 0.9);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Idle session detection
+// ---------------------------------------------------------------------------
+
+describe("isSessionIdle", () => {
+	// 24 hours in ms
+	const DAY_MS = 24 * 60 * 60 * 1000;
+
+	it("returns false for recently active session", () => {
+		const nowMs = Date.now();
+		const recentEpochSecs = Math.floor(nowMs / 1000) - 3600; // 1 hour ago
+		assert.equal(isSessionIdle(recentEpochSecs, nowMs), false);
+	});
+
+	it("returns true for session idle > 24 hours", () => {
+		const nowMs = Date.now();
+		const oldEpochSecs = Math.floor(nowMs / 1000) - (25 * 3600); // 25 hours ago
+		assert.equal(isSessionIdle(oldEpochSecs, nowMs), true);
+	});
+
+	it("returns true at exactly 24 hours", () => {
+		const nowMs = 1776317847000; // fixed reference
+		const exactlyOneDayAgo = Math.floor((nowMs - DAY_MS) / 1000);
+		assert.equal(isSessionIdle(exactlyOneDayAgo, nowMs), true);
+	});
+
+	it("returns false just under 24 hours", () => {
+		const nowMs = 1776317847000;
+		const justUnder = Math.floor((nowMs - DAY_MS + 60000) / 1000); // 24h minus 1 minute
+		assert.equal(isSessionIdle(justUnder, nowMs), false);
+	});
+
+	it("returns false when activity is 0 (no data)", () => {
+		assert.equal(isSessionIdle(0, Date.now()), false);
+	});
+
+	it("uses custom threshold", () => {
+		const nowMs = Date.now();
+		const twoHoursAgo = Math.floor(nowMs / 1000) - 7200;
+		const oneHourMs = 3600 * 1000;
+		assert.equal(isSessionIdle(twoHoursAgo, nowMs, oneHourMs), true);
+		assert.equal(isSessionIdle(twoHoursAgo, nowMs, 3 * 3600 * 1000), false);
+	});
+
+	it("uses Date.now() when nowMs not provided", () => {
+		const veryOld = 1000000000; // ~2001
+		assert.equal(isSessionIdle(veryOld), true);
+	});
+
+	it("IDLE_THRESHOLD_MS is 24 hours", () => {
+		assert.equal(IDLE_THRESHOLD_MS, 24 * 60 * 60 * 1000);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// groupSessionsByProject includes tmuxActivity
+// ---------------------------------------------------------------------------
+
+describe("groupSessionsByProject tmuxActivity", () => {
+	it("passes tmux activity timestamp into SessionInfo", () => {
+		const sessions = [
+			{ name: "15_Claude_Orchestrator", activity: 1776317847 },
+		];
+		const groups = groupSessionsByProject(
+			sessions,
+			new Set(),
+			new Map(),
+			TEST_PROJECTS,
+		);
+		const orch = groups.find((g) => g.project === "15_Claude_Orchestrator")!;
+		assert.equal(orch.sessions[0].tmuxActivity, 1776317847);
+	});
+
+	it("defaults tmuxActivity to 0 for sessions without activity data", () => {
+		const sessions = [
+			{ name: "15_Claude_Orchestrator", activity: 0 },
+		];
+		const groups = groupSessionsByProject(
+			sessions,
+			new Set(),
+			new Map(),
+			TEST_PROJECTS,
+		);
+		const orch = groups.find((g) => g.project === "15_Claude_Orchestrator")!;
+		assert.equal(orch.sessions[0].tmuxActivity, 0);
 	});
 });
