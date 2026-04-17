@@ -787,6 +787,11 @@
     justify-content: flex-end;
     margin-top: 8px;
 }
+.co-sm-browse-btn {
+    flex-shrink: 0;
+    font-size: 13px;
+    padding: 2px 4px;
+}
 .co-sm-gear {
     font-size: 12px;
     margin-left: auto;

@@ -1,4 +1,5 @@
-import { ItemView, TFile, WorkspaceLeaf } from "obsidian";
+import { FuzzySuggestModal, ItemView, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import type { App } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import {
 	tmuxLs,
@@ -21,6 +22,35 @@ import type { ProjectConfig } from "./utils";
 import type ClaudeOrchestratorPlugin from "./main";
 
 export const VIEW_TYPE_SESSION_MANAGER = "claude-orchestrator-session-manager";
+
+class VaultFolderModal extends FuzzySuggestModal<TFolder> {
+	private onChoose: (folder: TFolder) => void;
+
+	constructor(app: App, onChoose: (folder: TFolder) => void) {
+		super(app);
+		this.onChoose = onChoose;
+		this.setPlaceholder("Type to search vault folders…");
+	}
+
+	getItems(): TFolder[] {
+		const folders: TFolder[] = [];
+		for (const f of this.app.vault.getAllLoadedFiles()) {
+			if (f instanceof TFolder && !f.isRoot()) {
+				folders.push(f);
+			}
+		}
+		folders.sort((a, b) => a.path.localeCompare(b.path));
+		return folders;
+	}
+
+	getItemText(item: TFolder): string {
+		return item.path;
+	}
+
+	onChooseItem(item: TFolder): void {
+		this.onChoose(item);
+	}
+}
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -479,12 +509,35 @@ export class SessionManagerView extends ItemView {
 		const folderInput = folderRow.createEl("input", { cls: "co-sm-form-input", type: "text" });
 		folderInput.placeholder = "e.g. 01_Projects/MyProject";
 		if (config) folderInput.value = config.vaultFolder;
+		const folderBrowseBtn = folderRow.createEl("button", { cls: "co-icon-btn co-sm-browse-btn", text: "📂" });
+		folderBrowseBtn.title = "Browse vault folders";
+		folderBrowseBtn.addEventListener("click", () => {
+			new VaultFolderModal(this.app, (folder) => {
+				folderInput.value = folder.path;
+			}).open();
+		});
 
 		const cwdRow = form.createDiv({ cls: "co-sm-form-row" });
 		cwdRow.createSpan({ cls: "co-sm-form-label", text: "Code folder" });
 		const cwdInput = cwdRow.createEl("input", { cls: "co-sm-form-input", type: "text" });
 		cwdInput.placeholder = "(optional)";
 		if (config?.workingDirectory) cwdInput.value = config.workingDirectory;
+		const cwdBrowseBtn = cwdRow.createEl("button", { cls: "co-icon-btn co-sm-browse-btn", text: "📂" });
+		cwdBrowseBtn.title = "Browse filesystem folders";
+		cwdBrowseBtn.addEventListener("click", () => void (async () => {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Electron remote from require
+			const electron = require("electron");
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- untyped Electron remote
+			const dialog = electron.remote?.dialog;
+			if (!dialog) return;
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- untyped Electron API
+			const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- untyped Electron result
+			if (!result.canceled && result.filePaths?.[0]) {
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- untyped Electron result
+				cwdInput.value = result.filePaths[0] as string;
+			}
+		})());
 
 		const errorEl = form.createDiv({ cls: "co-sm-form-error" });
 		errorEl.style.display = "none";
