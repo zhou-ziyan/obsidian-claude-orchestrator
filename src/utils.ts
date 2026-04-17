@@ -195,7 +195,6 @@ export interface SessionInfo {
 	preview: string | null;
 	notesSummary: string | null;
 	displayName: string | null;
-	hidden: boolean;
 }
 
 export interface SessionGroup {
@@ -227,7 +226,7 @@ export function projectFromSessionName(
 export function groupSessionsByProject(
 	allSessions: { name: string; activity: number }[],
 	openSessionNames: Set<string>,
-	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null; notesSummary: string | null; displayName: string | null; hidden: boolean }>,
+	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null; notesSummary: string | null; displayName: string | null }>,
 	projects: ProjectRegistry,
 ): SessionGroup[] {
 	const projectMap = new Map<string, SessionInfo[]>();
@@ -247,7 +246,6 @@ export function groupSessionsByProject(
 			preview: nd?.preview ?? null,
 			notesSummary: nd?.notesSummary ?? null,
 			displayName: nd?.displayName ?? null,
-			hidden: nd?.hidden ?? false,
 		};
 
 		if (project) {
@@ -342,7 +340,6 @@ export interface SessionNote {
 	queueMode: QueueMode;
 	displayName: string;
 	notes: string;
-	hidden: boolean;
 	history: HistoryItem[];
 	queue: string[];
 }
@@ -399,7 +396,6 @@ export function parseSessionNote(
 		queueMode: "manual",
 		displayName: "",
 		notes: "",
-		hidden: false,
 		history: [],
 		queue: [],
 	};
@@ -425,8 +421,6 @@ export function parseSessionNote(
 					note.queueMode = value;
 				if (key === "displayName" && value)
 					note.displayName = value;
-				if (key === "hidden" && value === "true")
-					note.hidden = true;
 			}
 			i++;
 		}
@@ -528,7 +522,6 @@ export function serializeSessionNote(note: SessionNote): string {
 		`queueMode: ${note.queueMode}`,
 	];
 	if (note.displayName) lines.push(`displayName: ${note.displayName}`);
-	if (note.hidden) lines.push("hidden: true");
 	lines.push("---", "", "## Notes");
 
 	if (note.notes) {

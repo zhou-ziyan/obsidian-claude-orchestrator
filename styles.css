@@ -1061,22 +1061,6 @@
     white-space: nowrap;
 }
 
-/* Session hidden toggle */
-.co-sm-hidden-toggle {
-    padding: 4px 8px;
-    font-size: 11px;
-    color: var(--co-text-pin);
-    cursor: pointer;
-    text-align: center;
-}
-.co-sm-hidden-toggle:hover {
-    color: var(--co-text-body);
-}
-
-.co-sm-card-hidden {
-    opacity: 0.5;
-}
-
 /* === xterm.js scrollbar customization === */
 
 .xterm .xterm-scrollable-element > .scrollbar {

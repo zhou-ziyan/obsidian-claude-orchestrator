@@ -73,7 +73,6 @@ export class SessionManagerView extends ItemView {
 	private collapsedProjects = new Set<string>();
 	private editing = false;
 	private focusedSession: string | null = null;
-	private showHidden = false;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClaudeOrchestratorPlugin) {
 		super(leaf);
@@ -174,7 +173,6 @@ export class SessionManagerView extends ItemView {
 			preview: string | null;
 			notesSummary: string | null;
 			displayName: string | null;
-			hidden: boolean;
 		}>();
 
 		const projects = this.plugin.settings.projects;
@@ -210,7 +208,6 @@ export class SessionManagerView extends ItemView {
 					preview: extractSessionPreview(note),
 					notesSummary: firstLine,
 					displayName: note.displayName || null,
-					hidden: note.hidden,
 				});
 			} catch {
 				// Note read failed — skip
@@ -368,22 +365,8 @@ export class SessionManagerView extends ItemView {
 
 		if (collapsed) return;
 
-		// Session cards (filter hidden unless showHidden)
-		const visible = group.sessions.filter((s) => !s.hidden || this.showHidden);
-		const hiddenCount = group.sessions.length - visible.length;
-		for (const session of visible) {
+		for (const session of group.sessions) {
 			this.renderSessionCard(groupEl, session);
-		}
-
-		if (hiddenCount > 0) {
-			const toggle = groupEl.createDiv({ cls: "co-sm-hidden-toggle" });
-			toggle.textContent = this.showHidden
-				? "Hide hidden sessions"
-				: `Show ${hiddenCount} hidden`;
-			toggle.addEventListener("click", () => {
-				this.showHidden = !this.showHidden;
-				this.render();
-			});
 		}
 	}
 
@@ -393,7 +376,6 @@ export class SessionManagerView extends ItemView {
 		let cls = "co-sm-card";
 		if (isFocused) cls += " co-sm-card-focused";
 		if (idle) cls += " co-sm-card-idle";
-		if (session.hidden) cls += " co-sm-card-hidden";
 		const card = parent.createDiv({ cls });
 		if (isFocused) {
 			requestAnimationFrame(() => card.scrollIntoView({ block: "nearest" }));
@@ -412,16 +394,6 @@ export class SessionManagerView extends ItemView {
 		nameSpan.addEventListener("dblclick", (e) => {
 			e.stopPropagation();
 			this.showInlineRename(nameSpan, session);
-		});
-
-		const hideBtn = topRow.createEl("button", {
-			cls: "co-icon-btn",
-			text: session.hidden ? "👁" : "👁‍🗨",
-		});
-		hideBtn.title = session.hidden ? "Unhide session" : "Hide session";
-		hideBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			void this.toggleSessionHidden(session.name, !session.hidden);
 		});
 
 		const killBtn = topRow.createEl("button", {
@@ -559,6 +531,17 @@ export class SessionManagerView extends ItemView {
 			portal.remove();
 		});
 
+		const closeTabBtn = portalActions.createEl("button", {
+			cls: "co-text-btn",
+			text: "Close tab",
+		});
+		closeTabBtn.title = "Close terminal tab but keep tmux session running";
+		closeTabBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			portal.remove();
+			void this.closeSessionTab(sessionName);
+		});
+
 		const confirmBtn = portalActions.createEl("button", {
 			cls: "co-text-btn co-sm-kill-confirm",
 			text: "Kill session",
@@ -623,26 +606,6 @@ export class SessionManagerView extends ItemView {
 		setTimeout(() => { void this.refresh(); }, 500);
 	}
 
-	private async toggleSessionHidden(sessionName: string, hidden: boolean) {
-		const projects = this.plugin.settings.projects;
-		const project = projectFromSessionName(sessionName, projects);
-		if (!project) return;
-		const config = projects[project];
-		if (!config) return;
-		const notePath = sessionNotePath(config.vaultFolder, sessionName);
-		const file = this.app.vault.getAbstractFileByPath(notePath);
-		if (!(file instanceof TFile)) return;
-		try {
-			const content = await this.app.vault.read(file);
-			const note = parseSessionNote(content, sessionName);
-			note.hidden = hidden;
-			await this.app.vault.modify(file, serializeSessionNote(note));
-		} catch {
-			return;
-		}
-		void this.refresh();
-	}
-
 	private showProjectForm(existingKey?: string) {
 		if (!this.listEl) return;
 		this.editing = true;
@@ -676,13 +639,19 @@ export class SessionManagerView extends ItemView {
 		const folderInput = folderRow.createEl("input", { cls: "co-sm-form-input", type: "text" });
 		folderInput.placeholder = "e.g. 01_Projects/MyProject";
 		if (config) folderInput.value = config.vaultFolder;
-		const folderBrowseBtn = folderRow.createEl("button", { cls: "co-icon-btn co-sm-browse-btn", text: "📂" });
-		folderBrowseBtn.title = "Browse vault folders";
-		folderBrowseBtn.addEventListener("click", () => {
-			new VaultFolderModal(this.app, (folder) => {
-				folderInput.value = folder.path;
-			}).open();
-		});
+		if (isEdit) {
+			folderInput.disabled = true;
+			folderInput.title = "Note folder cannot be changed after creation (session note paths would break)";
+		}
+		if (!isEdit) {
+			const folderBrowseBtn = folderRow.createEl("button", { cls: "co-icon-btn co-sm-browse-btn", text: "📂" });
+			folderBrowseBtn.title = "Browse vault folders";
+			folderBrowseBtn.addEventListener("click", () => {
+				new VaultFolderModal(this.app, (folder) => {
+					folderInput.value = folder.path;
+				}).open();
+			});
+		}
 
 		const cwdRow = form.createDiv({ cls: "co-sm-form-row" });
 		cwdRow.createSpan({ cls: "co-sm-form-label", text: "Code folder" });
@@ -764,6 +733,17 @@ export class SessionManagerView extends ItemView {
 		} else {
 			folderInput.focus();
 		}
+	}
+
+	private closeSessionTab(sessionName: string) {
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
+			const view = leaf.view;
+			if (view instanceof TerminalView && view.getSessionName() === sessionName) {
+				leaf.detach();
+				break;
+			}
+		}
+		setTimeout(() => { void this.refresh(); }, 300);
 	}
 
 	private async killSession(sessionName: string) {
