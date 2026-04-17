@@ -306,6 +306,14 @@ export function queueModeLabel(mode: QueueMode): string {
 	}
 }
 
+export function queueModeTooltip(mode: QueueMode): string {
+	switch (mode) {
+		case "manual": return "Manual: click Send next to send\nClick to switch → Listen";
+		case "listen": return "Listen: will notify when Claude stops\nClick to switch → Auto";
+		case "auto": return "Auto: auto-send next after Claude stops\nClick to switch → Manual";
+	}
+}
+
 function isQueueMode(s: string): s is QueueMode {
 	return s === "manual" || s === "listen" || s === "auto";
 }

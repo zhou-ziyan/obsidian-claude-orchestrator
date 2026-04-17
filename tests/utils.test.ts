@@ -33,6 +33,7 @@ import {
 	cancelCopyModeArgs,
 	nextQueueMode,
 	queueModeLabel,
+	queueModeTooltip,
 	QUEUE_MODES,
 	parsePtyMax,
 	ptyLevel,
@@ -1432,6 +1433,17 @@ describe("queueModeLabel", () => {
 		assert.equal(queueModeLabel("manual"), "Manual");
 		assert.equal(queueModeLabel("listen"), "Listen");
 		assert.equal(queueModeLabel("auto"), "Auto");
+	});
+});
+
+describe("queueModeTooltip", () => {
+	it("includes mode description and next mode hint", () => {
+		assert.ok(queueModeTooltip("manual").includes("Manual"));
+		assert.ok(queueModeTooltip("manual").includes("Listen"));
+		assert.ok(queueModeTooltip("listen").includes("Listen"));
+		assert.ok(queueModeTooltip("listen").includes("Auto"));
+		assert.ok(queueModeTooltip("auto").includes("Auto"));
+		assert.ok(queueModeTooltip("auto").includes("Manual"));
 	});
 });
 
