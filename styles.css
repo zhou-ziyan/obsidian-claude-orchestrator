@@ -78,8 +78,8 @@
 
 .xterm .composition-view {
     /* TODO: Composition position got messed up somewhere */
-    background: #000;
-    color: #FFF;
+    background: var(--co-xterm-bg);
+    color: var(--co-xterm-fg);
     display: none;
     position: absolute;
     white-space: nowrap;
@@ -92,7 +92,7 @@
 
 .xterm .xterm-viewport {
     /* On OS X this is required in order for the scroll bar to appear fully opaque */
-    background-color: #000;
+    background-color: var(--co-xterm-bg);
     overflow-y: scroll;
     cursor: default;
     position: absolute;
@@ -219,7 +219,116 @@
     position: relative;
 }
 
-/* --- Claude Orchestrator: focus indicator --- */
+/* === Claude Orchestrator: Theme Variables === */
+
+:root {
+    /* xterm */
+    --co-xterm-bg: #000;
+    --co-xterm-fg: #FFF;
+
+    /* Surfaces */
+    --co-bg: #1a1a1a;
+    --co-bg-header: #181818;
+    --co-bg-card: #222;
+    --co-bg-card-hover: #282828;
+    --co-bg-input: #252525;
+    --co-bg-elevated: #2a2a2a;
+    --co-bg-form-input: #1e1e1e;
+    --co-bg-form: #2a2a2a;
+    --co-bg-hover: #252525;
+    --co-bg-card-focused: #1a2a1a;
+    --co-bg-card-focused-hover: #1f2f1f;
+    --co-bg-danger: #2a1a1a;
+    --co-bg-idle: #2a2a1e;
+    --co-bg-idle-hover: #2e2e22;
+    --co-bg-countdown: #2a3a2a;
+    --co-bg-dimmed: rgba(0, 0, 0, 0.4);
+
+    /* Borders */
+    --co-border: #333;
+    --co-border-subtle: #2a2a2a;
+    --co-border-strong: #444;
+    --co-border-form: #555;
+
+    /* Text */
+    --co-text: #ddd;
+    --co-text-secondary: #ccc;
+    --co-text-heading: #bbb;
+    --co-text-body: #aaa;
+    --co-text-muted: #999;
+    --co-text-faint: #666;
+    --co-text-dim: #555;
+    --co-text-pin: #888;
+    --co-text-preview: #777;
+    --co-text-move: #555;
+    --co-text-move-hover: #ccc;
+
+    /* Semantic */
+    --co-green: #4caf50;
+    --co-orange: #ff9800;
+    --co-red: #e44;
+    --co-red-bg: #c33;
+    --co-red-text: #e88;
+    --co-blue: #7ab;
+    --co-listen: #7ab;
+    --co-auto: #7c7;
+    --co-idle-text: #cc9;
+    --co-countdown-text: #4caf50;
+    --co-error: #e55;
+
+    /* Interactive states */
+    --co-resize-hover: #444;
+    --co-btn-hover: #333;
+}
+
+.theme-light {
+    --co-xterm-bg: #f5f5f5;
+    --co-xterm-fg: #000;
+
+    --co-bg: #fafafa;
+    --co-bg-header: #f0f0f0;
+    --co-bg-card: #f0f0f0;
+    --co-bg-card-hover: #e8e8e8;
+    --co-bg-input: #fff;
+    --co-bg-elevated: #e8e8e8;
+    --co-bg-form-input: #fff;
+    --co-bg-form: #f8f8f8;
+    --co-bg-hover: #eee;
+    --co-bg-card-focused: #e0f0e0;
+    --co-bg-card-focused-hover: #d8e8d8;
+    --co-bg-danger: #fff0f0;
+    --co-bg-idle: #f8f6e8;
+    --co-bg-idle-hover: #f0eee0;
+    --co-bg-countdown: #e8f5e9;
+    --co-bg-dimmed: rgba(255, 255, 255, 0.4);
+
+    --co-border: #ddd;
+    --co-border-subtle: #e0e0e0;
+    --co-border-strong: #ccc;
+    --co-border-form: #ccc;
+
+    --co-text: #333;
+    --co-text-secondary: #555;
+    --co-text-heading: #444;
+    --co-text-body: #555;
+    --co-text-muted: #666;
+    --co-text-faint: #999;
+    --co-text-dim: #bbb;
+    --co-text-pin: #777;
+    --co-text-preview: #888;
+    --co-text-move: #aaa;
+    --co-text-move-hover: #333;
+
+    --co-red-text: #c33;
+    --co-error: #c33;
+    --co-idle-text: #997;
+    --co-countdown-text: #2e7d32;
+
+    --co-resize-hover: #ccc;
+    --co-btn-hover: #ddd;
+}
+
+/* === Claude Orchestrator: Focus Indicator === */
 
 .claude-orchestrator-term-host {
     position: relative;
@@ -236,21 +345,21 @@
 }
 
 .claude-orchestrator-term-host.is-dimmed::after {
-    background: rgba(0, 0, 0, 0.4);
+    background: var(--co-bg-dimmed);
 }
 
 
-/* --- Claude Orchestrator: queue panels --- */
+/* === Claude Orchestrator: Queue Panels === */
 
 .co-panel-header {
     padding: 4px 8px;
     font-size: 12px;
     font-weight: 600;
-    color: #999;
-    background: #181818;
+    color: var(--co-text-muted);
+    background: var(--co-bg-header);
     cursor: pointer;
     user-select: none;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid var(--co-border);
 }
 
 .co-panel-arrow {
@@ -263,7 +372,7 @@
     justify-content: space-between;
     align-items: center;
     border-bottom: none;
-    border-top: 1px solid #333;
+    border-top: 1px solid var(--co-border);
 }
 
 .co-history-panel {
@@ -274,7 +383,7 @@
     max-height: 120px;
     overflow-y: auto;
     padding: 4px 8px;
-    background: #1a1a1a;
+    background: var(--co-bg);
 }
 
 .co-history-item {
@@ -282,7 +391,7 @@
     gap: 4px;
     padding: 2px 0;
     font-size: 12px;
-    color: #aaa;
+    color: var(--co-text-body);
     align-items: flex-start;
 }
 
@@ -291,18 +400,18 @@
     text-align: center;
     flex-shrink: 0;
 }
-.co-history-icon.co-completed { color: #4caf50; }
-.co-history-icon.co-in-progress { color: #ff9800; }
+.co-history-icon.co-completed { color: var(--co-green); }
+.co-history-icon.co-in-progress { color: var(--co-orange); }
 
 .co-resize-handle {
     flex-shrink: 0;
     height: 5px;
-    background: #2a2a2a;
+    background: var(--co-bg-elevated);
     cursor: row-resize;
     transition: background 0.1s;
 }
 .co-resize-handle:hover {
-    background: #444;
+    background: var(--co-resize-hover);
 }
 
 .co-queue-panel {
@@ -311,14 +420,14 @@
     max-height: 400px;
     display: flex;
     flex-direction: column;
-    padding-bottom: 28px; /* clear Obsidian's bottom status bar */
+    padding-bottom: 28px;
 }
 
 .co-queue-list {
     flex: 1;
     overflow-y: auto;
     padding: 4px 8px;
-    background: #1a1a1a;
+    background: var(--co-bg);
 }
 
 .co-queue-item {
@@ -326,17 +435,17 @@
     align-items: flex-start;
     padding: 4px 0;
     font-size: 12px;
-    color: #ccc;
+    color: var(--co-text-secondary);
     gap: 4px;
     border-radius: 3px;
     transition: background 0.1s;
 }
 .co-move-btn {
     font-size: 14px !important;
-    color: #555 !important;
+    color: var(--co-text-move) !important;
 }
 .co-move-btn:hover {
-    color: #ccc !important;
+    color: var(--co-text-move-hover) !important;
 }
 
 .co-btn-spacer {
@@ -376,7 +485,6 @@
     cursor: pointer;
 }
 
-/* Copy-to-queue button on history items — matches timestamp height */
 .co-history-copy-btn.co-icon-btn {
     width: 16px;
     height: 16px;
@@ -395,11 +503,10 @@
     flex-shrink: 0;
 }
 
-/* Shared icon button base — square, centered, no border */
 .co-icon-btn {
     background: none;
     border: none;
-    color: #666;
+    color: var(--co-text-faint);
     cursor: pointer;
     font-size: 13px;
     width: 24px;
@@ -412,9 +519,9 @@
     border-radius: 3px;
     flex-shrink: 0;
 }
-.co-icon-btn:hover { color: #ccc; background: #2a2a2a; }
-.co-icon-btn.co-danger:hover { color: #e44; }
-.co-icon-btn.co-success:hover { color: #4caf50; }
+.co-icon-btn:hover { color: var(--co-text-secondary); background: var(--co-bg-elevated); }
+.co-icon-btn.co-danger:hover { color: var(--co-red); }
+.co-icon-btn.co-success:hover { color: var(--co-green); }
 
 .co-queue-edit-input {
     flex: 1;
@@ -424,15 +531,15 @@
     display: flex;
     gap: 4px;
     padding: 4px 8px;
-    background: #1a1a1a;
-    border-top: 1px solid #2a2a2a;
+    background: var(--co-bg);
+    border-top: 1px solid var(--co-border-subtle);
 }
 
 .co-queue-input {
     flex: 1;
-    background: #252525;
-    border: 1px solid #333;
-    color: #ccc;
+    background: var(--co-bg-input);
+    border: 1px solid var(--co-border);
+    color: var(--co-text-secondary);
     padding: 3px 6px;
     font-size: 12px;
     font-family: inherit;
@@ -445,15 +552,14 @@
     max-height: 200px;
 }
 .co-queue-input:focus {
-    border-color: #4caf50;
+    border-color: var(--co-green);
     outline: none;
 }
 
-/* Text button — pill shape with border */
 .co-text-btn {
-    background: #2a2a2a;
-    border: 1px solid #444;
-    color: #ccc;
+    background: var(--co-bg-elevated);
+    border: 1px solid var(--co-border-strong);
+    color: var(--co-text-secondary);
     padding: 2px 10px;
     font-size: 12px;
     cursor: pointer;
@@ -461,16 +567,16 @@
     white-space: nowrap;
     flex-shrink: 0;
 }
-.co-text-btn:hover { background: #333; }
+.co-text-btn:hover { background: var(--co-btn-hover); }
 .co-text-btn.co-accent {
-    color: #4caf50;
-    border-color: #4caf50;
+    color: var(--co-green);
+    border-color: var(--co-green);
 }
 
 .co-timestamp {
     font-size: 10px;
-    color: #666;
-    background: #252525;
+    color: var(--co-text-faint);
+    background: var(--co-bg-input);
     padding: 1px 4px;
     border-radius: 3px;
     white-space: nowrap;
@@ -483,7 +589,7 @@
 
 .co-empty {
     font-size: 11px;
-    color: #666;
+    color: var(--co-text-faint);
     padding: 4px 0;
     font-style: italic;
 }
@@ -494,13 +600,25 @@
     gap: 6px;
 }
 
-.co-countdown-active {
-    color: #e55 !important;
-    border-color: #e55 !important;
+.co-countdown {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    background: var(--co-bg-countdown);
+    border: 1px solid var(--co-green);
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--co-countdown-text);
+    margin-top: 4px;
 }
-.theme-light .co-countdown-active {
-    color: #c33 !important;
-    border-color: #c33 !important;
+.co-countdown-active {
+    color: var(--co-error) !important;
+    border-color: var(--co-error) !important;
+}
+.co-countdown-cancel {
+    font-size: 10px !important;
+    padding: 1px 6px !important;
 }
 
 .co-mode-btn {
@@ -511,11 +629,11 @@
 }
 .co-mode-btn[data-mode="listen"] {
     opacity: 1;
-    color: #7ab;
+    color: var(--co-listen);
 }
 .co-mode-btn[data-mode="auto"] {
     opacity: 1;
-    color: #7c7;
+    color: var(--co-auto);
 }
 .co-quick-reply-group {
     display: flex;
@@ -530,7 +648,7 @@
 }
 
 .co-term-indicator {
-    color: #4caf50;
+    color: var(--co-green);
     font-size: 16px;
     flex-shrink: 0;
 }
@@ -544,34 +662,32 @@
     overflow: hidden;
 }
 
-/* pin button uses .co-icon-btn */
-
 .co-pin-label {
-    color: #666;
+    color: var(--co-text-faint);
     font-style: italic;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 .co-pin-label.co-pin-active {
-    color: #ccc;
+    color: var(--co-text-secondary);
     font-style: normal;
     cursor: pointer;
 }
 .co-pin-label.co-pin-active:hover {
     text-decoration: line-through;
-    color: #e44;
+    color: var(--co-red);
 }
 
 
-/* --- Claude Orchestrator: Session Manager --- */
+/* === Claude Orchestrator: Session Manager === */
 
 .co-sm-container {
     display: flex;
     flex-direction: column;
     height: 100%;
     overflow: hidden;
-    background: #1a1a1a;
+    background: var(--co-bg);
 }
 
 .co-sm-header {
@@ -579,8 +695,8 @@
     justify-content: space-between;
     align-items: center;
     padding: 6px 10px;
-    background: #181818;
-    border-bottom: 1px solid #333;
+    background: var(--co-bg-header);
+    border-bottom: 1px solid var(--co-border);
     flex-shrink: 0;
 }
 
@@ -593,7 +709,7 @@
 .co-sm-title {
     font-size: 12px;
     font-weight: 600;
-    color: #999;
+    color: var(--co-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
@@ -607,12 +723,11 @@
 .co-sm-empty {
     padding: 16px 10px;
     font-size: 12px;
-    color: #666;
+    color: var(--co-text-faint);
     font-style: italic;
     text-align: center;
 }
 
-/* Group */
 .co-sm-group {
     margin-bottom: 2px;
 }
@@ -625,22 +740,22 @@
     cursor: pointer;
     user-select: none;
     font-size: 12px;
-    color: #999;
+    color: var(--co-text-muted);
 }
 .co-sm-group-header:hover {
-    background: #252525;
+    background: var(--co-bg-hover);
 }
 
 .co-sm-arrow {
     font-size: 10px;
     width: 12px;
     flex-shrink: 0;
-    color: #666;
+    color: var(--co-text-faint);
 }
 
 .co-sm-group-name {
     font-weight: 600;
-    color: #bbb;
+    color: var(--co-text-heading);
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -648,30 +763,29 @@
 }
 
 .co-sm-group-count {
-    color: #666;
+    color: var(--co-text-faint);
     font-size: 11px;
     flex-shrink: 0;
     margin-left: auto;
 }
 
-/* Session card */
 .co-sm-card {
     margin: 1px 6px;
     padding: 6px 8px;
-    background: #222;
+    background: var(--co-bg-card);
     border-radius: 4px;
     font-size: 12px;
 }
 .co-sm-card:hover {
-    background: #282828;
+    background: var(--co-bg-card-hover);
 }
 .co-sm-card-focused {
-    background: #1a2a1a;
-    border-left: 2px solid #4caf50;
+    background: var(--co-bg-card-focused);
+    border-left: 2px solid var(--co-green);
     padding-left: 6px;
 }
 .co-sm-card-focused:hover {
-    background: #1f2f1f;
+    background: var(--co-bg-card-focused-hover);
 }
 
 .co-sm-card-name {
@@ -679,22 +793,22 @@
     align-items: center;
     gap: 5px;
     font-weight: 500;
-    color: #ddd;
+    color: var(--co-text);
     margin-bottom: 2px;
 }
 
 .co-sm-dot {
     font-size: 8px;
-    color: #555;
+    color: var(--co-text-dim);
     flex-shrink: 0;
 }
 .co-sm-dot-active {
-    color: #4caf50;
+    color: var(--co-green);
 }
 
 .co-sm-card-pin {
     font-size: 11px;
-    color: #888;
+    color: var(--co-text-pin);
     padding-left: 13px;
     margin-bottom: 2px;
     overflow: hidden;
@@ -703,7 +817,7 @@
 }
 .co-sm-card-notes {
     font-size: 11px;
-    color: #777;
+    color: var(--co-text-preview);
     padding-left: 13px;
     margin-bottom: 2px;
     overflow: hidden;
@@ -722,16 +836,16 @@
 
 .co-sm-badge {
     font-size: 11px;
-    color: #999;
+    color: var(--co-text-muted);
 }
 .co-sm-badge.co-sm-unmanaged {
-    color: #666;
+    color: var(--co-text-faint);
     font-style: italic;
 }
 
 .co-sm-time {
     font-size: 11px;
-    color: #666;
+    color: var(--co-text-faint);
 }
 
 .co-sm-card-actions {
@@ -751,21 +865,18 @@
     font-size: 11px;
 }
 
-/* Kill button uses .co-icon-btn .co-danger from shared styles */
-
-/* Kill confirmation portal — appears below card content */
 .co-sm-kill-portal {
     margin-top: 6px;
     padding: 8px;
-    background: #2a1a1a;
-    border: 1px solid #e44;
+    background: var(--co-bg-danger);
+    border: 1px solid var(--co-red);
     border-radius: 4px;
 }
 
 .co-sm-kill-msg {
     display: block;
     font-size: 11px;
-    color: #e88;
+    color: var(--co-red-text);
     margin-bottom: 6px;
     line-height: 1.4;
 }
@@ -778,28 +889,28 @@
 
 .co-sm-kill-confirm {
     color: #fff !important;
-    background: #c33 !important;
-    border-color: #c33 !important;
+    background: var(--co-red-bg) !important;
+    border-color: var(--co-red-bg) !important;
 }
 .co-sm-kill-confirm:hover {
-    background: #e44 !important;
+    background: var(--co-red) !important;
 }
 
 
-/* --- Project form --- */
+/* === Project Form === */
 
 .co-sm-project-form {
     padding: 8px;
     margin: 4px 0;
-    border: 1px solid #555;
+    border: 1px solid var(--co-border-form);
     border-radius: 6px;
-    background: #2a2a2a;
+    background: var(--co-bg-form);
 }
 .co-sm-form-title {
     font-size: 12px;
     font-weight: 600;
     margin-bottom: 8px;
-    color: #ccc;
+    color: var(--co-text-secondary);
 }
 .co-sm-form-row {
     display: flex;
@@ -809,7 +920,7 @@
 }
 .co-sm-form-label {
     font-size: 11px;
-    color: #999;
+    color: var(--co-text-muted);
     min-width: 70px;
     flex-shrink: 0;
 }
@@ -817,14 +928,14 @@
     flex: 1;
     font-size: 12px;
     padding: 3px 6px;
-    border: 1px solid #444;
+    border: 1px solid var(--co-border-strong);
     border-radius: 4px;
-    background: #1e1e1e;
-    color: #ddd;
+    background: var(--co-bg-form-input);
+    color: var(--co-text);
     min-width: 0;
 }
 .co-sm-form-input:focus {
-    border-color: #7ab;
+    border-color: var(--co-blue);
     outline: none;
 }
 .co-sm-form-input:disabled {
@@ -832,7 +943,7 @@
 }
 .co-sm-form-error {
     font-size: 11px;
-    color: #e55;
+    color: var(--co-error);
     margin-bottom: 6px;
 }
 .co-sm-form-actions {
@@ -859,7 +970,7 @@
 }
 .co-sm-inactive-section {
     margin-top: 8px;
-    border-top: 1px solid #333;
+    border-top: 1px solid var(--co-border);
     padding-top: 4px;
 }
 .co-sm-inactive-header {
@@ -868,12 +979,12 @@
     gap: 4px;
     padding: 4px 8px;
     font-size: 11px;
-    color: #888;
+    color: var(--co-text-pin);
     cursor: pointer;
     user-select: none;
 }
 .co-sm-inactive-header:hover {
-    color: #bbb;
+    color: var(--co-text-heading);
 }
 
 /* PTY usage indicator */
@@ -883,7 +994,7 @@
     gap: 8px;
     padding: 4px 10px;
     font-size: 11px;
-    border-top: 1px solid #333;
+    border-top: 1px solid var(--co-border);
     flex-shrink: 0;
 }
 .co-sm-pty:empty {
@@ -894,14 +1005,14 @@
     white-space: nowrap;
     flex-shrink: 0;
 }
-.co-sm-pty-label.co-pty-ok { color: #999; }
-.co-sm-pty-label.co-pty-warning { color: #ff9800; }
-.co-sm-pty-label.co-pty-critical { color: #e44; font-weight: 600; }
+.co-sm-pty-label.co-pty-ok { color: var(--co-text-muted); }
+.co-sm-pty-label.co-pty-warning { color: var(--co-orange); }
+.co-sm-pty-label.co-pty-critical { color: var(--co-red); font-weight: 600; }
 
 .co-sm-pty-bar {
     flex: 1;
     height: 4px;
-    background: #333;
+    background: var(--co-border);
     border-radius: 2px;
     overflow: hidden;
 }
@@ -911,28 +1022,28 @@
     border-radius: 2px;
     transition: width 0.3s;
 }
-.co-sm-pty-fill.co-pty-ok { background: #4caf50; }
-.co-sm-pty-fill.co-pty-warning { background: #ff9800; }
-.co-sm-pty-fill.co-pty-critical { background: #e44; }
+.co-sm-pty-fill.co-pty-ok { background: var(--co-green); }
+.co-sm-pty-fill.co-pty-warning { background: var(--co-orange); }
+.co-sm-pty-fill.co-pty-critical { background: var(--co-red); }
 
 /* Idle session card */
 .co-sm-card-idle {
-    background: #2a2a1e;
+    background: var(--co-bg-idle);
 }
 .co-sm-card-idle:hover {
-    background: #2e2e22;
+    background: var(--co-bg-idle-hover);
 }
 
 .co-sm-idle-badge {
     font-size: 11px;
-    color: #cc9;
+    color: var(--co-idle-text);
     flex-shrink: 0;
 }
 
 /* Session card message preview */
 .co-sm-preview {
     font-size: 11px;
-    color: #777;
+    color: var(--co-text-preview);
     padding-left: 13px;
     margin-bottom: 2px;
     overflow: hidden;
@@ -944,252 +1055,24 @@
 .co-sm-hidden-toggle {
     padding: 4px 8px;
     font-size: 11px;
-    color: #888;
+    color: var(--co-text-pin);
     cursor: pointer;
     text-align: center;
 }
 .co-sm-hidden-toggle:hover {
-    color: #aaa;
+    color: var(--co-text-body);
 }
 
 .co-sm-card-hidden {
     opacity: 0.5;
 }
 
-/* --- Claude Orchestrator: light theme overrides --- */
+/* === xterm.js scrollbar customization === */
 
-.theme-light .claude-orchestrator-term-host.is-dimmed::after {
-    background: rgba(255, 255, 255, 0.4);
-}
-
-.theme-light .co-panel-header {
-    color: #666;
-    background: #f0f0f0;
-    border-bottom-color: #ddd;
-}
-.theme-light .co-queue-header {
-    border-top-color: #ddd;
-}
-
-.theme-light .co-history-content {
-    background: #fafafa;
-}
-.theme-light .co-history-item {
-    color: #555;
-}
-
-.theme-light .co-resize-handle {
-    background: #e0e0e0;
-}
-.theme-light .co-resize-handle:hover {
-    background: #ccc;
-}
-
-.theme-light .co-queue-list {
-    background: #fafafa;
-}
-.theme-light .co-queue-item {
-    color: #333;
-}
-.theme-light .co-move-btn {
-    color: #aaa !important;
-}
-.theme-light .co-move-btn:hover {
-    color: #333 !important;
-}
-
-.theme-light .co-queue-add {
-    background: #fafafa;
-    border-top-color: #e0e0e0;
-}
-.theme-light .co-queue-input {
-    background: #fff;
-    border-color: #ccc;
-    color: #333;
-}
-
-.theme-light .co-icon-btn {
-    color: #999;
-}
-.theme-light .co-icon-btn:hover {
-    color: #333;
-    background: #e8e8e8;
-}
-.theme-light .co-icon-btn.co-danger:hover { color: #e44; }
-.theme-light .co-icon-btn.co-success:hover { color: #4caf50; }
-
-.theme-light .co-text-btn {
-    background: #e8e8e8;
-    border-color: #ccc;
-    color: #333;
-}
-.theme-light .co-text-btn:hover {
-    background: #ddd;
-}
-.theme-light .co-text-btn.co-accent {
-    color: #4caf50;
-    border-color: #4caf50;
-}
-
-.theme-light .co-sm-kill-confirm {
-    color: #fff !important;
-    background: #c33 !important;
-    border-color: #c33 !important;
-}
-.theme-light .co-sm-kill-confirm:hover {
-    background: #e44 !important;
-}
-
-.theme-light .co-timestamp {
-    color: #999;
-    background: #eee;
-}
-
-.theme-light .co-empty {
-    color: #999;
-}
-
-.theme-light .co-pin-label {
-    color: #999;
-}
-.theme-light .co-pin-label.co-pin-active {
-    color: #333;
-}
-
-/* Session Manager light overrides */
-.theme-light .co-sm-container {
-    background: #fafafa;
-}
-.theme-light .co-sm-header {
-    background: #f0f0f0;
-    border-bottom-color: #ddd;
-}
-.theme-light .co-sm-title {
-    color: #666;
-}
-.theme-light .co-sm-empty {
-    color: #999;
-}
-.theme-light .co-sm-group-header {
-    color: #666;
-}
-.theme-light .co-sm-group-header:hover {
-    background: #eee;
-}
-.theme-light .co-sm-arrow {
-    color: #999;
-}
-.theme-light .co-sm-group-name {
-    color: #444;
-}
-.theme-light .co-sm-group-count {
-    color: #999;
-}
-.theme-light .co-sm-card {
-    background: #f0f0f0;
-}
-.theme-light .co-sm-card:hover {
-    background: #e8e8e8;
-}
-.theme-light .co-sm-card-focused {
-    background: #e0f0e0;
-    border-left: 2px solid #4caf50;
-    padding-left: 6px;
-}
-.theme-light .co-sm-card-focused:hover {
-    background: #d8e8d8;
-}
-.theme-light .co-sm-card-name {
-    color: #333;
-}
-.theme-light .co-sm-dot {
-    color: #bbb;
-}
-.theme-light .co-sm-card-pin {
-    color: #777;
-}
-.theme-light .co-sm-card-notes {
-    color: #888;
-}
-.theme-light .co-sm-badge {
-    color: #666;
-}
-.theme-light .co-sm-badge.co-sm-unmanaged {
-    color: #999;
-}
-.theme-light .co-sm-time {
-    color: #999;
-}
-.theme-light .co-sm-kill-portal {
-    background: #fff0f0;
-    border-color: #e44;
-}
-.theme-light .co-sm-kill-msg {
-    color: #c33;
-}
-.theme-light .co-sm-project-form {
-    background: #f8f8f8;
-    border-color: #ccc;
-}
-.theme-light .co-sm-form-title {
-    color: #555;
-}
-.theme-light .co-sm-form-label {
-    color: #666;
-}
-.theme-light .co-sm-form-input {
-    background: #fff;
-    border-color: #ccc;
-    color: #333;
-}
-
-/* PTY + idle light overrides */
-.theme-light .co-sm-pty {
-    border-top-color: #ddd;
-}
-.theme-light .co-sm-pty-label.co-pty-ok { color: #666; }
-.theme-light .co-sm-pty-bar {
-    background: #ddd;
-}
-.theme-light .co-sm-card-idle {
-    background: #f8f6e8;
-}
-.theme-light .co-sm-card-idle:hover {
-    background: #f0eee0;
-}
-.theme-light .co-sm-idle-badge {
-    color: #997;
-}
-.theme-light .co-sm-inactive-section {
-    border-top-color: #ccc;
-}
-.theme-light .co-sm-inactive-header {
-    color: #999;
-}
-.theme-light .co-sm-inactive-header:hover {
-    color: #666;
-}
-.theme-light .co-sm-preview {
-    color: #888;
-}
-
-/* xterm viewport background for light theme */
-.theme-light .xterm .xterm-viewport {
-    background-color: #f5f5f5;
-}
-.theme-light .xterm .composition-view {
-    background: #fff;
-    color: #000;
-}
-
-/* Derived from vs/base/browser/ui/scrollbar/media/scrollbar.css */
-
-/* xterm.js customization: Override xterm's cursor style */
 .xterm .xterm-scrollable-element > .scrollbar {
     cursor: default;
 }
 
-/* Arrows */
 .xterm .xterm-scrollable-element > .scrollbar > .scra {
 	cursor: pointer;
 	font-size: 11px !important;
@@ -1197,12 +1080,8 @@
 
 .xterm .xterm-scrollable-element > .visible {
 	opacity: 1;
-
-	/* Background rule added for IE9 - to allow clicks on dom node */
 	background:rgba(0,0,0,0);
-
 	transition: opacity 100ms linear;
-	/* In front of peek view */
 	z-index: 11;
 }
 .xterm .xterm-scrollable-element > .invisible {
@@ -1213,7 +1092,6 @@
 	transition: opacity 800ms linear;
 }
 
-/* Scrollable Content Inset Shadow */
 .xterm .xterm-scrollable-element > .shadow {
 	position: absolute;
 	display: none;
