@@ -802,7 +802,7 @@ export class TerminalView extends ItemView {
 		const content = await this.app.vault.read(file);
 		this.sessionNote = parseSessionNote(content, this.sessionName);
 		this.pinnedNote = this.sessionNote.pinnedNote;
-		this.claudeIdle = this.sessionNote.status === "idle";
+		this.claudeIdle = false;
 		this.loadedAt = Date.now();
 		this.sessionNoteLoaded = true;
 		this.renderHistory();
@@ -1087,6 +1087,12 @@ export class TerminalView extends ItemView {
 
 	private async sendQuickReply(key: string): Promise<void> {
 		if (!this.sessionName) return;
+
+		if (this.sessionNote) {
+			this.sessionNote.status = "running";
+			this.claudeIdle = false;
+			void this.saveSessionNote();
+		}
 
 		const { textArgs, enterArgs } = buildQuickReplyTmuxArgs(this.sessionName, key);
 
