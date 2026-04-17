@@ -34,6 +34,12 @@ import {
 	nextQueueMode,
 	queueModeLabel,
 	QUEUE_MODES,
+	getPtyStatus,
+	ptyStatusMessage,
+	parsePtyMax,
+	parsePtyUsed,
+	PTY_WARNING_THRESHOLD,
+	PTY_DEFAULT_MAX,
 } from "../src/utils.ts";
 import type { ProjectRegistry, QueueMode } from "../src/utils.ts";
 
@@ -1462,5 +1468,133 @@ describe("createDefaultSessionNote queueMode", () => {
 		assert.ok(content.includes("queueMode: manual"));
 		const parsed = parseSessionNote(content);
 		assert.equal(parsed.queueMode, "manual");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// PTY budget
+// ---------------------------------------------------------------------------
+
+describe("getPtyStatus", () => {
+	it("returns 'ok' when usage is low", () => {
+		assert.equal(getPtyStatus({ used: 100, max: 511 }), "ok");
+	});
+
+	it("returns 'ok' at exactly the threshold boundary", () => {
+		// 511 * 0.9 = 459.9 — 459 is ≤ threshold, so still ok
+		const boundary = Math.floor(511 * PTY_WARNING_THRESHOLD);
+		assert.equal(getPtyStatus({ used: boundary, max: 511 }), "ok");
+	});
+
+	it("returns 'warning' when above 90%", () => {
+		const aboveThreshold = Math.floor(511 * PTY_WARNING_THRESHOLD) + 1;
+		assert.equal(getPtyStatus({ used: aboveThreshold, max: 511 }), "warning");
+	});
+
+	it("returns 'exhausted' when used equals max", () => {
+		assert.equal(getPtyStatus({ used: 511, max: 511 }), "exhausted");
+	});
+
+	it("returns 'exhausted' when used exceeds max", () => {
+		assert.equal(getPtyStatus({ used: 520, max: 511 }), "exhausted");
+	});
+
+	it("returns 'ok' when both are zero", () => {
+		assert.equal(getPtyStatus({ used: 0, max: 0 }), "exhausted");
+	});
+
+	it("returns 'ok' for zero used with positive max", () => {
+		assert.equal(getPtyStatus({ used: 0, max: 511 }), "ok");
+	});
+});
+
+describe("ptyStatusMessage", () => {
+	it("returns empty string for ok status", () => {
+		assert.equal(ptyStatusMessage({ used: 100, max: 511 }, "ok"), "");
+	});
+
+	it("includes usage counts for warning", () => {
+		const msg = ptyStatusMessage({ used: 480, max: 511 }, "warning");
+		assert.ok(msg.includes("480"), "should include used count");
+		assert.ok(msg.includes("511"), "should include max count");
+	});
+
+	it("includes usage counts for exhausted", () => {
+		const msg = ptyStatusMessage({ used: 511, max: 511 }, "exhausted");
+		assert.ok(msg.includes("511"), "should include count");
+	});
+
+	it("warning and exhausted messages are different", () => {
+		const warning = ptyStatusMessage({ used: 480, max: 511 }, "warning");
+		const exhausted = ptyStatusMessage({ used: 511, max: 511 }, "exhausted");
+		assert.notEqual(warning, exhausted);
+	});
+});
+
+describe("parsePtyMax", () => {
+	it("parses valid sysctl output", () => {
+		assert.equal(parsePtyMax("511\n"), 511);
+	});
+
+	it("parses output with leading/trailing whitespace", () => {
+		assert.equal(parsePtyMax("  511  \n"), 511);
+	});
+
+	it("returns default for empty string", () => {
+		assert.equal(parsePtyMax(""), PTY_DEFAULT_MAX);
+	});
+
+	it("returns default for non-numeric output", () => {
+		assert.equal(parsePtyMax("error: not found\n"), PTY_DEFAULT_MAX);
+	});
+
+	it("returns default for zero", () => {
+		assert.equal(parsePtyMax("0"), PTY_DEFAULT_MAX);
+	});
+
+	it("returns default for negative number", () => {
+		assert.equal(parsePtyMax("-1"), PTY_DEFAULT_MAX);
+	});
+
+	it("parses non-default max values", () => {
+		assert.equal(parsePtyMax("1024\n"), 1024);
+	});
+});
+
+describe("parsePtyUsed", () => {
+	it("parses valid wc output", () => {
+		assert.equal(parsePtyUsed("  42\n"), 42);
+	});
+
+	it("parses zero", () => {
+		assert.equal(parsePtyUsed("0\n"), 0);
+	});
+
+	it("returns 0 for empty string", () => {
+		assert.equal(parsePtyUsed(""), 0);
+	});
+
+	it("returns 0 for non-numeric output", () => {
+		assert.equal(parsePtyUsed("error"), 0);
+	});
+
+	it("returns 0 for negative number", () => {
+		assert.equal(parsePtyUsed("-1"), 0);
+	});
+
+	it("parses large numbers", () => {
+		assert.equal(parsePtyUsed("511"), 511);
+	});
+});
+
+describe("PTY_WARNING_THRESHOLD", () => {
+	it("is 0.9", () => {
+		assert.equal(PTY_WARNING_THRESHOLD, 0.9);
+	});
+});
+
+describe("PTY_DEFAULT_MAX", () => {
+	it("is 511", () => {
+		assert.equal(PTY_DEFAULT_MAX, 511);
 	});
 });
