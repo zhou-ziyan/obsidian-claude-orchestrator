@@ -16,8 +16,10 @@ import {
 	QUICK_REPLY_KEYS,
 	buildQuickReplyTmuxArgs,
 	cancelCopyModeArgs,
+	nextQueueMode,
+	queueModeLabel,
 } from "./utils";
-import type { ProjectRegistry } from "./utils";
+import type { ProjectRegistry, QueueMode } from "./utils";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { IPty } from "node-pty";
@@ -94,6 +96,7 @@ export class TerminalView extends ItemView {
 	private pinnedNote: string | null = null;
 	private pinLabel: HTMLElement | null = null;
 	private termFocusIndicator: HTMLElement | null = null;
+	private modeBtn: HTMLElement | null = null;
 	private themeObserver: MutationObserver | null = null;
 
 	private fitAndResize(): void {
@@ -381,6 +384,18 @@ export class TerminalView extends ItemView {
 				}
 			});
 
+			this.modeBtn = headerRight.createEl("button", {
+				cls: "co-text-btn co-mode-btn",
+				text: queueModeLabel(this.sessionNote?.queueMode ?? "manual"),
+			});
+			this.modeBtn.title = "Click to cycle queue mode";
+			this.modeBtn.addEventListener("click", () => {
+				if (!this.sessionNote) return;
+				this.sessionNote.queueMode = nextQueueMode(this.sessionNote.queueMode);
+				this.updateModeBtn();
+				void this.saveSessionNote();
+			});
+
 			const quickReplyGroup = headerRight.createDiv({ cls: "co-quick-reply-group" });
 			for (const key of QUICK_REPLY_KEYS) {
 				const btn = quickReplyGroup.createEl("button", {
@@ -652,6 +667,7 @@ export class TerminalView extends ItemView {
 		this.renderHistory();
 		this.renderQueue();
 		this.updatePinLabel();
+		this.updateModeBtn();
 	}
 
 	private async saveSessionNote(): Promise<void> {
@@ -730,6 +746,13 @@ export class TerminalView extends ItemView {
 			this.pinLabel.textContent = "No note pinned";
 			this.pinLabel.classList.remove("co-pin-active");
 		}
+	}
+
+	private updateModeBtn(): void {
+		if (!this.modeBtn) return;
+		const mode: QueueMode = this.sessionNote?.queueMode ?? "manual";
+		this.modeBtn.textContent = queueModeLabel(mode);
+		this.modeBtn.dataset.mode = mode;
 	}
 
 	private renderQueue(): void {

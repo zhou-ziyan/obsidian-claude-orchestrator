@@ -486,6 +486,20 @@
     gap: 6px;
 }
 
+.co-mode-btn {
+    font-size: 11px !important;
+    padding: 2px 8px !important;
+    opacity: 0.7;
+    flex-shrink: 0;
+}
+.co-mode-btn[data-mode="listen"] {
+    opacity: 1;
+    color: #7ab;
+}
+.co-mode-btn[data-mode="auto"] {
+    opacity: 1;
+    color: #7c7;
+}
 .co-quick-reply-group {
     display: flex;
     gap: 2px;
