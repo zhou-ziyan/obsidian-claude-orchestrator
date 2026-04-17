@@ -74,6 +74,7 @@ export class SessionManagerView extends ItemView {
 	private editing = false;
 	private focusedSession: string | null = null;
 	private showHidden = false;
+	private sendBtns = new Map<string, HTMLElement>();
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClaudeOrchestratorPlugin) {
 		super(leaf);
@@ -137,6 +138,15 @@ export class SessionManagerView extends ItemView {
 				}
 			}),
 		);
+
+		// Countdown tick — update Send buttons without full refresh
+		/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any -- custom workspace event */
+		this.registerEvent(
+			this.app.workspace.on("claude-orchestrator:countdown-tick" as any, () => {
+				this.updateCountdownButtons();
+			}),
+		);
+		/* eslint-enable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any */
 
 		// Low-frequency polling for external tmux changes
 		this.pollTimer = setInterval(() => { void this.refresh(); }, POLL_INTERVAL_MS);
@@ -229,6 +239,7 @@ export class SessionManagerView extends ItemView {
 	private render() {
 		if (!this.listEl) return;
 		this.listEl.empty();
+		this.sendBtns.clear();
 
 		if (this.groups.length === 0 && Object.keys(this.plugin.settings.projects).length === 0) {
 			this.listEl.createDiv({
@@ -488,16 +499,40 @@ export class SessionManagerView extends ItemView {
 		const actions = card.createDiv({ cls: "co-sm-card-actions" });
 
 		if (session.hasPanel && session.queueCount > 0) {
+			const match = findTerminalLeafBySession(this.app.workspace, session.name);
+			const countdown = match?.view.getCountdownRemaining() ?? 0;
+
 			const sendBtn = actions.createEl("button", {
-				cls: "co-text-btn co-accent",
-				text: "Send ▶",
+				cls: countdown > 0 ? "co-text-btn co-countdown-active" : "co-text-btn co-accent",
+				text: countdown > 0 ? `Cancel (${countdown}s)` : "Send ▶",
 			});
 			sendBtn.addEventListener("click", (e) => {
 				e.stopPropagation();
-				void this.sendNextForSession(session.name);
+				if (match && match.view.getCountdownRemaining() > 0) {
+					match.view.cancelCountdown();
+				} else {
+					void this.sendNextForSession(session.name);
+				}
 			});
+			this.sendBtns.set(session.name, sendBtn);
 		}
 
+	}
+
+	private updateCountdownButtons(): void {
+		for (const [sessionName, btn] of this.sendBtns) {
+			const match = findTerminalLeafBySession(this.app.workspace, sessionName);
+			const remaining = match?.view.getCountdownRemaining() ?? 0;
+			if (remaining > 0) {
+				btn.textContent = `Cancel (${remaining}s)`;
+				btn.classList.add("co-countdown-active");
+				btn.classList.remove("co-accent");
+			} else {
+				btn.textContent = "Send ▶";
+				btn.classList.remove("co-countdown-active");
+				btn.classList.add("co-accent");
+			}
+		}
 	}
 
 	private showInlineRename(nameSpan: HTMLElement, session: SessionInfo) {

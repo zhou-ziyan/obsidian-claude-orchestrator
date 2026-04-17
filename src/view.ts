@@ -1035,7 +1035,7 @@ export class TerminalView extends ItemView {
 		if (action === "send") {
 			this.startCountdown();
 		} else if (action === "notify") {
-			new Notice(`Claude finished — ${this.sessionNote.queue.length} item(s) in queue`);
+			this.notifyUser(`Claude finished — ${this.sessionNote.queue.length} item(s) in queue`);
 		}
 	}
 
@@ -1058,7 +1058,11 @@ export class TerminalView extends ItemView {
 		}, 1000);
 	}
 
-	private cancelCountdown(): void {
+	getCountdownRemaining(): number {
+		return this.countdownRemaining;
+	}
+
+	cancelCountdown(): void {
 		if (this.countdownTimer) {
 			clearInterval(this.countdownTimer);
 			this.countdownTimer = null;
@@ -1068,6 +1072,7 @@ export class TerminalView extends ItemView {
 			this.sendBtn.textContent = "Send next ▶";
 			this.sendBtn.classList.remove("co-countdown-active");
 		}
+		this.app.workspace.trigger("claude-orchestrator:countdown-tick");
 	}
 
 	private checkAutoSend(): void {
@@ -1084,14 +1089,24 @@ export class TerminalView extends ItemView {
 		if (action === "send") {
 			this.startCountdown();
 		} else if (action === "notify") {
-			new Notice(`Claude idle — ${this.sessionNote.queue.length} item(s) in queue`);
+			this.notifyUser(`Claude idle — ${this.sessionNote.queue.length} item(s) in queue`);
 		}
+	}
+
+	private notifyUser(message: string): void {
+		new Notice(message);
+		try {
+			new Notification("Claude Orchestrator", { body: message });
+		} catch { /* Notification API may not be available */ }
+		const { execFile } = require("child_process") as typeof import("child_process");
+		execFile("afplay", ["/System/Library/Sounds/Glass.aiff"], () => {});
 	}
 
 	private updateSendBtnCountdown(): void {
 		if (!this.sendBtn) return;
 		this.sendBtn.textContent = `Cancel (${this.countdownRemaining}s)`;
 		this.sendBtn.classList.add("co-countdown-active");
+		this.app.workspace.trigger("claude-orchestrator:countdown-tick");
 	}
 
 	private onHostFocusIn = () => {
