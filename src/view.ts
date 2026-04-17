@@ -104,8 +104,8 @@ export class TerminalView extends ItemView {
 	private termFocusIndicator: HTMLElement | null = null;
 	private modeBtn: HTMLElement | null = null;
 	private sendBtn: HTMLElement | null = null;
-	private countdownTimer: ReturnType<typeof setTimeout> | null = null;
-	private countdownEl: HTMLElement | null = null;
+	private countdownTimer: ReturnType<typeof setInterval> | null = null;
+	private countdownRemaining = 0;
 	private themeObserver: MutationObserver | null = null;
 
 	private fitAndResize(): void {
@@ -418,7 +418,13 @@ export class TerminalView extends ItemView {
 				cls: "co-text-btn",
 				text: "Send next ▶",
 			});
-			this.sendBtn.addEventListener("click", () => { void this.sendNext(); });
+			this.sendBtn.addEventListener("click", () => {
+				if (this.countdownTimer) {
+					this.cancelCountdown();
+				} else {
+					void this.sendNext();
+				}
+			});
 
 			this.queueList = this.queuePanel.createDiv({ cls: "co-queue-list" });
 
@@ -1045,31 +1051,39 @@ export class TerminalView extends ItemView {
 
 	private startCountdown(): void {
 		this.cancelCountdown();
-		if (!this.queuePanel) return;
+		if (!this.sendBtn) return;
 
-		this.countdownEl = this.queuePanel.createDiv({ cls: "co-countdown" });
-		this.countdownEl.textContent = "Auto-sending in 3s…";
-		const cancelBtn = this.countdownEl.createEl("button", {
-			cls: "co-text-btn co-countdown-cancel",
-			text: "Cancel",
-		});
-		cancelBtn.addEventListener("click", () => this.cancelCountdown());
+		const totalSeconds = Math.round(AUTO_SEND_COUNTDOWN_MS / 1000);
+		this.countdownRemaining = totalSeconds;
+		this.updateSendBtnCountdown();
 
-		this.countdownTimer = setTimeout(() => {
-			this.cancelCountdown();
-			void this.sendNext();
-		}, AUTO_SEND_COUNTDOWN_MS);
+		this.countdownTimer = setInterval(() => {
+			this.countdownRemaining--;
+			if (this.countdownRemaining <= 0) {
+				this.cancelCountdown();
+				void this.sendNext();
+			} else {
+				this.updateSendBtnCountdown();
+			}
+		}, 1000);
 	}
 
 	private cancelCountdown(): void {
 		if (this.countdownTimer) {
-			clearTimeout(this.countdownTimer);
+			clearInterval(this.countdownTimer);
 			this.countdownTimer = null;
 		}
-		if (this.countdownEl) {
-			this.countdownEl.remove();
-			this.countdownEl = null;
+		this.countdownRemaining = 0;
+		if (this.sendBtn) {
+			this.sendBtn.textContent = "Send next ▶";
+			this.sendBtn.classList.remove("co-countdown-active");
 		}
+	}
+
+	private updateSendBtnCountdown(): void {
+		if (!this.sendBtn) return;
+		this.sendBtn.textContent = `Cancel (${this.countdownRemaining}s)`;
+		this.sendBtn.classList.add("co-countdown-active");
 	}
 
 	private onHostFocusIn = () => {
