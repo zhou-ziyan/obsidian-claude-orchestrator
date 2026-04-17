@@ -205,6 +205,7 @@ export interface SessionInfo {
 	queueCount: number;
 	lastActivity: string | null;
 	tmuxActivity: number;
+	preview: string | null;
 }
 
 export interface SessionGroup {
@@ -236,7 +237,7 @@ export function projectFromSessionName(
 export function groupSessionsByProject(
 	allSessions: { name: string; activity: number }[],
 	openSessionNames: Set<string>,
-	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null }>,
+	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null }>,
 	projects: ProjectRegistry,
 ): SessionGroup[] {
 	const projectMap = new Map<string, SessionInfo[]>();
@@ -253,6 +254,7 @@ export function groupSessionsByProject(
 			queueCount: nd?.queueCount ?? 0,
 			lastActivity: nd?.lastActivity ?? null,
 			tmuxActivity: s.activity,
+			preview: nd?.preview ?? null,
 		};
 
 		if (project) {
@@ -512,6 +514,20 @@ export function serializeSessionNote(note: SessionNote): string {
 
 	lines.push("");
 	return lines.join("\n");
+}
+
+const TIMESTAMP_PREFIX_RE = /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] /;
+
+export function extractSessionPreview(note: SessionNote): string | null {
+	const source = note.queue.length > 0
+		? note.queue[note.queue.length - 1]!
+		: note.history.length > 0
+			? note.history[note.history.length - 1]!.text
+			: null;
+	if (!source) return null;
+	const stripped = source.replace(TIMESTAMP_PREFIX_RE, "");
+	const firstLine = stripped.split("\n")[0]!;
+	return firstLine;
 }
 
 /**

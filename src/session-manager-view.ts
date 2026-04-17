@@ -18,6 +18,7 @@ import {
 	getPtyUsage,
 	ptyLevel,
 	isSessionIdle,
+	extractSessionPreview,
 	SessionGroup,
 	SessionInfo,
 } from "./utils";
@@ -110,11 +111,11 @@ export class SessionManagerView extends ItemView {
 		addBtn.title = "Add project";
 		addBtn.addEventListener("click", () => { this.showProjectForm(); });
 
-		// PTY usage indicator
-		this.ptyEl = container.createDiv({ cls: "co-sm-pty" });
-
 		// Session list
 		this.listEl = container.createDiv({ cls: "co-sm-list" });
+
+		// PTY usage indicator (footer)
+		this.ptyEl = container.createDiv({ cls: "co-sm-pty" });
 
 		// Initial load
 		await this.refresh();
@@ -173,6 +174,7 @@ export class SessionManagerView extends ItemView {
 			pinnedNote: string | null;
 			queueCount: number;
 			lastActivity: string | null;
+			preview: string | null;
 		}>();
 
 		const projects = this.plugin.settings.projects;
@@ -204,6 +206,7 @@ export class SessionManagerView extends ItemView {
 					pinnedNote: note.pinnedNote,
 					queueCount: note.queue.length,
 					lastActivity,
+					preview: extractSessionPreview(note),
 				});
 			} catch {
 				// Note read failed — skip
@@ -427,6 +430,12 @@ export class SessionManagerView extends ItemView {
 				cls: "co-sm-badge co-sm-unmanaged",
 				text: "no session note",
 			});
+		}
+
+		// Message preview
+		if (session.preview) {
+			const previewEl = card.createDiv({ cls: "co-sm-preview" });
+			previewEl.textContent = session.preview;
 		}
 
 		card.addEventListener("dblclick", () => {

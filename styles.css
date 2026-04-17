@@ -856,7 +856,7 @@
     gap: 8px;
     padding: 4px 10px;
     font-size: 11px;
-    border-bottom: 1px solid #333;
+    border-top: 1px solid #333;
     flex-shrink: 0;
 }
 .co-sm-pty:empty {
@@ -900,6 +900,17 @@
     font-size: 11px;
     color: #cc9;
     flex-shrink: 0;
+}
+
+/* Session card message preview */
+.co-sm-preview {
+    font-size: 11px;
+    color: #777;
+    padding-left: 13px;
+    margin-bottom: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* --- Claude Orchestrator: light theme overrides --- */
@@ -1088,7 +1099,7 @@
 
 /* PTY + idle light overrides */
 .theme-light .co-sm-pty {
-    border-bottom-color: #ddd;
+    border-top-color: #ddd;
 }
 .theme-light .co-sm-pty-label.co-pty-ok { color: #666; }
 .theme-light .co-sm-pty-bar {
@@ -1111,6 +1122,9 @@
 }
 .theme-light .co-sm-inactive-header:hover {
     color: #666;
+}
+.theme-light .co-sm-preview {
+    color: #888;
 }
 
 /* xterm viewport background for light theme */
