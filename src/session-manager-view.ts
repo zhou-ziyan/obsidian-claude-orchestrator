@@ -423,10 +423,13 @@ export class SessionManagerView extends ItemView {
 		const topRow = card.createDiv({ cls: "co-sm-card-top" });
 
 		const nameRow = topRow.createDiv({ cls: "co-sm-card-name" });
-		const dotCls = session.hasPanel
-			? `co-sm-dot co-sm-dot-${session.status}`
-			: "co-sm-dot co-sm-dot-off";
-		nameRow.createSpan({ cls: dotCls, text: "●" });
+		const statusCls = session.hasPanel
+			? `co-sm-status co-sm-status-${session.status}`
+			: "co-sm-status co-sm-status-off";
+		const statusSymbol = session.hasPanel
+			? (session.status === "running" ? "▶" : session.status === "waiting_for_user" ? "⏸" : "○")
+			: "○";
+		nameRow.createSpan({ cls: statusCls, text: statusSymbol });
 		const displayLabel = session.displayName || session.name.replace(/-(\d+)$/, " #$1");
 		const nameSpan = nameRow.createSpan({ text: displayLabel });
 		nameSpan.addEventListener("dblclick", (e) => {
@@ -434,8 +437,20 @@ export class SessionManagerView extends ItemView {
 			this.showInlineRename(nameSpan, session);
 		});
 
-		const killBtn = topRow.createEl("button", {
-			cls: "co-icon-btn co-danger",
+		const topActions = topRow.createDiv({ cls: "co-sm-card-top-actions" });
+
+		const renameBtn = topActions.createEl("button", {
+			cls: "co-icon-btn co-sm-hover-btn",
+			text: "✏",
+		});
+		renameBtn.title = "Rename session";
+		renameBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			this.showInlineRename(nameSpan, session);
+		});
+
+		const killBtn = topActions.createEl("button", {
+			cls: "co-icon-btn co-danger co-sm-hover-btn",
 			text: "×",
 		});
 		killBtn.title = "Kill session";
