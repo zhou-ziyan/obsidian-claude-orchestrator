@@ -1389,7 +1389,7 @@ describe("restorableSessionNames", () => {
 
 describe("QUICK_REPLY_KEYS", () => {
 	it("contains expected default keys", () => {
-		assert.deepEqual([...QUICK_REPLY_KEYS], ["1", "2", "3", "Y", "N"]);
+		assert.deepEqual([...QUICK_REPLY_KEYS], ["1", "2", "Y"]);
 	});
 
 	it("all keys are single characters", () => {
@@ -1412,7 +1412,7 @@ describe("buildQuickReplyTmuxArgs", () => {
 	});
 
 	it("targets the correct session", () => {
-		const result = buildQuickReplyTmuxArgs("15_Claude_Orchestrator-2", "N");
+		const result = buildQuickReplyTmuxArgs("15_Claude_Orchestrator-2", "2");
 		assert.ok(result.textArgs.includes("15_Claude_Orchestrator-2"));
 		assert.ok(result.enterArgs.includes("15_Claude_Orchestrator-2"));
 	});
