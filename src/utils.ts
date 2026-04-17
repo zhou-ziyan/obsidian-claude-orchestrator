@@ -956,6 +956,29 @@ export function extractLastAssistantText(jsonlContent: string): string | null {
 	return null;
 }
 
+// --- Slash command autocomplete ---
+
+export const SLASH_COMMANDS: readonly string[] = [
+	"/clear",
+	"/compact",
+	"/cost",
+	"/doctor",
+	"/help",
+	"/init",
+	"/login",
+	"/logout",
+	"/memory",
+	"/model",
+	"/review",
+] as const;
+
+export function filterSlashCommands(input: string): string[] {
+	if (!input.startsWith("/")) return [];
+	if (input !== input.trimEnd()) return [];
+	const prefix = input.toLowerCase();
+	return SLASH_COMMANDS.filter((cmd) => cmd.startsWith(prefix));
+}
+
 export function migrateSettings(data: Record<string, unknown>): Record<string, unknown> {
 	const out = { ...data };
 	if ("queuePanel" in out && !("simpleMode" in out)) {

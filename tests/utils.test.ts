@@ -58,6 +58,8 @@ import {
 	AUTO_SEND_COUNTDOWN_MS,
 	ensureStopHookConfig,
 	parseQuickReplyKeys,
+	SLASH_COMMANDS,
+	filterSlashCommands,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote } from "../src/utils.ts";
 
@@ -2492,5 +2494,73 @@ describe("parseQuickReplyKeys", () => {
 
 	it("preserves multi-char keys", () => {
 		assert.deepEqual(parseQuickReplyKeys("Yes, No, 1"), ["Yes", "No", "1"]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Slash command autocomplete
+// ---------------------------------------------------------------------------
+
+describe("SLASH_COMMANDS", () => {
+	it("is a non-empty array of strings starting with /", () => {
+		assert.ok(SLASH_COMMANDS.length > 0);
+		for (const cmd of SLASH_COMMANDS) {
+			assert.ok(cmd.startsWith("/"), `${cmd} should start with /`);
+		}
+	});
+
+	it("contains common commands", () => {
+		assert.ok(SLASH_COMMANDS.includes("/help"));
+		assert.ok(SLASH_COMMANDS.includes("/compact"));
+		assert.ok(SLASH_COMMANDS.includes("/clear"));
+	});
+
+	it("is sorted alphabetically", () => {
+		const sorted = [...SLASH_COMMANDS].sort();
+		assert.deepEqual(SLASH_COMMANDS, sorted);
+	});
+});
+
+describe("filterSlashCommands", () => {
+	it("returns all commands for bare /", () => {
+		const result = filterSlashCommands("/");
+		assert.deepEqual(result, [...SLASH_COMMANDS]);
+	});
+
+	it("filters by prefix", () => {
+		const result = filterSlashCommands("/co");
+		assert.ok(result.includes("/compact"));
+		assert.ok(result.includes("/cost"));
+		assert.ok(!result.includes("/help"));
+	});
+
+	it("is case-insensitive", () => {
+		const result = filterSlashCommands("/HE");
+		assert.ok(result.includes("/help"));
+	});
+
+	it("returns empty for no matches", () => {
+		const result = filterSlashCommands("/zzzzz");
+		assert.deepEqual(result, []);
+	});
+
+	it("returns empty for non-slash input", () => {
+		const result = filterSlashCommands("hello");
+		assert.deepEqual(result, []);
+	});
+
+	it("returns empty for empty string", () => {
+		const result = filterSlashCommands("");
+		assert.deepEqual(result, []);
+	});
+
+	it("matches exact command", () => {
+		const result = filterSlashCommands("/help");
+		assert.deepEqual(result, ["/help"]);
+	});
+
+	it("handles / with trailing space as no match", () => {
+		const result = filterSlashCommands("/ ");
+		assert.deepEqual(result, []);
 	});
 });

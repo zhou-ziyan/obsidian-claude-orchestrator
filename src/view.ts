@@ -25,6 +25,7 @@ import {
 	autoSendAction,
 	AUTO_SEND_COUNTDOWN_MS,
 	execTmux,
+	filterSlashCommands,
 } from "./utils";
 import type { ProjectRegistry, QueueMode, StopReason } from "./utils";
 import { Terminal } from "@xterm/xterm";
@@ -472,14 +473,64 @@ export class TerminalView extends ItemView {
 				requestAnimationFrame(autoResize);
 			});
 
+			// Slash command autocomplete
+			let acDropdown: HTMLElement | null = null;
+			let acItems: string[] = [];
+			let acSelected = 0;
+
+			const closeAc = () => {
+				acDropdown?.remove();
+				acDropdown = null;
+				acItems = [];
+				acSelected = 0;
+			};
+
+			const renderAc = () => {
+				if (!acDropdown) return;
+				acDropdown.empty();
+				acItems.forEach((cmd, i) => {
+					const item = acDropdown!.createDiv({
+						cls: `co-ac-item${i === acSelected ? " co-ac-selected" : ""}`,
+						text: cmd,
+					});
+					item.addEventListener("mousedown", (e) => {
+						e.preventDefault();
+						input.value = cmd + " ";
+						closeAc();
+						requestAnimationFrame(autoResize);
+					});
+				});
+			};
+
+			const updateAc = () => {
+				const text = input.value;
+				if (!text.startsWith("/") || text.includes(" ")) {
+					closeAc();
+					return;
+				}
+				const matches = filterSlashCommands(text);
+				if (matches.length === 0) {
+					closeAc();
+					return;
+				}
+				acItems = matches;
+				acSelected = 0;
+				if (!acDropdown) {
+					acDropdown = addRow.createDiv({ cls: "co-ac-dropdown" });
+				}
+				renderAc();
+			};
+
+			input.addEventListener("input", updateAc);
+
 			const addBtn = addRow.createEl("button", {
 				cls: "co-icon-btn",
 				text: "+",
 			});
 			const doAdd = () => {
+				closeAc();
 				const text = input.value.trim();
 				if (!text) {
-					// Empty input + Enter → send next if queue has items
 					if (this.sessionNote && this.sessionNote.queue.length > 0) {
 						void this.sendNext();
 					}
@@ -498,8 +549,35 @@ export class TerminalView extends ItemView {
 			input.addEventListener("compositionend", () => { composing = false; });
 			addBtn.addEventListener("click", doAdd);
 			input.addEventListener("keydown", (e) => {
+				if (acDropdown && acItems.length > 0) {
+					if (e.key === "ArrowDown") {
+						e.preventDefault();
+						acSelected = (acSelected + 1) % acItems.length;
+						renderAc();
+						return;
+					}
+					if (e.key === "ArrowUp") {
+						e.preventDefault();
+						acSelected = (acSelected - 1 + acItems.length) % acItems.length;
+						renderAc();
+						return;
+					}
+					if (e.key === "Enter" && !e.shiftKey) {
+						e.preventDefault();
+						input.value = acItems[acSelected]! + " ";
+						closeAc();
+						requestAnimationFrame(autoResize);
+						return;
+					}
+					if (e.key === "Escape") {
+						e.preventDefault();
+						closeAc();
+						return;
+					}
+				}
 				if (e.key === "Enter" && !e.shiftKey && !composing && !e.isComposing) { e.preventDefault(); doAdd(); }
 			});
+			input.addEventListener("blur", () => { setTimeout(closeAc, 150); });
 
 		}
 

@@ -533,6 +533,36 @@
     padding: 4px 8px;
     background: var(--co-bg);
     border-top: 1px solid var(--co-border-subtle);
+    position: relative;
+}
+
+.co-ac-dropdown {
+    position: absolute;
+    bottom: 100%;
+    left: 8px;
+    right: 32px;
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--co-bg-elevated);
+    border: 1px solid var(--co-border-strong);
+    border-radius: 4px;
+    z-index: 10;
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.co-ac-item {
+    padding: 4px 8px;
+    font-size: 12px;
+    color: var(--co-text-secondary);
+    cursor: pointer;
+    font-family: monospace;
+}
+.co-ac-item:hover {
+    background: var(--co-bg-hover);
+}
+.co-ac-item.co-ac-selected {
+    background: var(--co-bg-card-focused);
+    color: var(--co-green);
 }
 
 .co-queue-input {
