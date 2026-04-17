@@ -684,6 +684,16 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+.co-sm-card-notes {
+    font-size: 11px;
+    color: #777;
+    padding-left: 13px;
+    margin-bottom: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-style: italic;
+}
 
 .co-sm-card-info {
     display: flex;
@@ -1064,6 +1074,9 @@
 }
 .theme-light .co-sm-card-pin {
     color: #777;
+}
+.theme-light .co-sm-card-notes {
+    color: #888;
 }
 .theme-light .co-sm-badge {
     color: #666;

@@ -175,6 +175,7 @@ export class SessionManagerView extends ItemView {
 			queueCount: number;
 			lastActivity: string | null;
 			preview: string | null;
+			notesSummary: string | null;
 		}>();
 
 		const projects = this.plugin.settings.projects;
@@ -202,11 +203,13 @@ export class SessionManagerView extends ItemView {
 						break;
 					}
 				}
+				const firstLine = note.notes.split("\n")[0]?.trim() || null;
 				noteData.set(s.name, {
 					pinnedNote: note.pinnedNote,
 					queueCount: note.queue.length,
 					lastActivity,
 					preview: extractSessionPreview(note),
+					notesSummary: firstLine,
 				});
 			} catch {
 				// Note read failed — skip
@@ -407,6 +410,12 @@ export class SessionManagerView extends ItemView {
 			const pinRow = card.createDiv({ cls: "co-sm-card-pin" });
 			const noteName = session.pinnedNote.split("/").pop()?.replace(/\.md$/, "") ?? session.pinnedNote;
 			pinRow.createSpan({ text: `📌 ${noteName}` });
+		}
+
+		// Notes summary
+		if (session.notesSummary) {
+			const notesRow = card.createDiv({ cls: "co-sm-card-notes" });
+			notesRow.textContent = session.notesSummary;
 		}
 
 		// Info row: queue count + last activity + idle badge

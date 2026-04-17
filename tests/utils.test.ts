@@ -578,6 +578,7 @@ describe("serializeSessionNote", () => {
 			status: "waiting_for_user" as const,
 			pinnedNote: "01_Projects/15_Claude_Orchestrator/15_Claude_Orchestrator.md",
 			queueMode: "manual" as const,
+			notes: "",
 			history: [
 				{ text: "task A", completed: true },
 				{ text: "task B", completed: false },
@@ -595,6 +596,7 @@ describe("serializeSessionNote", () => {
 			status: "idle" as const,
 			pinnedNote: null,
 			queueMode: "manual" as const,
+			notes: "",
 			history: [],
 			queue: [],
 		};
@@ -1933,5 +1935,60 @@ describe("groupSessionsByProject preview", () => {
 		);
 		const orch = groups.find((g) => g.project === "15_Claude_Orchestrator")!;
 		assert.equal(orch.sessions[0].preview, null);
+	});
+});
+
+// --- SessionNote notes field ---
+
+describe("parseSessionNote notes", () => {
+	it("parses notes from ## Notes section", () => {
+		const md = [
+			"---", "session: test", "status: idle", "---", "",
+			"## Notes", "This session handles PTY management", "",
+			"## History", "", "## Queue", "",
+		].join("\n");
+		const note = parseSessionNote(md);
+		assert.equal(note.notes, "This session handles PTY management");
+	});
+
+	it("parses multiline notes", () => {
+		const md = [
+			"---", "session: test", "status: idle", "---", "",
+			"## Notes", "Line one", "Line two", "",
+			"## History", "", "## Queue", "",
+		].join("\n");
+		const note = parseSessionNote(md);
+		assert.equal(note.notes, "Line one\nLine two");
+	});
+
+	it("defaults to empty string when no Notes section", () => {
+		const md = [
+			"---", "session: test", "status: idle", "---", "",
+			"## History", "", "## Queue", "",
+		].join("\n");
+		const note = parseSessionNote(md);
+		assert.equal(note.notes, "");
+	});
+
+	it("round-trips notes through serialize", () => {
+		const md = [
+			"---", "session: test", "status: idle", "queueMode: manual", "pinnedNote: ", "---", "",
+			"## Notes", "My important note", "",
+			"## History", "", "## Queue", "",
+		].join("\n");
+		const note = parseSessionNote(md);
+		assert.equal(note.notes, "My important note");
+		const serialized = serializeSessionNote(note);
+		const reparsed = parseSessionNote(serialized);
+		assert.equal(reparsed.notes, "My important note");
+	});
+});
+
+describe("createDefaultSessionNote notes", () => {
+	it("includes empty ## Notes section", () => {
+		const content = createDefaultSessionNote("test-session");
+		assert.ok(content.includes("## Notes"));
+		const parsed = parseSessionNote(content);
+		assert.equal(parsed.notes, "");
 	});
 });

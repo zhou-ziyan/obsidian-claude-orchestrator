@@ -206,6 +206,7 @@ export interface SessionInfo {
 	lastActivity: string | null;
 	tmuxActivity: number;
 	preview: string | null;
+	notesSummary: string | null;
 }
 
 export interface SessionGroup {
@@ -237,7 +238,7 @@ export function projectFromSessionName(
 export function groupSessionsByProject(
 	allSessions: { name: string; activity: number }[],
 	openSessionNames: Set<string>,
-	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null }>,
+	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null; notesSummary: string | null }>,
 	projects: ProjectRegistry,
 ): SessionGroup[] {
 	const projectMap = new Map<string, SessionInfo[]>();
@@ -255,6 +256,7 @@ export function groupSessionsByProject(
 			lastActivity: nd?.lastActivity ?? null,
 			tmuxActivity: s.activity,
 			preview: nd?.preview ?? null,
+			notesSummary: nd?.notesSummary ?? null,
 		};
 
 		if (project) {
@@ -330,6 +332,7 @@ export interface SessionNote {
 	status: SessionStatus;
 	pinnedNote: string | null;
 	queueMode: QueueMode;
+	notes: string;
 	history: HistoryItem[];
 	queue: string[];
 }
@@ -363,6 +366,8 @@ export function createDefaultSessionNote(sessionName: string): string {
 		"queueMode: manual",
 		"---",
 		"",
+		"## Notes",
+		"",
 		"## History",
 		"",
 		"## Queue",
@@ -382,6 +387,7 @@ export function parseSessionNote(
 		status: "idle",
 		pinnedNote: null,
 		queueMode: "manual",
+		notes: "",
 		history: [],
 		queue: [],
 	};
@@ -412,12 +418,18 @@ export function parseSessionNote(
 	}
 
 	// Parse body sections
-	let currentSection: "none" | "history" | "queue" = "none";
+	let currentSection: "none" | "notes" | "history" | "queue" = "none";
+	const notesLines: string[] = [];
 
 	while (i < lines.length) {
 		const line = lines[i]!;
 		const trimmed = line.trim();
 
+		if (trimmed.toLowerCase() === "## notes") {
+			currentSection = "notes";
+			i++;
+			continue;
+		}
 		if (trimmed.toLowerCase() === "## history") {
 			currentSection = "history";
 			i++;
@@ -431,6 +443,12 @@ export function parseSessionNote(
 		// Any other heading ends the current section
 		if (trimmed.startsWith("## ")) {
 			currentSection = "none";
+			i++;
+			continue;
+		}
+
+		if (currentSection === "notes") {
+			notesLines.push(line);
 			i++;
 			continue;
 		}
@@ -465,6 +483,11 @@ export function parseSessionNote(
 		i++;
 	}
 
+	// Trim leading/trailing blank lines from notes
+	while (notesLines.length > 0 && notesLines[0]!.trim() === "") notesLines.shift();
+	while (notesLines.length > 0 && notesLines[notesLines.length - 1]!.trim() === "") notesLines.pop();
+	note.notes = notesLines.join("\n");
+
 	return note;
 }
 
@@ -489,8 +512,17 @@ export function serializeSessionNote(note: SessionNote): string {
 		`queueMode: ${note.queueMode}`,
 		"---",
 		"",
-		"## History",
+		"## Notes",
 	];
+
+	if (note.notes) {
+		lines.push(note.notes);
+	}
+
+	lines.push(
+		"",
+		"## History",
+	);
 
 	for (const item of note.history) {
 		const mark = item.completed ? "x" : " ";
