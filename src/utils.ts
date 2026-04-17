@@ -1044,9 +1044,12 @@ export function loadSlashCommands(skillDirs: string[]): SlashCommandEntry[] {
 		let entries: string[];
 		try { entries = fs.readdirSync(dir); } catch { continue; }
 		for (const name of entries) {
-			const skillFile = path.join(dir, name, "SKILL.md");
-			let content: string;
-			try { content = fs.readFileSync(skillFile, "utf8"); } catch { continue; }
+			const skillDir = path.join(dir, name);
+			let content: string | undefined;
+			for (const fn of ["SKILL.md", "skill.md"]) {
+				try { content = fs.readFileSync(path.join(skillDir, fn), "utf8"); break; } catch { /* try next */ }
+			}
+			if (!content) continue;
 			const parsed = parseSkillMd(content);
 			if (parsed) {
 				skills.push({ command: `/${parsed.name}`, description: parsed.description });

@@ -160,6 +160,10 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 	private loadSlashCommands(): void {
 		const skillDirs = [join(homedir(), ".claude", "skills")];
+		const adapter = this.app.vault.adapter;
+		if (adapter instanceof FileSystemAdapter) {
+			skillDirs.push(join(adapter.getBasePath(), ".claude", "skills"));
+		}
 		for (const config of Object.values(this.settings.projects)) {
 			if (config.workingDirectory) {
 				skillDirs.push(join(config.workingDirectory, ".claude", "skills"));
