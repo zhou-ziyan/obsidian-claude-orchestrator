@@ -412,7 +412,16 @@ export class SessionManagerView extends ItemView {
 		});
 		nameRow.createSpan({ text: session.name.replace(/-(\d+)$/, " #$1") });
 
-		// Kill × in top-right, far from action buttons
+		const hideBtn = topRow.createEl("button", {
+			cls: "co-icon-btn",
+			text: session.hidden ? "👁" : "👁‍🗨",
+		});
+		hideBtn.title = session.hidden ? "Unhide session" : "Hide session";
+		hideBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			void this.toggleSessionHidden(session.name, !session.hidden);
+		});
+
 		const killBtn = topRow.createEl("button", {
 			cls: "co-icon-btn co-danger",
 			text: "×",
@@ -487,15 +496,6 @@ export class SessionManagerView extends ItemView {
 			});
 		}
 
-		const hideBtn = actions.createEl("button", {
-			cls: "co-icon-btn",
-			text: session.hidden ? "👁" : "👁‍🗨",
-		});
-		hideBtn.title = session.hidden ? "Unhide session" : "Hide session";
-		hideBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			void this.toggleSessionHidden(session.name, !session.hidden);
-		});
 	}
 
 	private showKillConfirm(card: HTMLElement, sessionName: string) {
