@@ -27,7 +27,7 @@ import {
 	execTmux,
 	filterSlashCommands,
 } from "./utils";
-import type { ProjectRegistry, QueueMode, StopReason } from "./utils";
+import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry } from "./utils";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { IPty } from "node-pty";
@@ -97,7 +97,7 @@ export class TerminalView extends ItemView {
 	private stateSeenPreOpen = false;
 	private host: HTMLElement | null = null;
 	private onTerminalFocus?: (project: string, sessionName: string) => void;
-	private getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[] };
+	private getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[] };
 	private historyPanel: HTMLElement | null = null;
 	private queuePanel: HTMLElement | null = null;
 	private queueList: HTMLElement | null = null;
@@ -135,7 +135,7 @@ export class TerminalView extends ItemView {
 		leaf: WorkspaceLeaf,
 		pluginDir: string,
 		onTerminalFocus?: (project: string, sessionName: string) => void,
-		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[] },
+		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[] },
 	) {
 		super(leaf);
 		this.pluginDir = pluginDir;
@@ -484,7 +484,7 @@ export class TerminalView extends ItemView {
 		});
 
 		let acDropdown: HTMLElement | null = null;
-		let acItems: string[] = [];
+		let acItems: SlashCommandEntry[] = [];
 		let acSelected = 0;
 
 		const closeAc = () => {
@@ -497,14 +497,17 @@ export class TerminalView extends ItemView {
 		const renderAc = () => {
 			if (!acDropdown) return;
 			acDropdown.empty();
-			acItems.forEach((cmd, i) => {
+			acItems.forEach((entry, i) => {
 				const item = acDropdown!.createDiv({
 					cls: `co-ac-item${i === acSelected ? " co-ac-selected" : ""}`,
-					text: cmd,
 				});
+				item.createSpan({ cls: "co-ac-cmd", text: entry.command });
+				if (entry.description) {
+					item.createSpan({ cls: "co-ac-desc", text: entry.description });
+				}
 				item.addEventListener("mousedown", (e) => {
 					e.preventDefault();
-					input.value = cmd + " ";
+					input.value = entry.command + " ";
 					closeAc();
 					requestAnimationFrame(autoResize);
 				});
@@ -517,7 +520,8 @@ export class TerminalView extends ItemView {
 				closeAc();
 				return;
 			}
-			const matches = filterSlashCommands(text);
+			const cmds = this.getSettings?.().slashCommands;
+			const matches = filterSlashCommands(text, cmds);
 			if (matches.length === 0) {
 				closeAc();
 				return;
@@ -573,7 +577,7 @@ export class TerminalView extends ItemView {
 				}
 				if (e.key === "Enter" && !e.shiftKey) {
 					e.preventDefault();
-					input.value = acItems[acSelected]! + " ";
+					input.value = acItems[acSelected]!.command + " ";
 					closeAc();
 					requestAnimationFrame(autoResize);
 					return;
