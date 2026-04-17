@@ -93,9 +93,21 @@ export class TerminalView extends ItemView {
 		if (this.term && this.ptyProcess) {
 			try { this.ptyProcess.resize(this.term.cols, this.term.rows); } catch { /* ignore */ }
 		}
+		if (this.sessionName) {
+			this.refreshTmuxClient();
+		}
 	}
 
-	private debouncedFit = debounce(() => this.fitAndResize(), 80, true);
+	private refreshTmuxClient(): void {
+		const { execFile } = require("child_process") as typeof import("child_process");
+		const tmuxPaths = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "tmux"];
+		const tmux = tmuxPaths.find((p) => {
+			try { (require("fs") as { accessSync: (p: string) => void }).accessSync(p); return true; } catch { return false; }
+		}) ?? "tmux";
+		execFile(tmux, ["refresh-client", "-t", this.sessionName!], () => {});
+	}
+
+	private debouncedFit = debounce(() => this.fitAndResize(), 150, true);
 
 	constructor(
 		leaf: WorkspaceLeaf,

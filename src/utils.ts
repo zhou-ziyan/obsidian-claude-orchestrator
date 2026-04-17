@@ -460,3 +460,12 @@ export function formatRelativeTime(stamp: string, now?: Date): string {
 	const diffDay = Math.floor(diffHr / 24);
 	return `${diffDay}d ago`;
 }
+
+export function migrateSettings(data: Record<string, unknown>): Record<string, unknown> {
+	const out = { ...data };
+	if ("queuePanel" in out && !("simpleMode" in out)) {
+		out.simpleMode = !out.queuePanel;
+		delete out.queuePanel;
+	}
+	return out;
+}

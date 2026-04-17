@@ -1,7 +1,7 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { PROJECT_PATH_RE, generateSessionName, parseTmuxSessionsForProject, tmuxLs } from "./utils";
+import { PROJECT_PATH_RE, generateSessionName, migrateSettings, parseTmuxSessionsForProject, tmuxLs } from "./utils";
 
 interface OrchestratorSettings {
 	simpleMode: boolean;
@@ -112,11 +112,8 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 	async loadSettings() {
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Obsidian loadData() returns any
-		const data: Record<string, unknown> = await this.loadData() ?? {};
-		if ("queuePanel" in data && !("simpleMode" in data)) {
-			data.simpleMode = !data.queuePanel;
-			delete data.queuePanel;
-		}
+		const raw: Record<string, unknown> = await this.loadData() ?? {};
+		const data = migrateSettings(raw);
 		this.settings = { ...DEFAULT_SETTINGS, ...data as Partial<OrchestratorSettings> };
 	}
 

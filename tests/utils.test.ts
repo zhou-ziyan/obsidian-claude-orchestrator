@@ -14,6 +14,7 @@ import {
 	groupSessionsByProject,
 	nowStamp,
 	formatRelativeTime,
+	migrateSettings,
 } from "../src/utils.ts";
 
 // --- generateSessionName ---
@@ -696,5 +697,51 @@ describe("parseSessionNote multiline", () => {
 		const note = parseSessionNote(md);
 		assert.equal(note.pinnedNote, "01_Projects/15_Claude/notes.md");
 		assert.equal(note.status, "running");
+	});
+});
+
+// --- migrateSettings ---
+
+describe("migrateSettings", () => {
+	it("migrates queuePanel: true to simpleMode: false", () => {
+		const result = migrateSettings({ queuePanel: true });
+		assert.equal(result.simpleMode, false);
+		assert.equal("queuePanel" in result, false);
+	});
+
+	it("migrates queuePanel: false to simpleMode: true", () => {
+		const result = migrateSettings({ queuePanel: false });
+		assert.equal(result.simpleMode, true);
+		assert.equal("queuePanel" in result, false);
+	});
+
+	it("does not touch simpleMode if already present", () => {
+		const result = migrateSettings({ simpleMode: true });
+		assert.equal(result.simpleMode, true);
+	});
+
+	it("prefers existing simpleMode over queuePanel", () => {
+		const result = migrateSettings({ queuePanel: true, simpleMode: true });
+		assert.equal(result.simpleMode, true);
+		assert.equal("queuePanel" in result, true);
+	});
+
+	it("returns empty object unchanged", () => {
+		const result = migrateSettings({});
+		assert.deepEqual(result, {});
+	});
+
+	it("preserves other fields during migration", () => {
+		const result = migrateSettings({ queuePanel: true, otherSetting: "hello" });
+		assert.equal(result.simpleMode, false);
+		assert.equal(result.otherSetting, "hello");
+		assert.equal("queuePanel" in result, false);
+	});
+
+	it("does not mutate the input object", () => {
+		const input = { queuePanel: true };
+		migrateSettings(input);
+		assert.equal("queuePanel" in input, true);
+		assert.equal("simpleMode" in input, false);
 	});
 });
