@@ -1,4 +1,4 @@
-import { FuzzySuggestModal, ItemView, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import { FuzzySuggestModal, ItemView, Notice, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import type { App } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import {
@@ -7,6 +7,7 @@ import {
 	groupSessionsByProject,
 	restorableSessionNames,
 	sessionNotePath,
+	sessionDirPath,
 	parseSessionNote,
 	serializeSessionNote,
 	projectFromSessionName,
@@ -57,6 +58,30 @@ class VaultFolderModal extends FuzzySuggestModal<TFolder> {
 	}
 
 	onChooseItem(item: TFolder): void {
+		this.onChoose(item);
+	}
+}
+
+class SessionNoteModal extends FuzzySuggestModal<TFile> {
+	private files: TFile[];
+	private onChoose: (file: TFile) => void;
+
+	constructor(app: App, files: TFile[], onChoose: (file: TFile) => void) {
+		super(app);
+		this.files = files;
+		this.onChoose = onChoose;
+		this.setPlaceholder("Select a session note to link…");
+	}
+
+	getItems(): TFile[] {
+		return this.files;
+	}
+
+	getItemText(item: TFile): string {
+		return item.basename;
+	}
+
+	onChooseItem(item: TFile): void {
 		this.onChoose(item);
 	}
 }
@@ -497,6 +522,16 @@ export class SessionManagerView extends ItemView {
 				cls: "co-sm-badge co-sm-unmanaged",
 				text: "no session note",
 			});
+			if (project) {
+				const linkBtn = infoRow.createEl("button", {
+					cls: "co-text-btn",
+					text: "Link",
+				});
+				linkBtn.addEventListener("click", (e) => {
+					e.stopPropagation();
+					void this.linkSessionNote(session.name, project);
+				});
+			}
 		}
 
 		// Message preview
@@ -767,6 +802,35 @@ export class SessionManagerView extends ItemView {
 
 		// Refresh to update hasPanel state
 		setTimeout(() => { void this.refresh(); }, 500);
+	}
+
+	private async linkSessionNote(sessionName: string, project: string): Promise<void> {
+		const config = this.plugin.settings.projects[project];
+		if (!config) return;
+
+		const dirPath = sessionDirPath(config.vaultFolder);
+		const dir = this.app.vault.getAbstractFileByPath(dirPath);
+		if (!dir || !(dir instanceof TFolder)) {
+			new Notice("No sessions/ directory found for this project.");
+			return;
+		}
+
+		const targetPath = sessionNotePath(config.vaultFolder, sessionName);
+		const candidates = dir.children.filter(
+			(f): f is TFile => f instanceof TFile && f.extension === "md" && f.path !== targetPath,
+		);
+
+		if (candidates.length === 0) {
+			new Notice("No orphaned session notes found.");
+			return;
+		}
+
+		new SessionNoteModal(this.app, candidates, (file) => {
+			void this.app.vault.rename(file, targetPath).then(
+				() => { void this.refresh(); },
+				(err: unknown) => { new Notice(`Failed to link note: ${String(err)}`); },
+			);
+		}).open();
 	}
 
 	private showProjectForm(existingKey?: string) {
