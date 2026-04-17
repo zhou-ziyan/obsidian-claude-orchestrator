@@ -15,10 +15,13 @@ import {
 	updateProjectConfig,
 	removeProject,
 	normalizeVaultFolder,
+	getPtyUsage,
+	ptyLevel,
+	isSessionIdle,
 	SessionGroup,
 	SessionInfo,
 } from "./utils";
-import type { ProjectConfig } from "./utils";
+import type { ProjectConfig, PtyLevel } from "./utils";
 import type ClaudeOrchestratorPlugin from "./main";
 
 export const VIEW_TYPE_SESSION_MANAGER = "claude-orchestrator-session-manager";
@@ -61,6 +64,7 @@ export class SessionManagerView extends ItemView {
 	private plugin: ClaudeOrchestratorPlugin;
 	private groups: SessionGroup[] = [];
 	private listEl: HTMLElement | null = null;
+	private ptyEl: HTMLElement | null = null;
 	private pollTimer: ReturnType<typeof setInterval> | null = null;
 	private collapsedProjects = new Set<string>();
 	private editing = false;
@@ -106,6 +110,9 @@ export class SessionManagerView extends ItemView {
 		addBtn.title = "Add project";
 		addBtn.addEventListener("click", () => { this.showProjectForm(); });
 
+		// PTY usage indicator
+		this.ptyEl = container.createDiv({ cls: "co-sm-pty" });
+
 		// Session list
 		this.listEl = container.createDiv({ cls: "co-sm-list" });
 
@@ -141,9 +148,15 @@ export class SessionManagerView extends ItemView {
 	async refresh() {
 		if (!this.listEl || this.editing) return;
 
-		// 1. Get all tmux sessions
-		const tmuxOutput = await tmuxLs();
+		// 1. Get all tmux sessions + PTY usage in parallel
+		const [tmuxOutput, ptyUsage] = await Promise.all([
+			tmuxLs(),
+			getPtyUsage(),
+		]);
 		const allSessions = parseAllTmuxSessions(tmuxOutput);
+
+		// Render PTY indicator
+		this.renderPty(ptyUsage.used, ptyUsage.max);
 
 		// 2. Collect open terminal panel session names
 		const openNames = new Set<string>();
@@ -221,6 +234,23 @@ export class SessionManagerView extends ItemView {
 		}
 	}
 
+	private renderPty(used: number, max: number) {
+		if (!this.ptyEl) return;
+		this.ptyEl.empty();
+
+		if (max <= 0) return;
+
+		const level: PtyLevel = ptyLevel(used, max);
+		const pct = Math.min(100, Math.round((used / max) * 100));
+
+		const label = this.ptyEl.createSpan({ cls: `co-sm-pty-label co-pty-${level}` });
+		label.textContent = `PTY ${used}/${max}`;
+
+		const bar = this.ptyEl.createDiv({ cls: "co-sm-pty-bar" });
+		const fill = bar.createDiv({ cls: `co-sm-pty-fill co-pty-${level}` });
+		fill.style.width = `${pct}%`;
+	}
+
 	private renderGroup(group: SessionGroup) {
 		if (!this.listEl) return;
 		const collapsed = this.collapsedProjects.has(group.project);
@@ -290,7 +320,11 @@ export class SessionManagerView extends ItemView {
 
 	private renderSessionCard(parent: HTMLElement, session: SessionInfo) {
 		const isFocused = session.name === this.focusedSession;
-		const card = parent.createDiv({ cls: `co-sm-card${isFocused ? " co-sm-card-focused" : ""}` });
+		const idle = isSessionIdle(session.tmuxActivity);
+		let cls = "co-sm-card";
+		if (isFocused) cls += " co-sm-card-focused";
+		if (idle) cls += " co-sm-card-idle";
+		const card = parent.createDiv({ cls });
 		if (isFocused) {
 			requestAnimationFrame(() => card.scrollIntoView({ block: "nearest" }));
 		}
@@ -323,8 +357,11 @@ export class SessionManagerView extends ItemView {
 			pinRow.createSpan({ text: `📌 ${noteName}` });
 		}
 
-		// Info row: queue count + last activity
+		// Info row: queue count + last activity + idle badge
 		const infoRow = card.createDiv({ cls: "co-sm-card-info" });
+		if (idle) {
+			infoRow.createSpan({ cls: "co-sm-idle-badge", text: "\u23F3 idle" });
+		}
 		if (session.hasNote) {
 			infoRow.createSpan({
 				cls: "co-sm-badge",

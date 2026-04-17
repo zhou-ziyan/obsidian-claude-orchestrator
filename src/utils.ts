@@ -204,6 +204,7 @@ export interface SessionInfo {
 	pinnedNote: string | null;
 	queueCount: number;
 	lastActivity: string | null;
+	tmuxActivity: number;
 }
 
 export interface SessionGroup {
@@ -251,6 +252,7 @@ export function groupSessionsByProject(
 			pinnedNote: nd?.pinnedNote ?? null,
 			queueCount: nd?.queueCount ?? 0,
 			lastActivity: nd?.lastActivity ?? null,
+			tmuxActivity: s.activity,
 		};
 
 		if (project) {
@@ -642,6 +644,70 @@ export function computeDisplayText(project: string | null, sessionName: string |
 		return `${project} #${match[1]}`;
 	}
 	return project;
+}
+
+// --- PTY usage ---
+
+export const PTY_THRESHOLD_WARNING = 0.7;
+export const PTY_THRESHOLD_CRITICAL = 0.9;
+
+export type PtyLevel = "ok" | "warning" | "critical";
+
+export function parsePtyMax(sysctlOutput: string): number {
+	const n = parseInt(sysctlOutput.trim(), 10);
+	return isNaN(n) ? 0 : n;
+}
+
+export function ptyLevel(used: number, max: number): PtyLevel {
+	if (max <= 0) return "ok";
+	const ratio = used / max;
+	if (ratio >= PTY_THRESHOLD_CRITICAL) return "critical";
+	if (ratio >= PTY_THRESHOLD_WARNING) return "warning";
+	return "ok";
+}
+
+export function getPtyUsage(): Promise<{ used: number; max: number }> {
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- child_process from require
+	const { execFile } = require("child_process");
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- fs from require
+	const fs = require("fs");
+
+	return new Promise((resolve) => {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped from require
+		execFile(
+			"sysctl",
+			["-n", "kern.tty.ptmx_max"],
+			(err: Error | null, stdout: string) => {
+				const max = err ? 0 : parsePtyMax(stdout);
+				// Count /dev/ttys* entries for used PTYs
+				try {
+					// eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- untyped fs
+					const entries = (fs.readdirSync("/dev") as string[]).filter(
+						(name: string) => name.startsWith("ttys"),
+					);
+					resolve({ used: entries.length, max });
+				} catch {
+					resolve({ used: 0, max });
+				}
+			},
+		);
+	});
+}
+
+// --- Idle session detection ---
+
+export const IDLE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
+
+export function isSessionIdle(
+	activityEpochSecs: number,
+	nowMs?: number,
+	thresholdMs?: number,
+): boolean {
+	if (activityEpochSecs <= 0) return false;
+	const now = nowMs ?? Date.now();
+	const threshold = thresholdMs ?? IDLE_THRESHOLD_MS;
+	const activityMs = activityEpochSecs * 1000;
+	return (now - activityMs) >= threshold;
 }
 
 export function migrateSettings(data: Record<string, unknown>): Record<string, unknown> {

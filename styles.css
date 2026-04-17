@@ -831,6 +831,59 @@
     opacity: 0.5;
 }
 
+/* PTY usage indicator */
+.co-sm-pty {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    font-size: 11px;
+    border-bottom: 1px solid #333;
+    flex-shrink: 0;
+}
+.co-sm-pty:empty {
+    display: none;
+}
+
+.co-sm-pty-label {
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.co-sm-pty-label.co-pty-ok { color: #999; }
+.co-sm-pty-label.co-pty-warning { color: #ff9800; }
+.co-sm-pty-label.co-pty-critical { color: #e44; font-weight: 600; }
+
+.co-sm-pty-bar {
+    flex: 1;
+    height: 4px;
+    background: #333;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.co-sm-pty-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.3s;
+}
+.co-sm-pty-fill.co-pty-ok { background: #4caf50; }
+.co-sm-pty-fill.co-pty-warning { background: #ff9800; }
+.co-sm-pty-fill.co-pty-critical { background: #e44; }
+
+/* Idle session card */
+.co-sm-card-idle {
+    background: #2a2a1e;
+}
+.co-sm-card-idle:hover {
+    background: #2e2e22;
+}
+
+.co-sm-idle-badge {
+    font-size: 11px;
+    color: #cc9;
+    flex-shrink: 0;
+}
+
 /* --- Claude Orchestrator: light theme overrides --- */
 
 .theme-light .claude-orchestrator-term-host.is-dimmed::after {
@@ -1013,6 +1066,24 @@
     background: #fff;
     border-color: #ccc;
     color: #333;
+}
+
+/* PTY + idle light overrides */
+.theme-light .co-sm-pty {
+    border-bottom-color: #ddd;
+}
+.theme-light .co-sm-pty-label.co-pty-ok { color: #666; }
+.theme-light .co-sm-pty-bar {
+    background: #ddd;
+}
+.theme-light .co-sm-card-idle {
+    background: #f8f6e8;
+}
+.theme-light .co-sm-card-idle:hover {
+    background: #f0eee0;
+}
+.theme-light .co-sm-idle-badge {
+    color: #997;
 }
 
 /* xterm viewport background for light theme */
