@@ -710,6 +710,41 @@ export function isSessionIdle(
 	return (now - activityMs) >= threshold;
 }
 
+// --- Stop hook signal ---
+
+export const STOP_SIGNAL_DIR = "/tmp/co-stop";
+
+export function stopSignalFileName(tmuxSession: string, timestamp: number): string {
+	return `${timestamp}-${tmuxSession}.json`;
+}
+
+export interface StopSignal {
+	tmuxSession: string;
+	sessionId: string | null;
+	transcriptPath: string | null;
+	cwd: string | null;
+	timestamp: number;
+}
+
+export function parseStopSignal(json: string): StopSignal | null {
+	if (!json) return null;
+	let data: Record<string, unknown>;
+	try {
+		data = JSON.parse(json) as Record<string, unknown>;
+	} catch {
+		return null;
+	}
+	if (typeof data.tmux_session !== "string") return null;
+	if (typeof data.timestamp !== "number") return null;
+	return {
+		tmuxSession: data.tmux_session,
+		sessionId: typeof data.session_id === "string" ? data.session_id : null,
+		transcriptPath: typeof data.transcript_path === "string" ? data.transcript_path : null,
+		cwd: typeof data.cwd === "string" ? data.cwd : null,
+		timestamp: data.timestamp,
+	};
+}
+
 export function migrateSettings(data: Record<string, unknown>): Record<string, unknown> {
 	const out = { ...data };
 	if ("queuePanel" in out && !("simpleMode" in out)) {

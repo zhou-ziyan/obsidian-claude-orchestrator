@@ -40,6 +40,9 @@ import {
 	PTY_THRESHOLD_CRITICAL,
 	isSessionIdle,
 	IDLE_THRESHOLD_MS,
+	parseStopSignal,
+	STOP_SIGNAL_DIR,
+	stopSignalFileName,
 } from "../src/utils.ts";
 import type { ProjectRegistry, QueueMode } from "../src/utils.ts";
 
@@ -1626,5 +1629,94 @@ describe("groupSessionsByProject tmuxActivity", () => {
 		);
 		const orch = groups.find((g) => g.project === "15_Claude_Orchestrator")!;
 		assert.equal(orch.sessions[0].tmuxActivity, 0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Stop hook signal
+// ---------------------------------------------------------------------------
+
+describe("STOP_SIGNAL_DIR", () => {
+	it("is /tmp/co-stop", () => {
+		assert.equal(STOP_SIGNAL_DIR, "/tmp/co-stop");
+	});
+});
+
+describe("stopSignalFileName", () => {
+	it("builds filename from timestamp and session name", () => {
+		const name = stopSignalFileName("15_Claude_Orchestrator-1", 1700000000);
+		assert.equal(name, "1700000000-15_Claude_Orchestrator-1.json");
+	});
+
+	it("works with simple session names", () => {
+		const name = stopSignalFileName("myproject-2", 123);
+		assert.equal(name, "123-myproject-2.json");
+	});
+});
+
+describe("parseStopSignal", () => {
+	it("parses valid signal JSON", () => {
+		const json = JSON.stringify({
+			tmux_session: "15_Claude_Orchestrator-1",
+			session_id: "abc123",
+			transcript_path: "/tmp/transcript.jsonl",
+			cwd: "/Users/me/code/proj",
+			timestamp: 1700000000,
+		});
+		const result = parseStopSignal(json);
+		assert.ok(result);
+		assert.equal(result.tmuxSession, "15_Claude_Orchestrator-1");
+		assert.equal(result.sessionId, "abc123");
+		assert.equal(result.transcriptPath, "/tmp/transcript.jsonl");
+		assert.equal(result.cwd, "/Users/me/code/proj");
+		assert.equal(result.timestamp, 1700000000);
+	});
+
+	it("returns null for empty string", () => {
+		assert.equal(parseStopSignal(""), null);
+	});
+
+	it("returns null for invalid JSON", () => {
+		assert.equal(parseStopSignal("{not json"), null);
+	});
+
+	it("returns null when tmux_session is missing", () => {
+		const json = JSON.stringify({
+			session_id: "abc",
+			cwd: "/tmp",
+			timestamp: 123,
+		});
+		assert.equal(parseStopSignal(json), null);
+	});
+
+	it("returns null when tmux_session is not a string", () => {
+		const json = JSON.stringify({
+			tmux_session: 123,
+			session_id: "abc",
+			timestamp: 123,
+		});
+		assert.equal(parseStopSignal(json), null);
+	});
+
+	it("handles missing optional fields gracefully", () => {
+		const json = JSON.stringify({
+			tmux_session: "proj-1",
+			timestamp: 100,
+		});
+		const result = parseStopSignal(json);
+		assert.ok(result);
+		assert.equal(result.tmuxSession, "proj-1");
+		assert.equal(result.sessionId, null);
+		assert.equal(result.transcriptPath, null);
+		assert.equal(result.cwd, null);
+		assert.equal(result.timestamp, 100);
+	});
+
+	it("returns null when timestamp is missing", () => {
+		const json = JSON.stringify({
+			tmux_session: "proj-1",
+			session_id: "abc",
+		});
+		assert.equal(parseStopSignal(json), null);
 	});
 });
