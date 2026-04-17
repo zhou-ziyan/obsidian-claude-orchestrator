@@ -483,11 +483,14 @@ export function formatRelativeTime(stamp: string, now?: Date): string {
 	return `${diffDay}d ago`;
 }
 
-const TMUX_SEARCH_PATHS = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"];
+export const TMUX_SEARCH_PATHS = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"];
 
-export function findTmuxBinary(): string {
+export function findTmuxBinary(exists?: (p: string) => boolean): string {
+	const check = exists ?? ((p: string): boolean => {
+		try { accessSync(p); return true; } catch { return false; }
+	});
 	for (const p of TMUX_SEARCH_PATHS) {
-		try { accessSync(p); return p; } catch { /* not found */ }
+		if (check(p)) return p;
 	}
 	return "tmux";
 }

@@ -16,6 +16,7 @@ import {
 	formatRelativeTime,
 	migrateSettings,
 	findTmuxBinary,
+	TMUX_SEARCH_PATHS,
 } from "../src/utils.ts";
 import type { ProjectRegistry } from "../src/utils.ts";
 
@@ -807,23 +808,36 @@ describe("migrateSettings", () => {
 // --- findTmuxBinary ---
 
 describe("findTmuxBinary", () => {
-	it("returns a string", () => {
-		const result = findTmuxBinary();
-		assert.equal(typeof result, "string");
-		assert.ok(result.length > 0);
+	it("returns first existing path from search list", () => {
+		const result = findTmuxBinary((p) => p === TMUX_SEARCH_PATHS[0]);
+		assert.equal(result, TMUX_SEARCH_PATHS[0]);
 	});
 
-	it("returns an absolute path or bare 'tmux'", () => {
+	it("returns second path when first does not exist", () => {
+		const result = findTmuxBinary((p) => p === TMUX_SEARCH_PATHS[1]);
+		assert.equal(result, TMUX_SEARCH_PATHS[1]);
+	});
+
+	it("falls back to bare 'tmux' when no paths exist", () => {
+		const result = findTmuxBinary(() => false);
+		assert.equal(result, "tmux");
+	});
+
+	it("stops at the first match", () => {
+		const checked: string[] = [];
+		findTmuxBinary((p) => { checked.push(p); return true; });
+		assert.equal(checked.length, 1);
+		assert.equal(checked[0], TMUX_SEARCH_PATHS[0]);
+	});
+
+	it("checks all paths before falling back", () => {
+		const checked: string[] = [];
+		findTmuxBinary((p) => { checked.push(p); return false; });
+		assert.equal(checked.length, TMUX_SEARCH_PATHS.length);
+	});
+
+	it("returns an absolute path or bare 'tmux' with real fs", () => {
 		const result = findTmuxBinary();
 		assert.ok(result === "tmux" || result.startsWith("/"));
-	});
-
-	it("returns a path that ends with 'tmux'", () => {
-		const result = findTmuxBinary();
-		assert.ok(result.endsWith("tmux"));
-	});
-
-	it("returns a consistent result on repeated calls", () => {
-		assert.equal(findTmuxBinary(), findTmuxBinary());
 	});
 });
