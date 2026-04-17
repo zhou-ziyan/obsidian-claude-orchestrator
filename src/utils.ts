@@ -483,6 +483,28 @@ export function formatRelativeTime(stamp: string, now?: Date): string {
 	return `${diffDay}d ago`;
 }
 
+/**
+ * Minimum height (px) for the History panel's content area when resized.
+ * Sized to show exactly one history item cleanly:
+ *   item row = ceil(12px font * 1.4 line-height) + 4px padding = 21px
+ *   content padding = 4px top + 4px bottom = 8px
+ *   total = 29px
+ */
+export const HISTORY_ITEM_MIN_HEIGHT = 29;
+
+/**
+ * Copy a history item's text into the queue array, appending a fresh
+ * timestamp. Strips any existing timestamp prefix so it doesn't double up.
+ *
+ * Returns the index where the item was inserted.
+ */
+export function copyHistoryItemToQueue(text: string, queue: string[]): number {
+	// Strip existing timestamp prefix "[YYYY-MM-DD HH:MM] " if present
+	const body = text.replace(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] /, "");
+	const stamped = `[${nowStamp()}] ${body}`;
+	return queue.push(stamped) - 1;
+}
+
 export const TMUX_SEARCH_PATHS = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"];
 
 export function findTmuxBinary(exists?: (p: string) => boolean): string {

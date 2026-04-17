@@ -1,4 +1,4 @@
-import { debounce, FileSystemAdapter, ItemView, TFile, TFolder, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { debounce, FileSystemAdapter, ItemView, setIcon, TFile, TFolder, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import {
 	findTmuxBinary,
 	normalizeViewState,
@@ -7,6 +7,8 @@ import {
 	parseSessionNote,
 	serializeSessionNote,
 	nowStamp,
+	copyHistoryItemToQueue,
+	HISTORY_ITEM_MIN_HEIGHT,
 	SessionNote,
 } from "./utils";
 import type { ProjectRegistry } from "./utils";
@@ -231,7 +233,7 @@ export class TerminalView extends ItemView {
 
 			const onMouseMove = (e: MouseEvent) => {
 				const delta = e.clientY - startY;
-				const newHeight = Math.max(30, Math.min(300, startHeight + delta));
+				const newHeight = Math.max(HISTORY_ITEM_MIN_HEIGHT, Math.min(300, startHeight + delta));
 				const content = this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null;
 				if (content) {
 					content.style.maxHeight = `${newHeight}px`;
@@ -650,6 +652,19 @@ export class TerminalView extends ItemView {
 			});
 			textSpan.addEventListener("click", () => {
 				textSpan.classList.toggle("co-collapsed");
+			});
+
+			// Copy-to-queue button
+			const copyBtn = row.createEl("button", {
+				cls: "co-icon-btn co-history-copy-btn",
+			});
+			setIcon(copyBtn, "copy");
+			copyBtn.title = "Copy to queue";
+			copyBtn.addEventListener("click", () => {
+				if (!this.sessionNote) return;
+				copyHistoryItemToQueue(item.text, this.sessionNote.queue);
+				this.renderQueue();
+				void this.saveSessionNote();
 			});
 		}
 

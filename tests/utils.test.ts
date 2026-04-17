@@ -17,6 +17,8 @@ import {
 	migrateSettings,
 	findTmuxBinary,
 	TMUX_SEARCH_PATHS,
+	HISTORY_ITEM_MIN_HEIGHT,
+	copyHistoryItemToQueue,
 } from "../src/utils.ts";
 import type { ProjectRegistry } from "../src/utils.ts";
 
@@ -839,5 +841,67 @@ describe("findTmuxBinary", () => {
 	it("returns an absolute path or bare 'tmux' with real fs", () => {
 		const result = findTmuxBinary();
 		assert.ok(result === "tmux" || result.startsWith("/"));
+	});
+});
+
+// --- HISTORY_ITEM_MIN_HEIGHT ---
+
+describe("HISTORY_ITEM_MIN_HEIGHT", () => {
+	it("is a positive number", () => {
+		assert.ok(typeof HISTORY_ITEM_MIN_HEIGHT === "number");
+		assert.ok(HISTORY_ITEM_MIN_HEIGHT > 0);
+	});
+
+	it("accounts for one history item plus content padding", () => {
+		// The constant should be large enough to show one history item:
+		// item height (~21px from font-size 12 * line-height 1.4 + padding 4)
+		// plus content padding (4px top + 4px bottom = 8px).
+		// So the minimum should be >= 25px.
+		assert.ok(HISTORY_ITEM_MIN_HEIGHT >= 25, `Expected >= 25, got ${HISTORY_ITEM_MIN_HEIGHT}`);
+	});
+
+	it("is smaller than the default max height (120px)", () => {
+		assert.ok(HISTORY_ITEM_MIN_HEIGHT < 120, `Expected < 120, got ${HISTORY_ITEM_MIN_HEIGHT}`);
+	});
+});
+
+// --- copyHistoryItemToQueue ---
+
+describe("copyHistoryItemToQueue", () => {
+	it("appends history item text to queue with a timestamp", () => {
+		const queue: string[] = [];
+		copyHistoryItemToQueue("do the thing", queue);
+		assert.equal(queue.length, 1);
+		assert.match(queue[0]!, /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] do the thing$/);
+	});
+
+	it("appends to the end of an existing queue", () => {
+		const queue = ["[2026-04-16 10:00] first task"];
+		copyHistoryItemToQueue("second task", queue);
+		assert.equal(queue.length, 2);
+		assert.match(queue[1]!, /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] second task$/);
+	});
+
+	it("strips existing timestamp prefix from history text before re-stamping", () => {
+		const queue: string[] = [];
+		copyHistoryItemToQueue("[2026-04-15 09:00] old task", queue);
+		assert.equal(queue.length, 1);
+		// Should have a new timestamp, not the old one doubled
+		assert.match(queue[0]!, /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] old task$/);
+		// The old timestamp should not appear in the body
+		assert.ok(!queue[0]!.includes("[2026-04-15 09:00] [2026-04-15 09:00]"));
+	});
+
+	it("handles multiline history items", () => {
+		const queue: string[] = [];
+		copyHistoryItemToQueue("line one\nline two\nline three", queue);
+		assert.equal(queue.length, 1);
+		assert.match(queue[0]!, /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] line one\nline two\nline three$/);
+	});
+
+	it("returns the index where the item was inserted", () => {
+		const queue = ["existing"];
+		const idx = copyHistoryItemToQueue("new item", queue);
+		assert.equal(idx, 1);
 	});
 });
