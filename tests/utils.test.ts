@@ -25,6 +25,7 @@ import {
 	updateProjectConfig,
 	removeProject,
 	normalizeVaultFolder,
+	computeDisplayText,
 } from "../src/utils.ts";
 import type { ProjectRegistry } from "../src/utils.ts";
 
@@ -1195,5 +1196,41 @@ describe("normalizeVaultFolder", () => {
 
 	it("returns empty string for empty input", () => {
 		assert.equal(normalizeVaultFolder(""), "");
+	});
+});
+
+// --- computeDisplayText ---
+
+describe("computeDisplayText", () => {
+	it("returns fallback when both null", () => {
+		assert.equal(computeDisplayText(null, null), "Claude Orchestrator");
+	});
+
+	it("returns fallback when project is null", () => {
+		assert.equal(computeDisplayText(null, "some-session"), "Claude Orchestrator");
+	});
+
+	it("returns fallback when sessionName is null", () => {
+		assert.equal(computeDisplayText("MyProject", null), "Claude Orchestrator");
+	});
+
+	it("returns project name for single session", () => {
+		assert.equal(computeDisplayText("15_Claude_Orchestrator", "15_Claude_Orchestrator"), "15_Claude_Orchestrator");
+	});
+
+	it("returns project #N for numbered session", () => {
+		assert.equal(computeDisplayText("15_Claude_Orchestrator", "15_Claude_Orchestrator-2"), "15_Claude_Orchestrator #2");
+	});
+
+	it("handles double-digit session numbers", () => {
+		assert.equal(computeDisplayText("15_Claude_Orchestrator", "15_Claude_Orchestrator-10"), "15_Claude_Orchestrator #10");
+	});
+
+	it("returns project name for vault root project", () => {
+		assert.equal(computeDisplayText("ClaudeRoot", "ClaudeRoot"), "ClaudeRoot");
+	});
+
+	it("returns project #N for vault root numbered session", () => {
+		assert.equal(computeDisplayText("ClaudeRoot", "ClaudeRoot-2"), "ClaudeRoot #2");
 	});
 });

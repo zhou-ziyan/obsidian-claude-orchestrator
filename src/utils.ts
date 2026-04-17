@@ -582,6 +582,16 @@ export function removeProject(
 	return rest;
 }
 
+export function computeDisplayText(project: string | null, sessionName: string | null): string {
+	if (!sessionName || !project) return "Claude Orchestrator";
+	const suffix = sessionName.slice(project.length);
+	const match = suffix.match(/^-(\d+)$/);
+	if (match) {
+		return `${project} #${match[1]}`;
+	}
+	return project;
+}
+
 export function migrateSettings(data: Record<string, unknown>): Record<string, unknown> {
 	const out = { ...data };
 	if ("queuePanel" in out && !("simpleMode" in out)) {

@@ -10,6 +10,7 @@ import {
 	copyHistoryItemToQueue,
 	HISTORY_ITEM_MIN_HEIGHT,
 	shouldAutoSendAfterEdit,
+	computeDisplayText,
 	SessionNote,
 } from "./utils";
 import type { ProjectRegistry } from "./utils";
@@ -126,15 +127,7 @@ export class TerminalView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		if (!this.sessionName || !this.project) return "Claude Orchestrator";
-		// "15_Claude_Orchestrator" → "15_Claude_Orchestrator"
-		// "15_Claude_Orchestrator-2" → "15_Claude_Orchestrator #2"
-		const suffix = this.sessionName.slice(this.project.length);
-		const match = suffix.match(/^-(\d+)$/);
-		if (match) {
-			return `${this.project} #${match[1]}`;
-		}
-		return this.project;
+		return computeDisplayText(this.project, this.sessionName);
 	}
 
 	getIcon(): string {
@@ -187,6 +180,9 @@ export class TerminalView extends ItemView {
 	setProject(project: string | null, sessionName?: string): void {
 		this.project = project;
 		this.sessionName = sessionName ?? project;
+		/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Obsidian internal API for tab title refresh */
+		(this.leaf as any).updateHeader?.();
+		/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 		if (this.xtermReady) {
 			this.spawnShell();
 			void this.loadSessionNote();
