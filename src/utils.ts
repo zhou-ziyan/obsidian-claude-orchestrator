@@ -207,6 +207,7 @@ export interface SessionInfo {
 	tmuxActivity: number;
 	preview: string | null;
 	notesSummary: string | null;
+	displayName: string | null;
 	hidden: boolean;
 }
 
@@ -239,7 +240,7 @@ export function projectFromSessionName(
 export function groupSessionsByProject(
 	allSessions: { name: string; activity: number }[],
 	openSessionNames: Set<string>,
-	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null; notesSummary: string | null; hidden: boolean }>,
+	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null; notesSummary: string | null; displayName: string | null; hidden: boolean }>,
 	projects: ProjectRegistry,
 ): SessionGroup[] {
 	const projectMap = new Map<string, SessionInfo[]>();
@@ -258,6 +259,7 @@ export function groupSessionsByProject(
 			tmuxActivity: s.activity,
 			preview: nd?.preview ?? null,
 			notesSummary: nd?.notesSummary ?? null,
+			displayName: nd?.displayName ?? null,
 			hidden: nd?.hidden ?? false,
 		};
 
@@ -351,6 +353,7 @@ export interface SessionNote {
 	status: SessionStatus;
 	pinnedNote: string | null;
 	queueMode: QueueMode;
+	displayName: string;
 	notes: string;
 	hidden: boolean;
 	history: HistoryItem[];
@@ -407,6 +410,7 @@ export function parseSessionNote(
 		status: "idle",
 		pinnedNote: null,
 		queueMode: "manual",
+		displayName: "",
 		notes: "",
 		hidden: false,
 		history: [],
@@ -432,6 +436,8 @@ export function parseSessionNote(
 					note.pinnedNote = value;
 				if (key === "queueMode" && isQueueMode(value))
 					note.queueMode = value;
+				if (key === "displayName" && value)
+					note.displayName = value;
 				if (key === "hidden" && value === "true")
 					note.hidden = true;
 			}
@@ -534,6 +540,7 @@ export function serializeSessionNote(note: SessionNote): string {
 		`pinnedNote: ${note.pinnedNote ?? ""}`,
 		`queueMode: ${note.queueMode}`,
 	];
+	if (note.displayName) lines.push(`displayName: ${note.displayName}`);
 	if (note.hidden) lines.push("hidden: true");
 	lines.push("---", "", "## Notes");
 

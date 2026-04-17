@@ -144,6 +144,8 @@ export class TerminalView extends ItemView {
 	}
 
 	getDisplayText(): string {
+		const dn = this.sessionNote?.displayName;
+		if (dn) return dn;
 		return computeDisplayText(this.project, this.sessionName);
 	}
 
@@ -710,6 +712,9 @@ export class TerminalView extends ItemView {
 		this.renderQueue();
 		this.updatePinLabel();
 		this.updateModeBtn();
+		/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Obsidian internal API */
+		(this.leaf as any).updateHeader?.();
+		/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 	}
 
 	private async saveSessionNote(): Promise<void> {
