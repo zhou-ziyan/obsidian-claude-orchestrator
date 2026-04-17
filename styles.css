@@ -1079,6 +1079,16 @@
     background: var(--co-bg-idle-hover);
 }
 
+.co-sm-card-dragging {
+    opacity: 0.4;
+}
+.co-sm-drop-indicator {
+    height: 2px;
+    background: var(--co-accent);
+    margin: 2px 8px;
+    border-radius: 1px;
+}
+
 .co-sm-idle-badge {
     font-size: 11px;
     color: var(--co-idle-text);

@@ -706,6 +706,20 @@ export function restorableSessionNames(group: SessionGroup): string[] {
 	return group.sessions.filter((s) => !s.hasPanel).map((s) => s.name);
 }
 
+export function applySortOrder<T extends { name: string }>(
+	items: T[],
+	order: string[],
+): T[] {
+	if (order.length === 0) return items;
+	const orderMap = new Map(order.map((name, idx) => [name, idx]));
+	return [...items].sort((a, b) => {
+		const ai = orderMap.get(a.name) ?? Infinity;
+		const bi = orderMap.get(b.name) ?? Infinity;
+		if (ai !== bi) return ai - bi;
+		return a.name.localeCompare(b.name);
+	});
+}
+
 export function computeDisplayText(project: string | null, sessionName: string | null): string {
 	if (!sessionName || !project) return "Claude Orchestrator";
 	const suffix = sessionName.slice(project.length);
