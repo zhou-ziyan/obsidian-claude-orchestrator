@@ -1,0 +1,16 @@
+{
+	"hooks": {
+		"Stop": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "scripts/co-stop-hook.sh",
+						"timeout": 10
+					}
+				]
+			}
+		]
+	}
+}

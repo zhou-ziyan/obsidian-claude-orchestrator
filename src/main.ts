@@ -3,6 +3,7 @@ import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
 import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs } from "./utils";
 import type { ProjectRegistry } from "./utils";
+import { StopHookWatcher } from "./stop-hook-watcher";
 
 export interface OrchestratorSettings {
 	simpleMode: boolean;
@@ -16,6 +17,7 @@ const DEFAULT_SETTINGS: OrchestratorSettings = {
 
 export default class ClaudeOrchestratorPlugin extends Plugin {
 	settings: OrchestratorSettings = DEFAULT_SETTINGS;
+	private stopHookWatcher: StopHookWatcher | null = null;
 
 	async onload() {
 		await this.loadSettings();
@@ -127,9 +129,19 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 				void this.openSessionManager();
 			}
 		});
+
+		// Stop hook watcher
+		this.stopHookWatcher = new StopHookWatcher(() => this.settings.projects);
+		this.stopHookWatcher.onSignal((signal, project) => {
+			new Notice(`Claude stopped in ${project} (${signal.tmuxSession})`);
+			this.refreshSessionManager();
+		});
+		this.stopHookWatcher.start();
 	}
 
-	onunload() {}
+	onunload() {
+		this.stopHookWatcher?.stop();
+	}
 
 	async loadSettings() {
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Obsidian loadData() returns any
@@ -340,6 +352,15 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			const view = leaf.view;
 			if (view instanceof SessionManagerView) {
 				view.highlightSession(sessionName);
+			}
+		}
+	}
+
+	private refreshSessionManager() {
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_SESSION_MANAGER)) {
+			const view = leaf.view;
+			if (view instanceof SessionManagerView) {
+				void view.refresh();
 			}
 		}
 	}
