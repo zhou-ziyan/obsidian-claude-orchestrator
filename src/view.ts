@@ -83,6 +83,7 @@ export class TerminalView extends ItemView {
 	private term: Terminal | null = null;
 	private fitAddon: FitAddon | null = null;
 	private ptyProcess: IPty | null = null;
+	private ptyListeners: { dispose(): void }[] = [];
 	private ptyGen = 0;
 	private resizeObserver: ResizeObserver | null = null;
 	private pluginDir: string;
@@ -566,19 +567,21 @@ export class TerminalView extends ItemView {
 		return os.homedir();
 	}
 
+	private disposePty(): void {
+		for (const d of this.ptyListeners) {
+			try { d.dispose(); } catch { /* ignore */ }
+		}
+		this.ptyListeners = [];
+		if (this.ptyProcess) {
+			try { this.ptyProcess.kill(); } catch { /* ignore */ }
+			this.ptyProcess = null;
+		}
+	}
+
 	private async spawnShell() {
 		if (!this.term || !this.ptyModule) return;
 
-		// Kill any existing pty; the generation guard below ensures its
-		// pending callbacks (onExit etc.) become no-ops.
-		if (this.ptyProcess) {
-			try {
-				this.ptyProcess.kill();
-			} catch {
-				/* ignore */
-			}
-			this.ptyProcess = null;
-		}
+		this.disposePty();
 		this.awaitingRestart = false;
 		this.term.clear();
 
@@ -635,16 +638,18 @@ export class TerminalView extends ItemView {
 
 		this.ptyProcess = newPty;
 
-		newPty.onData((data) => {
-			if (this.ptyGen !== myGen) return;
-			this.term?.write(data);
-		});
-		newPty.onExit(() => {
-			if (this.ptyGen !== myGen) return;
-			this.ptyProcess = null;
-			this.term?.writeln("\r\n\x1b[2m[exited — press any key to restart]\x1b[0m");
-			this.awaitingRestart = true;
-		});
+		this.ptyListeners = [
+			newPty.onData((data) => {
+				if (this.ptyGen !== myGen) return;
+				this.term?.write(data);
+			}),
+			newPty.onExit(() => {
+				if (this.ptyGen !== myGen) return;
+				this.ptyProcess = null;
+				this.term?.writeln("\r\n\x1b[2m[exited — press any key to restart]\x1b[0m");
+				this.awaitingRestart = true;
+			}),
+		];
 	}
 
 	// --- Session note I/O ---
@@ -1143,12 +1148,7 @@ export class TerminalView extends ItemView {
 		this.ptyGen++; // invalidate pending callbacks
 		this.resizeObserver?.disconnect();
 		this.resizeObserver = null;
-		try {
-			this.ptyProcess?.kill();
-		} catch {
-			/* ignore */
-		}
-		this.ptyProcess = null;
+		this.disposePty();
 		this.ptyModule = null;
 		this.term?.dispose();
 		this.term = null;
