@@ -829,8 +829,21 @@ export class SessionManagerView extends ItemView {
 		const actions = form.createDiv({ cls: "co-sm-form-actions" });
 
 		if (isEdit) {
-			const rmBtn = actions.createEl("button", { cls: "co-text-btn co-danger", text: "Remove" });
+			const rmBtn = actions.createEl("button", { cls: "co-text-btn co-danger", text: "Unregister" });
+			rmBtn.title = "Remove from project list. Session notes and tmux sessions are kept.";
+			let rmConfirmPending = false;
 			rmBtn.addEventListener("click", () => {
+				if (!rmConfirmPending) {
+					rmConfirmPending = true;
+					rmBtn.textContent = "Confirm unregister?";
+					setTimeout(() => {
+						if (rmConfirmPending) {
+							rmConfirmPending = false;
+							rmBtn.textContent = "Unregister";
+						}
+					}, 3000);
+					return;
+				}
 				this.plugin.settings.projects = removeProject(this.plugin.settings.projects, existingKey);
 				void this.plugin.saveSettings();
 				this.editing = false;
