@@ -221,7 +221,7 @@
 
 /* === Claude Orchestrator: Theme Variables === */
 
-[data-theme="v1"] {
+[data-theme="terminal"] {
     --co-xterm-bg: #06090a;
     --co-xterm-fg: #d6d7c9;
 
@@ -285,7 +285,7 @@
     --term-status-fg: #0a0c0d;
 }
 
-[data-theme="v2"] {
+[data-theme="obsidian"] {
     --co-xterm-bg: #16161a;
     --co-xterm-fg: #dcddde;
 
@@ -350,39 +350,41 @@
 }
 
 /* V1: monospace typography + square corners */
-[data-theme="v1"] .co-sm-card-name,
-[data-theme="v1"] .co-sm-info,
-[data-theme="v1"] .co-history-text,
-[data-theme="v1"] .co-queue-text,
-[data-theme="v1"] .co-text-btn,
-[data-theme="v1"] .co-sm-title,
-[data-theme="v1"] .co-panel-header {
+[data-theme="terminal"] .co-sm-card-name,
+[data-theme="terminal"] .co-sm-info,
+[data-theme="terminal"] .co-history-text,
+[data-theme="terminal"] .co-queue-text,
+[data-theme="terminal"] .co-text-btn,
+[data-theme="terminal"] .co-sm-title,
+[data-theme="terminal"] .co-panel-header {
     font-family: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
 }
-[data-theme="v1"] .co-text-btn {
+[data-theme="terminal"] .co-text-btn {
     border-radius: 2px;
     text-transform: lowercase;
     letter-spacing: 0.4px;
 }
-[data-theme="v1"] .co-sm-card { border-radius: 2px; }
-[data-theme="v1"] .co-sm-card.co-sm-card-focused {
+[data-theme="terminal"] .co-sm-card { border-radius: 2px; }
+[data-theme="terminal"] .co-sm-card.co-sm-card-focused {
     background: var(--co-bg-card-focused);
     box-shadow: inset 2px 0 0 var(--accent);
 }
-[data-theme="v1"] .claude-orchestrator-term-host { border-radius: 0; }
-[data-theme="v1"] .co-panel-header::before {
+[data-theme="terminal"] .claude-orchestrator-term-host { border-radius: 0; }
+[data-theme="terminal"] .segmented { border-radius: 2px; }
+[data-theme="terminal"] .segmented button { border-radius: 0; }
+[data-theme="terminal"] .co-panel-header::before {
     content: "» ";
     color: var(--accent);
     opacity: 0.6;
 }
 
 /* V2: rounded corners + accent focus */
-[data-theme="v2"] .co-text-btn { border-radius: 6px; font-weight: 500; }
-[data-theme="v2"] .co-sm-card { border-radius: 6px; }
-[data-theme="v2"] .co-sm-card.co-sm-card-focused {
+[data-theme="obsidian"] .co-text-btn { border-radius: 6px; font-weight: 500; }
+[data-theme="obsidian"] .co-sm-card { border-radius: 6px; }
+[data-theme="obsidian"] .co-sm-card.co-sm-card-focused {
     box-shadow: inset 2px 0 0 var(--accent);
 }
-[data-theme="v2"] .co-panel-header { font-weight: 600; }
+[data-theme="obsidian"] .co-panel-header { font-weight: 600; }
 
 /* === Claude Orchestrator: Focus Indicator === */
 
@@ -725,19 +727,35 @@
     padding: 1px 6px !important;
 }
 
-.co-mode-btn {
-    font-size: 11px !important;
-    padding: 2px 8px !important;
-    opacity: 0.7;
+.segmented {
+    display: inline-flex;
+    padding: 2px;
+    background: var(--co-bg-input);
+    border: 1px solid var(--co-border);
+    border-radius: 6px;
+    gap: 1px;
     flex-shrink: 0;
 }
-.co-mode-btn[data-mode="listen"] {
-    opacity: 1;
-    color: var(--s-listen);
+.segmented button {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--co-text-muted);
+    font: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    min-width: 48px;
 }
-.co-mode-btn[data-mode="auto"] {
-    opacity: 1;
-    color: var(--s-auto);
+.segmented button:hover { color: var(--co-text); }
+.segmented button[data-active="true"] {
+    background: var(--co-bg-elevated);
+    color: var(--seg-active-fg, var(--accent));
+    box-shadow: 0 0 0 1px var(--seg-active-border, var(--accent));
 }
 .co-quick-reply-group {
     display: flex;

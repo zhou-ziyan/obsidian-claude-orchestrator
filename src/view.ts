@@ -16,7 +16,6 @@ import {
 	QUICK_REPLY_KEYS,
 	buildQuickReplyTmuxArgs,
 	cancelCopyModeArgs,
-	nextQueueMode,
 	queueModeLabel,
 	fetchPtyUsage,
 	getPtyStatus,
@@ -37,6 +36,7 @@ import {
 	pickRecoverySession,
 	pinLabelText,
 	terminalTheme,
+	QUEUE_MODES,
 } from "./utils";
 import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry, ThemeName } from "./utils";
 import { Terminal } from "@xterm/xterm";
@@ -241,7 +241,7 @@ export class TerminalView extends ItemView {
 		container.style.display = "flex";
 		container.style.flexDirection = "column";
 		container.style.overflow = "hidden";
-		container.dataset.theme = this.getSettings?.().theme ?? "v2";
+		container.dataset.theme = this.getSettings?.().theme ?? "obsidian";
 
 		this.registerSessionNoteEvents();
 
@@ -441,19 +441,23 @@ export class TerminalView extends ItemView {
 			}
 		});
 
-		this.modeBtn = headerRight.createEl("button", {
-			cls: "co-text-btn co-mode-btn",
-			text: queueModeLabel(this.sessionNote?.queueMode ?? "manual"),
-		});
-		this.modeBtn.title = "Click to cycle queue mode";
-		this.modeBtn.addEventListener("click", () => {
-			if (!this.sessionNote) return;
-			this.sessionNote.queueMode = nextQueueMode(this.sessionNote.queueMode);
-			this.cancelCountdown();
-			this.updateModeBtn();
-			void this.saveSessionNote();
-			this.checkAutoSend();
-		});
+		this.modeBtn = headerRight.createDiv({ cls: "segmented" });
+		this.modeBtn.setAttribute("role", "tablist");
+		this.modeBtn.setAttribute("aria-label", "Queue mode");
+		for (const m of QUEUE_MODES) {
+			const btn = this.modeBtn.createEl("button", { text: queueModeLabel(m) });
+			btn.setAttribute("role", "tab");
+			btn.dataset.mode = m;
+			btn.addEventListener("click", () => {
+				if (!this.sessionNote) return;
+				this.sessionNote.queueMode = m;
+				this.cancelCountdown();
+				this.updateModeBtn();
+				void this.saveSessionNote();
+				this.checkAutoSend();
+			});
+		}
+		this.updateModeBtn();
 
 		const quickReplyGroup = headerRight.createDiv({ cls: "co-quick-reply-group" });
 		const keys = this.getSettings?.().quickReplyKeys ?? [...QUICK_REPLY_KEYS];
@@ -674,7 +678,7 @@ export class TerminalView extends ItemView {
 			fontFamily: "Menlo, Monaco, 'Courier New', monospace",
 			fontSize: 13,
 			lineHeight: 1.2,
-			theme: terminalTheme(this.getSettings?.().theme ?? "v2"),
+			theme: terminalTheme(this.getSettings?.().theme ?? "obsidian"),
 		});
 		this.fitAddon = new FitAddon();
 		this.term.loadAddon(this.fitAddon);
@@ -1024,8 +1028,20 @@ export class TerminalView extends ItemView {
 	private updateModeBtn(): void {
 		if (!this.modeBtn) return;
 		const mode: QueueMode = this.sessionNote?.queueMode ?? "manual";
-		this.modeBtn.textContent = queueModeLabel(mode);
-		this.modeBtn.dataset.mode = mode;
+		const buttons = Array.from(this.modeBtn.querySelectorAll("button"));
+		for (const b of buttons) {
+			const isActive = b.dataset.mode === mode;
+			if (isActive) {
+				b.dataset.active = "true";
+				const fg = mode === "auto" ? "var(--s-auto)" : mode === "listen" ? "var(--s-listen)" : "var(--accent)";
+				b.style.setProperty("--seg-active-fg", fg);
+				b.style.setProperty("--seg-active-border", fg);
+			} else {
+				delete b.dataset.active;
+				b.style.removeProperty("--seg-active-fg");
+				b.style.removeProperty("--seg-active-border");
+			}
+		}
 	}
 
 	private renderQueue(): void {

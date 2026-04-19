@@ -1,7 +1,7 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, parseSessionNote, serializeSessionNote, ensureStopHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, loadSlashCommands, BUILTIN_SLASH_COMMANDS, updatePinnedNotePath, sessionDirPath } from "./utils";
+import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, parseSessionNote, serializeSessionNote, ensureStopHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, loadSlashCommands, BUILTIN_SLASH_COMMANDS, updatePinnedNotePath, sessionDirPath, migrateThemeName } from "./utils";
 import type { ProjectRegistry, SlashCommandEntry, ThemeName } from "./utils";
 import { StopHookWatcher } from "./stop-hook-watcher";
 import { findTerminalLeafBySession, findTerminalLeafByProject, collectOpenSessionNames } from "./workspace-helpers";
@@ -24,7 +24,7 @@ const DEFAULT_SETTINGS: OrchestratorSettings = {
 	quickReplyKeys: [...QUICK_REPLY_KEYS],
 	sessionOrder: {},
 	playSoundOnAsking: true,
-	theme: "v2",
+	theme: "obsidian",
 };
 
 export default class ClaudeOrchestratorPlugin extends Plugin {
@@ -188,6 +188,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		const raw: Record<string, unknown> = await this.loadData() ?? {};
 		const data = migrateSettings(raw);
 		this.settings = { ...DEFAULT_SETTINGS, ...data as Partial<OrchestratorSettings> };
+		this.settings.theme = migrateThemeName(this.settings.theme);
 	}
 
 	async saveSettings() {
@@ -635,8 +636,8 @@ class OrchestratorSettingTab extends PluginSettingTab {
 			.setDesc("Visual theme for the plugin UI.")
 			.addDropdown((dropdown) =>
 				dropdown
-					.addOption("v1", "V1 Terminal")
-					.addOption("v2", "V2 Obsidian")
+					.addOption("terminal", "Terminal")
+					.addOption("obsidian", "Obsidian")
 					.setValue(this.plugin.settings.theme)
 					.onChange(async (value) => {
 						this.plugin.settings.theme = value as ThemeName;
