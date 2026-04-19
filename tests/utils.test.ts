@@ -75,6 +75,7 @@ import {
 	pinLabelText,
 	sessionStatusDisplay,
 	terminalTheme,
+	migrateThemeName,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote, SlashCommandEntry } from "../src/utils.ts";
 
@@ -3235,15 +3236,41 @@ describe("sessionStatusDisplay", () => {
 // --- terminalTheme ---
 
 describe("terminalTheme", () => {
-	it("returns V1 terminal colors", () => {
-		const t = terminalTheme("v1");
+	it("returns Terminal theme colors", () => {
+		const t = terminalTheme("terminal");
 		assert.equal(t.background, "#06090a");
 		assert.equal(t.foreground, "#d6d7c9");
 	});
 
-	it("returns V2 terminal colors", () => {
-		const t = terminalTheme("v2");
+	it("returns Obsidian theme colors", () => {
+		const t = terminalTheme("obsidian");
 		assert.equal(t.background, "#16161a");
 		assert.equal(t.foreground, "#dcddde");
+	});
+});
+
+// --- migrateThemeName ---
+
+describe("migrateThemeName", () => {
+	it("migrates v1 to terminal", () => {
+		assert.equal(migrateThemeName("v1"), "terminal");
+	});
+
+	it("migrates v2 to obsidian", () => {
+		assert.equal(migrateThemeName("v2"), "obsidian");
+	});
+
+	it("keeps terminal as terminal", () => {
+		assert.equal(migrateThemeName("terminal"), "terminal");
+	});
+
+	it("keeps obsidian as obsidian", () => {
+		assert.equal(migrateThemeName("obsidian"), "obsidian");
+	});
+
+	it("defaults to obsidian for unknown values", () => {
+		assert.equal(migrateThemeName("unknown"), "obsidian");
+		assert.equal(migrateThemeName(null), "obsidian");
+		assert.equal(migrateThemeName(undefined), "obsidian");
 	});
 });
