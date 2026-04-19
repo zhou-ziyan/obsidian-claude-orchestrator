@@ -403,45 +403,18 @@ export class TerminalView extends ItemView {
 		const queueTitle = queueHeader.createSpan();
 		queueTitle.textContent = "Queue";
 
-		const headerRight = queueHeader.createDiv({ cls: "co-queue-header-right" });
-
-		this.termFocusIndicator = headerRight.createSpan({ cls: "co-term-indicator", text: "▴" });
+		this.termFocusIndicator = queueHeader.createSpan({ cls: "co-term-indicator", text: "▴" });
 		this.termFocusIndicator.style.display = "none";
 
-		// Pin note
-		const pinGroup = headerRight.createDiv({ cls: "co-pin-group" });
-		const pinBtn = pinGroup.createEl("button", {
-			cls: "icon-btn",
-			text: "📌",
-		});
-		this.pinLabel = pinGroup.createSpan({ cls: "co-pin-label" });
-		this.pinLabel.textContent = "No note pinned";
+		this.queueList = this.queuePanel.createDiv({ cls: "co-queue-list" });
 
-		pinBtn.addEventListener("click", () => {
-			let filePath: string | null = null;
-			for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-				if (leaf.getRoot() === this.app.workspace.rootSplit) {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access -- Obsidian MarkdownView.file not in public typings
-					const file = (leaf.view as any)?.file as { path: string } | undefined;
-					filePath = file?.path ?? null;
-					break;
-				}
-			}
-			if (filePath) {
-				this.pinnedNote = filePath;
-				this.updatePinLabel();
-				void this.saveSessionNote();
-			}
-		});
-		this.pinLabel.addEventListener("click", () => {
-			if (this.pinnedNote) {
-				this.pinnedNote = null;
-				this.updatePinLabel();
-				void this.saveSessionNote();
-			}
-		});
+		// Queue bar: Mode | Sep | Pin | Quick | Send
+		const queueBar = this.queuePanel.createDiv({ cls: "co-queue-bar" });
 
-		this.modeBtn = headerRight.createDiv({ cls: "segmented" });
+		// Mode group
+		const modeGroup = queueBar.createDiv({ cls: "co-queue-bar-group" });
+		modeGroup.createSpan({ cls: "co-queue-bar-label", text: "Mode" });
+		this.modeBtn = modeGroup.createDiv({ cls: "segmented" });
 		this.modeBtn.setAttribute("role", "tablist");
 		this.modeBtn.setAttribute("aria-label", "Queue mode");
 		for (const m of QUEUE_MODES) {
@@ -459,7 +432,44 @@ export class TerminalView extends ItemView {
 		}
 		this.updateModeBtn();
 
-		const quickReplyGroup = headerRight.createDiv({ cls: "co-quick-reply-group" });
+		// Separator
+		queueBar.createSpan({ cls: "co-queue-bar-sep" });
+
+		// Pin chip group (shrinkable)
+		const pinChipGroup = queueBar.createDiv({ cls: "co-queue-bar-group co-queue-bar-shrinkable" });
+		const pinChip = pinChipGroup.createDiv({ cls: "co-pin-chip" });
+		pinChip.dataset.empty = "true";
+		pinChip.createSpan({ text: "📌" });
+		this.pinLabel = pinChip.createSpan({ cls: "co-pin-label" });
+		this.pinLabel.textContent = "No note pinned";
+
+		pinChip.addEventListener("click", () => {
+			if (this.pinnedNote) {
+				this.pinnedNote = null;
+				this.updatePinLabel();
+				void this.saveSessionNote();
+			} else {
+				let filePath: string | null = null;
+				for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+					if (leaf.getRoot() === this.app.workspace.rootSplit) {
+						// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access -- Obsidian MarkdownView.file not in public typings
+						const file = (leaf.view as any)?.file as { path: string } | undefined;
+						filePath = file?.path ?? null;
+						break;
+					}
+				}
+				if (filePath) {
+					this.pinnedNote = filePath;
+					this.updatePinLabel();
+					void this.saveSessionNote();
+				}
+			}
+		});
+
+		// Quick reply group
+		const quickGroup = queueBar.createDiv({ cls: "co-queue-bar-group" });
+		quickGroup.createSpan({ cls: "co-queue-bar-label", text: "Quick" });
+		const quickReplyGroup = quickGroup.createDiv({ cls: "co-quick-reply-group" });
 		const keys = this.getSettings?.().quickReplyKeys ?? [...QUICK_REPLY_KEYS];
 		for (const key of keys) {
 			const btn = quickReplyGroup.createEl("button", {
@@ -470,7 +480,9 @@ export class TerminalView extends ItemView {
 			btn.addEventListener("click", () => { void this.sendQuickReply(key); });
 		}
 
-		this.sendBtn = headerRight.createEl("button", {
+		// Send group (right-aligned)
+		const sendGroup = queueBar.createDiv({ cls: "co-queue-bar-send" });
+		this.sendBtn = sendGroup.createEl("button", {
 			cls: "btn",
 			text: "Send next ▶",
 		});
@@ -482,8 +494,6 @@ export class TerminalView extends ItemView {
 				void this.sendNext();
 			}
 		});
-
-		this.queueList = this.queuePanel.createDiv({ cls: "co-queue-list" });
 
 		const addRow = this.queuePanel.createDiv({ cls: "co-queue-add" });
 		const input = addRow.createEl("textarea", {
@@ -1027,7 +1037,8 @@ export class TerminalView extends ItemView {
 	private updatePinLabel(): void {
 		if (!this.pinLabel) return;
 		this.pinLabel.textContent = pinLabelText(this.pinnedNote);
-		this.pinLabel.classList.toggle("co-pin-active", !!this.pinnedNote);
+		const chip = this.pinLabel.parentElement;
+		if (chip) chip.dataset.empty = this.pinnedNote ? "false" : "true";
 	}
 
 	private updateModeBtn(): void {
