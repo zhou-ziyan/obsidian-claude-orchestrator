@@ -66,10 +66,15 @@ Left-sidebar dashboard showing all tmux sessions grouped by project:
   - macOS: `brew install tmux`
   - Linux (Debian/Ubuntu): `sudo apt install tmux`
   - Linux (Arch): `sudo pacman -S tmux`
-- **Recommended: enable mouse support in tmux** — allows scrolling terminal output with the mouse wheel/trackpad
+- **Recommended tmux config** — add to `~/.tmux.conf` (create if it doesn't exist):
   ```bash
-  # Add to ~/.tmux.conf (create if it doesn't exist):
-  set -g mouse on
+  set -g mouse on  # scroll with mouse wheel/trackpad
+
+  # Copy on mouse select: release mouse button → copied to clipboard
+  # macOS:
+  bind -T copy-mode MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "pbcopy"
+  bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "pbcopy"
+  # Linux (replace pbcopy with): xclip -selection clipboard
   ```
 
 ## Dev Setup
