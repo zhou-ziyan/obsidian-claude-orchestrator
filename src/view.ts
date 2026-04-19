@@ -31,6 +31,10 @@ import {
 	wheelDeltaToLines,
 	classifyAcKey,
 	escapeLeadingBang,
+	projectFromSessionName,
+	tmuxLs,
+	parseAllTmuxSessions,
+	pickRecoverySession,
 } from "./utils";
 import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry } from "./utils";
 import { Terminal } from "@xterm/xterm";
@@ -180,6 +184,7 @@ export class TerminalView extends ItemView {
 		await super.setState(state, result);
 		if (this.xtermReady && !this.ptyProcess) {
 			void this.spawnShell();
+			void this.loadSessionNote();
 		}
 	}
 
@@ -771,6 +776,27 @@ export class TerminalView extends ItemView {
 			PATH: pathEntries.join(":"),
 		};
 
+		// Recovery: if state was lost (e.g. "Reload without saving"), try to
+		// find an unclaimed tmux session matching a registered project.
+		if (!this.sessionName) {
+			await this.tryRecoverSession();
+		}
+
+		// Recovery: if we have a session name but lost the project, reverse-map it.
+		if (this.sessionName && !this.project) {
+			const projects = this.getSettings?.()?.projects;
+			if (projects) {
+				const recovered = projectFromSessionName(this.sessionName, projects);
+				if (recovered) {
+					this.project = recovered;
+					/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Obsidian internal API */
+					(this.leaf as any).updateHeader?.();
+					/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+					void this.loadSessionNote();
+				}
+			}
+		}
+
 		let file: string;
 		let args: string[];
 		if (this.sessionName) {
@@ -818,6 +844,35 @@ export class TerminalView extends ItemView {
 				this.awaitingRestart = true;
 			}),
 		];
+	}
+
+	private async tryRecoverSession(): Promise<void> {
+		try {
+			const output = await tmuxLs();
+			const sessions = parseAllTmuxSessions(output);
+			const projects = this.getSettings?.()?.projects;
+			if (!projects || sessions.length === 0) return;
+
+			const claimedNames = new Set<string>();
+			for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
+				const view = leaf.view;
+				if (view instanceof TerminalView && view !== this && view.getSessionName()) {
+					claimedNames.add(view.getSessionName()!);
+				}
+			}
+
+			const match = pickRecoverySession(sessions, projects, claimedNames);
+			if (!match) return;
+
+			this.project = match.project;
+			this.sessionName = match.sessionName;
+			/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Obsidian internal API */
+			(this.leaf as any).updateHeader?.();
+			/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+			void this.loadSessionNote();
+		} catch {
+			// tmux not available — keep plain shell
+		}
 	}
 
 	// --- Session note I/O ---
