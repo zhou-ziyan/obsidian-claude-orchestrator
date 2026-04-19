@@ -60,6 +60,18 @@ Left-sidebar dashboard showing all tmux sessions grouped by project:
 | Toggle simple mode | Hide/show queue + history panels |
 | Open session manager | Open the session manager panel in left sidebar |
 
+## Prerequisites
+
+- **tmux** — the plugin uses tmux to manage persistent terminal sessions
+  - macOS: `brew install tmux`
+  - Linux (Debian/Ubuntu): `sudo apt install tmux`
+  - Linux (Arch): `sudo pacman -S tmux`
+- **Recommended: enable mouse support in tmux** — allows scrolling terminal output with the mouse wheel/trackpad
+  ```bash
+  # Add to ~/.tmux.conf (create if it doesn't exist):
+  set -g mouse on
+  ```
+
 ## Dev Setup
 
 ```bash
