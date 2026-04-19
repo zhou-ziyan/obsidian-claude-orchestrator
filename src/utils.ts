@@ -653,6 +653,11 @@ export function buildQuickReplyTmuxArgs(
 	};
 }
 
+export function escapeLeadingBang(text: string): string {
+	if (text.startsWith("!")) return " " + text;
+	return text;
+}
+
 export function findTmuxBinary(exists?: (p: string) => boolean): string {
 	const check = exists ?? ((p: string): boolean => {
 		try { accessSync(p); return true; } catch { return false; }

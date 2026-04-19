@@ -70,6 +70,7 @@ import {
 	classifyAcKey,
 	updatePinnedNotePath,
 	allSessionNotePaths,
+	escapeLeadingBang,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote, SlashCommandEntry } from "../src/utils.ts";
 
@@ -3080,5 +3081,25 @@ describe("wheelDeltaToLines", () => {
 		assert.equal(wheelDeltaToLines(1, 2), WHEEL_LINES_PER_PAGE);
 		assert.equal(wheelDeltaToLines(-1, 2), -WHEEL_LINES_PER_PAGE);
 		assert.equal(wheelDeltaToLines(2, 2), 2 * WHEEL_LINES_PER_PAGE);
+	});
+});
+
+// --- escapeLeadingBang ---
+
+describe("escapeLeadingBang", () => {
+	it("prepends space when text starts with !", () => {
+		assert.equal(escapeLeadingBang("![[image.png]]"), " ![[image.png]]");
+		assert.equal(escapeLeadingBang("! ls"), " ! ls");
+		assert.equal(escapeLeadingBang("!!"), " !!");
+	});
+
+	it("returns text unchanged when it does not start with !", () => {
+		assert.equal(escapeLeadingBang("hello !world"), "hello !world");
+		assert.equal(escapeLeadingBang("normal text"), "normal text");
+		assert.equal(escapeLeadingBang(" !already spaced"), " !already spaced");
+	});
+
+	it("returns empty string unchanged", () => {
+		assert.equal(escapeLeadingBang(""), "");
 	});
 });
