@@ -35,6 +35,8 @@ import {
 	tmuxLs,
 	parseAllTmuxSessions,
 	pickRecoverySession,
+	pinLabelText,
+	terminalTheme,
 } from "./utils";
 import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry } from "./utils";
 import { Terminal } from "@xterm/xterm";
@@ -662,15 +664,12 @@ export class TerminalView extends ItemView {
 	private initializeTerminal(): void {
 		if (!this.host) return;
 
-		const isDark = document.body.classList.contains("theme-dark");
 		this.term = new Terminal({
 			cursorBlink: true,
 			fontFamily: "Menlo, Monaco, 'Courier New', monospace",
 			fontSize: 13,
 			lineHeight: 1.2,
-			theme: isDark
-				? { background: "#1e1e1e", foreground: "#d4d4d4" }
-				: { background: "#f5f5f5", foreground: "#383a42", cursor: "#383a42" },
+			theme: terminalTheme(document.body.classList.contains("theme-dark")),
 		});
 		this.fitAddon = new FitAddon();
 		this.term.loadAddon(this.fitAddon);
@@ -682,10 +681,7 @@ export class TerminalView extends ItemView {
 		);
 
 		this.themeObserver = new MutationObserver(() => {
-			const dark = document.body.classList.contains("theme-dark");
-			this.term!.options.theme = dark
-				? { background: "#1e1e1e", foreground: "#d4d4d4" }
-				: { background: "#f5f5f5", foreground: "#383a42", cursor: "#383a42" };
+			this.term!.options.theme = terminalTheme(document.body.classList.contains("theme-dark"));
 		});
 		this.themeObserver.observe(document.body, { attributes: true, attributeFilter: ["class"] });
 
@@ -1021,15 +1017,8 @@ export class TerminalView extends ItemView {
 
 	private updatePinLabel(): void {
 		if (!this.pinLabel) return;
-		if (this.pinnedNote) {
-			// Show just the filename without path
-			const name = this.pinnedNote.split("/").pop()?.replace(/\.md$/, "") ?? this.pinnedNote;
-			this.pinLabel.textContent = name;
-			this.pinLabel.classList.add("co-pin-active");
-		} else {
-			this.pinLabel.textContent = "No note pinned";
-			this.pinLabel.classList.remove("co-pin-active");
-		}
+		this.pinLabel.textContent = pinLabelText(this.pinnedNote);
+		this.pinLabel.classList.toggle("co-pin-active", !!this.pinnedNote);
 	}
 
 	private updateModeBtn(): void {

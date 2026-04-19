@@ -26,6 +26,7 @@ import {
 	applySortOrder,
 	SessionGroup,
 	SessionInfo,
+	sessionStatusDisplay,
 } from "./utils";
 import { findTerminalLeafBySession, collectOpenSessionNames } from "./workspace-helpers";
 import type { ProjectConfig, PtyLevel } from "./utils";
@@ -449,12 +450,7 @@ export class SessionManagerView extends ItemView {
 		const topRow = card.createDiv({ cls: "co-sm-card-top" });
 
 		const nameRow = topRow.createDiv({ cls: "co-sm-card-name" });
-		const statusCls = session.hasPanel
-			? `co-sm-status co-sm-status-${session.status}`
-			: "co-sm-status co-sm-status-off";
-		const statusSymbol = session.hasPanel
-			? (session.status === "running" ? "▶" : session.status === "waiting_for_user" ? "⏸" : "○")
-			: "○";
+		const { cls: statusCls, symbol: statusSymbol } = sessionStatusDisplay(session.hasPanel, session.status);
 		nameRow.createSpan({ cls: statusCls, text: statusSymbol });
 		const displayLabel = session.displayName || session.name.replace(/-(\d+)$/, " #$1");
 		const nameSpan = nameRow.createSpan({ text: displayLabel });

@@ -72,6 +72,9 @@ import {
 	allSessionNotePaths,
 	escapeLeadingBang,
 	pickRecoverySession,
+	pinLabelText,
+	sessionStatusDisplay,
+	terminalTheme,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote, SlashCommandEntry } from "../src/utils.ts";
 
@@ -3174,5 +3177,75 @@ describe("pickRecoverySession", () => {
 			project: "15_Claude_Orchestrator",
 			sessionName: "15_Claude_Orchestrator-1",
 		});
+	});
+});
+
+// --- pinLabelText ---
+
+describe("pinLabelText", () => {
+	it("extracts filename without .md extension from path", () => {
+		assert.equal(pinLabelText("01_Projects/15_Claude_Orchestrator/README.md"), "README");
+	});
+
+	it("handles deeply nested paths", () => {
+		assert.equal(pinLabelText("a/b/c/d/MyNote.md"), "MyNote");
+	});
+
+	it("handles file without .md extension", () => {
+		assert.equal(pinLabelText("folder/file.txt"), "file.txt");
+	});
+
+	it("returns 'No note pinned' when null", () => {
+		assert.equal(pinLabelText(null), "No note pinned");
+	});
+
+	it("returns 'No note pinned' when empty string", () => {
+		assert.equal(pinLabelText(""), "No note pinned");
+	});
+});
+
+// --- sessionStatusDisplay ---
+
+describe("sessionStatusDisplay", () => {
+	it("returns running indicator when panel active and running", () => {
+		const r = sessionStatusDisplay(true, "running");
+		assert.equal(r.symbol, "▶");
+		assert.ok(r.cls.includes("co-sm-status-running"));
+	});
+
+	it("returns paused indicator when waiting for user", () => {
+		const r = sessionStatusDisplay(true, "waiting_for_user");
+		assert.equal(r.symbol, "⏸");
+		assert.ok(r.cls.includes("co-sm-status-waiting_for_user"));
+	});
+
+	it("returns idle circle when panel active and idle", () => {
+		const r = sessionStatusDisplay(true, "idle");
+		assert.equal(r.symbol, "○");
+		assert.ok(r.cls.includes("co-sm-status-idle"));
+	});
+
+	it("returns off circle when no panel", () => {
+		const r = sessionStatusDisplay(false, "running");
+		assert.equal(r.symbol, "○");
+		assert.ok(r.cls.includes("co-sm-status-off"));
+	});
+});
+
+// --- terminalTheme ---
+
+describe("terminalTheme", () => {
+	it("returns dark theme colors", () => {
+		const t = terminalTheme(true);
+		assert.equal(t.background, "#1e1e1e");
+		assert.equal(t.foreground, "#d4d4d4");
+		assert.equal(t.cursor, undefined);
+	});
+
+	it("returns light theme colors with cursor", () => {
+		const t = terminalTheme(false);
+		assert.equal(t.background, "#f5f5f5");
+		assert.equal(t.foreground, "#383a42");
+		assert.equal(t.cursor, "#383a42");
 	});
 });

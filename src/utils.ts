@@ -658,6 +658,32 @@ export function escapeLeadingBang(text: string): string {
 	return text;
 }
 
+export function pinLabelText(pinnedNote: string | null): string {
+	if (!pinnedNote) return "No note pinned";
+	return pinnedNote.split("/").pop()?.replace(/\.md$/, "") ?? pinnedNote;
+}
+
+export function sessionStatusDisplay(
+	hasPanel: boolean,
+	status: string,
+): { cls: string; symbol: string } {
+	if (!hasPanel) return { cls: "co-sm-status co-sm-status-off", symbol: "○" };
+	const symbol = status === "running" ? "▶" : status === "waiting_for_user" ? "⏸" : "○";
+	return { cls: `co-sm-status co-sm-status-${status}`, symbol };
+}
+
+export interface TerminalTheme {
+	background: string;
+	foreground: string;
+	cursor?: string;
+}
+
+export function terminalTheme(isDark: boolean): TerminalTheme {
+	return isDark
+		? { background: "#1e1e1e", foreground: "#d4d4d4" }
+		: { background: "#f5f5f5", foreground: "#383a42", cursor: "#383a42" };
+}
+
 export function findTmuxBinary(exists?: (p: string) => boolean): string {
 	const check = exists ?? ((p: string): boolean => {
 		try { accessSync(p); return true; } catch { return false; }
