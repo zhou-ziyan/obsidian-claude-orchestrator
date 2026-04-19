@@ -30,6 +30,7 @@ import {
 	handleTerminalScrollKey,
 	wheelDeltaToLines,
 	classifyAcKey,
+	escapeLeadingBang,
 } from "./utils";
 import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry } from "./utils";
 import { Terminal } from "@xterm/xterm";
@@ -1152,7 +1153,9 @@ export class TerminalView extends ItemView {
 		await this.saveSessionNote();
 
 		// Strip timestamp prefix before injecting (e.g. "[2026-04-15 23:15] actual text")
-		const taskText = task.replace(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] /, "");
+		const taskText = escapeLeadingBang(
+			task.replace(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] /, ""),
+		);
 
 		const target = this.sessionName;
 
@@ -1177,7 +1180,7 @@ export class TerminalView extends ItemView {
 			void this.saveSessionNote();
 		}
 
-		const { textArgs, enterArgs } = buildQuickReplyTmuxArgs(this.sessionName, key);
+		const { textArgs, enterArgs } = buildQuickReplyTmuxArgs(this.sessionName, escapeLeadingBang(key));
 
 		await execTmux(cancelCopyModeArgs(this.sessionName)).catch(() => {});
 		try {
