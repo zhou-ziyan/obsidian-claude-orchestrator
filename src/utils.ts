@@ -1160,3 +1160,37 @@ export function classifyAcKey(key: string, shiftKey: boolean): AcKeyAction {
 	if ((key === "Enter" || key === "Tab" || key === "ArrowRight") && !shiftKey) return "accept";
 	return null;
 }
+
+/**
+ * If the session note's pinnedNote matches `oldPath`, return updated
+ * markdown with the pinnedNote changed to `newPath`. Otherwise return null.
+ */
+export function updatePinnedNotePath(
+	markdown: string,
+	sessionName: string,
+	oldPath: string,
+	newPath: string,
+): string | null {
+	const note = parseSessionNote(markdown, sessionName);
+	if (note.pinnedNote !== oldPath) return null;
+	note.pinnedNote = newPath;
+	return serializeSessionNote(note);
+}
+
+/**
+ * Collect all session note file paths for every registered project.
+ * Returns vault-relative paths like "01_Projects/Foo/sessions/Foo-1.md".
+ */
+export function allSessionNotePaths(
+	projects: ProjectRegistry,
+	sessionNames: string[],
+): string[] {
+	const paths: string[] = [];
+	for (const config of Object.values(projects)) {
+		const dir = sessionDirPath(config.vaultFolder);
+		for (const name of sessionNames) {
+			paths.push(`${dir}/${name}.md`);
+		}
+	}
+	return paths;
+}

@@ -66,6 +66,8 @@ import {
 	stripTimestamp,
 	handleTerminalScrollKey,
 	classifyAcKey,
+	updatePinnedNotePath,
+	allSessionNotePaths,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote, SlashCommandEntry } from "../src/utils.ts";
 
@@ -2916,5 +2918,129 @@ describe("classifyAcKey", () => {
 		for (const key of ["a", "Backspace", "ArrowLeft", "Home", "End"]) {
 			assert.equal(classifyAcKey(key, false), null);
 		}
+	});
+});
+
+// --- updatePinnedNotePath ---
+
+describe("updatePinnedNotePath", () => {
+	const baseNote = [
+		"---",
+		"session: test-1",
+		"status: idle",
+		"pinnedNote: 01_Projects/Foo/Foo.md",
+		"queueMode: manual",
+		"---",
+		"",
+		"## Notes",
+		"",
+		"## History",
+		"",
+		"## Queue",
+		"",
+	].join("\n");
+
+	it("updates pinnedNote when oldPath matches", () => {
+		const result = updatePinnedNotePath(
+			baseNote,
+			"test-1",
+			"01_Projects/Foo/Foo.md",
+			"01_Projects/Bar/Bar.md",
+		);
+		assert.notStrictEqual(result, null);
+		const parsed = parseSessionNote(result!, "test-1");
+		assert.equal(parsed.pinnedNote, "01_Projects/Bar/Bar.md");
+	});
+
+	it("returns null when pinnedNote does not match oldPath", () => {
+		const result = updatePinnedNotePath(
+			baseNote,
+			"test-1",
+			"01_Projects/Other/Other.md",
+			"01_Projects/Bar/Bar.md",
+		);
+		assert.strictEqual(result, null);
+	});
+
+	it("returns null when pinnedNote is empty", () => {
+		const emptyPin = baseNote.replace(
+			"pinnedNote: 01_Projects/Foo/Foo.md",
+			"pinnedNote: ",
+		);
+		const result = updatePinnedNotePath(
+			emptyPin,
+			"test-1",
+			"01_Projects/Foo/Foo.md",
+			"01_Projects/Bar/Bar.md",
+		);
+		assert.strictEqual(result, null);
+	});
+
+	it("does not match partial paths", () => {
+		const result = updatePinnedNotePath(
+			baseNote,
+			"test-1",
+			"01_Projects/Foo/Foo",
+			"01_Projects/Bar/Bar",
+		);
+		assert.strictEqual(result, null);
+	});
+
+	it("preserves other session note fields", () => {
+		const noteWithData = [
+			"---",
+			"session: test-2",
+			"status: running",
+			"pinnedNote: a/b.md",
+			"queueMode: auto",
+			"displayName: my agent",
+			"summary: doing stuff",
+			"---",
+			"",
+			"## Notes",
+			"some notes here",
+			"",
+			"## History",
+			"- [ ] [2026-04-18 10:00] task one",
+			"",
+			"## Queue",
+			"- [2026-04-18 11:00] next task",
+			"",
+		].join("\n");
+		const result = updatePinnedNotePath(noteWithData, "test-2", "a/b.md", "c/d.md");
+		assert.notStrictEqual(result, null);
+		const parsed = parseSessionNote(result!, "test-2");
+		assert.equal(parsed.pinnedNote, "c/d.md");
+		assert.equal(parsed.status, "running");
+		assert.equal(parsed.queueMode, "auto");
+		assert.equal(parsed.displayName, "my agent");
+		assert.equal(parsed.summary, "doing stuff");
+		assert.equal(parsed.notes, "some notes here");
+		assert.equal(parsed.history.length, 1);
+		assert.equal(parsed.queue.length, 1);
+	});
+});
+
+// --- allSessionNotePaths ---
+
+describe("allSessionNotePaths", () => {
+	it("builds paths for all project-session combinations", () => {
+		const projects: ProjectRegistry = {
+			"ProjectA": { vaultFolder: "01_Projects/ProjectA" },
+		};
+		const names = ["ProjectA-1", "ProjectA-2"];
+		const paths = allSessionNotePaths(projects, names);
+		assert.deepStrictEqual(paths, [
+			"01_Projects/ProjectA/sessions/ProjectA-1.md",
+			"01_Projects/ProjectA/sessions/ProjectA-2.md",
+		]);
+	});
+
+	it("returns empty array for empty inputs", () => {
+		assert.deepStrictEqual(allSessionNotePaths({}, []), []);
+		assert.deepStrictEqual(
+			allSessionNotePaths({ "A": { vaultFolder: "x" } }, []),
+			[],
+		);
 	});
 });
