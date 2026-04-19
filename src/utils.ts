@@ -1151,6 +1151,15 @@ export function handleTerminalScrollKey(
 	return true;
 }
 
+export const WHEEL_LINES_PER_PAGE = 10;
+
+export function wheelDeltaToLines(deltaY: number, deltaMode: number): number {
+	if (deltaMode === 1) return deltaY;
+	if (deltaMode === 2) return deltaY * WHEEL_LINES_PER_PAGE;
+	const lines = Math.trunc(deltaY / 20);
+	return lines === 0 ? (deltaY > 0 ? 1 : deltaY < 0 ? -1 : 0) : lines;
+}
+
 export type AcKeyAction = "accept" | "close" | "next" | "prev" | null;
 
 export function classifyAcKey(key: string, shiftKey: boolean): AcKeyAction {

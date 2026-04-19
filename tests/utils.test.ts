@@ -65,6 +65,8 @@ import {
 	BUILTIN_SLASH_COMMANDS,
 	stripTimestamp,
 	handleTerminalScrollKey,
+	wheelDeltaToLines,
+	WHEEL_LINES_PER_PAGE,
 	classifyAcKey,
 	updatePinnedNotePath,
 	allSessionNotePaths,
@@ -3042,5 +3044,41 @@ describe("allSessionNotePaths", () => {
 			allSessionNotePaths({ "A": { vaultFolder: "x" } }, []),
 			[],
 		);
+	});
+});
+
+// --- wheelDeltaToLines ---
+
+describe("wheelDeltaToLines", () => {
+	it("converts pixel deltas (mode 0) to lines using 20px step", () => {
+		assert.equal(wheelDeltaToLines(60, 0), 3);
+		assert.equal(wheelDeltaToLines(-60, 0), -3);
+		assert.equal(wheelDeltaToLines(100, 0), 5);
+		assert.equal(wheelDeltaToLines(-100, 0), -5);
+	});
+
+	it("returns at least ±1 for small pixel deltas", () => {
+		assert.equal(wheelDeltaToLines(5, 0), 1);
+		assert.equal(wheelDeltaToLines(-5, 0), -1);
+		assert.equal(wheelDeltaToLines(19, 0), 1);
+		assert.equal(wheelDeltaToLines(-19, 0), -1);
+	});
+
+	it("returns 0 for zero delta", () => {
+		assert.equal(wheelDeltaToLines(0, 0), 0);
+		assert.equal(wheelDeltaToLines(0, 1), 0);
+		assert.equal(wheelDeltaToLines(0, 2), 0);
+	});
+
+	it("passes through line deltas (mode 1) directly", () => {
+		assert.equal(wheelDeltaToLines(3, 1), 3);
+		assert.equal(wheelDeltaToLines(-3, 1), -3);
+		assert.equal(wheelDeltaToLines(1, 1), 1);
+	});
+
+	it("multiplies page deltas (mode 2) by WHEEL_LINES_PER_PAGE", () => {
+		assert.equal(wheelDeltaToLines(1, 2), WHEEL_LINES_PER_PAGE);
+		assert.equal(wheelDeltaToLines(-1, 2), -WHEEL_LINES_PER_PAGE);
+		assert.equal(wheelDeltaToLines(2, 2), 2 * WHEEL_LINES_PER_PAGE);
 	});
 });
