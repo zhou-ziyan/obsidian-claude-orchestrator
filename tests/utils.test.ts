@@ -3208,28 +3208,33 @@ describe("pinLabelText", () => {
 // --- sessionStatusDisplay ---
 
 describe("sessionStatusDisplay", () => {
-	it("returns running indicator when panel active and running", () => {
+	it("returns running dot when panel active and running", () => {
 		const r = sessionStatusDisplay(true, "running");
-		assert.equal(r.symbol, "▶");
-		assert.ok(r.cls.includes("co-sm-status-running"));
+		assert.equal(r.dataStatus, "running");
+		assert.equal(r.cls, "co-sm-status-dot");
 	});
 
-	it("returns paused indicator when waiting for user", () => {
+	it("returns waiting_for_user dot when waiting for user", () => {
 		const r = sessionStatusDisplay(true, "waiting_for_user");
-		assert.equal(r.symbol, "⏸");
-		assert.ok(r.cls.includes("co-sm-status-waiting_for_user"));
+		assert.equal(r.dataStatus, "waiting_for_user");
+		assert.equal(r.cls, "co-sm-status-dot");
 	});
 
-	it("returns idle circle when panel active and idle", () => {
+	it("returns idle dot when panel active and idle", () => {
 		const r = sessionStatusDisplay(true, "idle");
-		assert.equal(r.symbol, "○");
-		assert.ok(r.cls.includes("co-sm-status-idle"));
+		assert.equal(r.dataStatus, "idle");
+		assert.equal(r.cls, "co-sm-status-dot");
 	});
 
-	it("returns off circle when no panel", () => {
+	it("returns off dot when no panel", () => {
 		const r = sessionStatusDisplay(false, "running");
-		assert.equal(r.symbol, "○");
-		assert.ok(r.cls.includes("co-sm-status-off"));
+		assert.equal(r.dataStatus, "off");
+		assert.equal(r.cls, "co-sm-status-dot");
+	});
+
+	it("defaults unknown status to idle", () => {
+		const r = sessionStatusDisplay(true, "something_else");
+		assert.equal(r.dataStatus, "idle");
 	});
 });
 
