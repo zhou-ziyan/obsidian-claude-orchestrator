@@ -585,40 +585,63 @@ export class SessionManagerView extends ItemView {
 			const match = findTerminalLeafBySession(this.app.workspace, session.name);
 			const countdown = match?.view.getCountdownRemaining() ?? 0;
 
-			const sendBtn = actions.createEl("button", {
-				cls: "btn",
-				text: countdown > 0 ? `Cancel (${countdown}s)` : "Send ▶",
-			});
 			if (countdown > 0) {
-				sendBtn.dataset.tone = "danger";
+				const pill = actions.createDiv({ cls: "co-countdown" });
+				pill.createDiv({ cls: "co-countdown-dot" });
+				pill.createSpan({ cls: "co-countdown-label", text: `Auto-send in ${countdown}s` });
+				const cancelBtn = pill.createEl("button", { cls: "icon-btn", text: "✕" });
+				cancelBtn.addEventListener("click", (e) => {
+					e.stopPropagation();
+					match?.view.cancelCountdown();
+				});
+				this.sendBtns.set(session.name, pill);
 			} else {
+				const sendBtn = actions.createEl("button", {
+					cls: "btn",
+					text: "Send ▶",
+				});
 				sendBtn.dataset.variant = "primary";
-			}
-			sendBtn.addEventListener("click", (e) => {
-				e.stopPropagation();
-				if (match && match.view.getCountdownRemaining() > 0) {
-					match.view.cancelCountdown();
-				} else {
+				sendBtn.addEventListener("click", (e) => {
+					e.stopPropagation();
 					void this.sendNextForSession(session.name);
-				}
-			});
-			this.sendBtns.set(session.name, sendBtn);
+				});
+				this.sendBtns.set(session.name, sendBtn);
+			}
 		}
 
 	}
 
 	private updateCountdownButtons(): void {
-		for (const [sessionName, btn] of this.sendBtns) {
+		for (const [sessionName, el] of this.sendBtns) {
 			const match = findTerminalLeafBySession(this.app.workspace, sessionName);
 			const remaining = match?.view.getCountdownRemaining() ?? 0;
-			if (remaining > 0) {
-				btn.textContent = `Cancel (${remaining}s)`;
-				btn.dataset.tone = "danger";
-				delete btn.dataset.variant;
-			} else {
-				btn.textContent = "Send ▶";
-				delete btn.dataset.tone;
-				btn.dataset.variant = "primary";
+			const parent = el.parentElement;
+			if (!parent) continue;
+
+			const isPill = el.classList.contains("co-countdown");
+			if (remaining > 0 && isPill) {
+				const label = el.querySelector(".co-countdown-label");
+				if (label) label.textContent = `Auto-send in ${remaining}s`;
+			} else if (remaining > 0 && !isPill) {
+				el.remove();
+				const pill = parent.createDiv({ cls: "co-countdown" });
+				pill.createDiv({ cls: "co-countdown-dot" });
+				pill.createSpan({ cls: "co-countdown-label", text: `Auto-send in ${remaining}s` });
+				const cancelBtn = pill.createEl("button", { cls: "icon-btn", text: "✕" });
+				cancelBtn.addEventListener("click", (e) => {
+					e.stopPropagation();
+					match?.view.cancelCountdown();
+				});
+				this.sendBtns.set(sessionName, pill);
+			} else if (remaining <= 0 && isPill) {
+				el.remove();
+				const sendBtn = parent.createEl("button", { cls: "btn", text: "Send ▶" });
+				sendBtn.dataset.variant = "primary";
+				sendBtn.addEventListener("click", (e) => {
+					e.stopPropagation();
+					void this.sendNextForSession(sessionName);
+				});
+				this.sendBtns.set(sessionName, sendBtn);
 			}
 		}
 	}

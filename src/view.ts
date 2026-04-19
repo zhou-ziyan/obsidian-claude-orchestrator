@@ -118,6 +118,7 @@ export class TerminalView extends ItemView {
 	private termFocusIndicator: HTMLElement | null = null;
 	private modeBtn: HTMLElement | null = null;
 	private sendBtn: HTMLElement | null = null;
+	private countdownEl: HTMLElement | null = null;
 	private countdownTimer: ReturnType<typeof setInterval> | null = null;
 	private countdownRemaining = 0;
 	private escHandler: ((e: KeyboardEvent) => void) | null = null;
@@ -1056,12 +1057,20 @@ export class TerminalView extends ItemView {
 
 		if (this.sessionNote.queue.length === 0) {
 			this.queueList.createDiv({ cls: "co-empty", text: "Queue empty." });
-			return;
+		} else {
+			this.sessionNote.queue.forEach((text, idx) => {
+				this.renderQueueItem(this.queueList!, text, idx);
+			});
 		}
 
-		this.sessionNote.queue.forEach((text, idx) => {
-			this.renderQueueItem(this.queueList!, text, idx);
-		});
+		if (this.sessionNote.status === "waiting_for_user") {
+			const banner = this.queueList.createDiv({ cls: "co-ask-banner" });
+			banner.createDiv({ cls: "co-ask-banner-dot" });
+			const textEl = banner.createDiv({ cls: "co-ask-banner-text" });
+			const strong = textEl.createEl("strong", { text: "⏸" });
+			strong.appendText(" Claude is waiting for your reply.");
+			textEl.appendText(" Use Quick Reply or type below.");
+		}
 	}
 
 	private renderQueueItem(parent: HTMLElement, text: string, idx: number): void {
@@ -1209,6 +1218,7 @@ export class TerminalView extends ItemView {
 		this.cancelCountdown();
 		this.claudeIdle = false;
 		this.sessionNote.status = "running";
+		if (this.host) delete this.host.dataset.ask;
 		const task = this.sessionNote.queue.shift()!;
 
 		// Move to history as in-progress
@@ -1242,6 +1252,8 @@ export class TerminalView extends ItemView {
 		if (this.sessionNote) {
 			this.sessionNote.status = "running";
 			this.claudeIdle = false;
+			if (this.host) delete this.host.dataset.ask;
+			this.renderQueue();
 			void this.saveSessionNote();
 		}
 
@@ -1263,6 +1275,14 @@ export class TerminalView extends ItemView {
 		this.claudeIdle = stopReason !== "asking";
 		this.sessionNote.status = stopReason === "asking" ? "waiting_for_user" : "idle";
 
+		if (this.host) {
+			if (stopReason === "asking") {
+				this.host.dataset.ask = "true";
+			} else {
+				delete this.host.dataset.ask;
+			}
+		}
+
 		if (stopReason === "done") {
 			const last = this.sessionNote.history[this.sessionNote.history.length - 1];
 			if (last && !last.completed) {
@@ -1271,6 +1291,7 @@ export class TerminalView extends ItemView {
 		}
 
 		this.renderHistory();
+		this.renderQueue();
 		void this.saveSessionNote();
 
 		const action = autoSendAction(
@@ -1292,11 +1313,21 @@ export class TerminalView extends ItemView {
 
 	private startCountdown(): void {
 		this.cancelCountdown();
-		if (!this.sendBtn) return;
+		if (!this.sendBtn?.parentElement) return;
 
 		const totalSeconds = Math.round(AUTO_SEND_COUNTDOWN_MS / 1000);
 		this.countdownRemaining = totalSeconds;
-		this.updateSendBtnCountdown();
+
+		const parent = this.sendBtn.parentElement;
+		const pill = parent.createDiv({ cls: "co-countdown" });
+		pill.createDiv({ cls: "co-countdown-dot" });
+		pill.createSpan({ cls: "co-countdown-label", text: `Auto-send in ${totalSeconds}s` });
+		const cancelBtn = pill.createEl("button", { cls: "icon-btn", text: "✕" });
+		cancelBtn.addEventListener("click", () => this.cancelCountdown());
+
+		parent.insertBefore(pill, this.sendBtn);
+		this.sendBtn.style.display = "none";
+		this.countdownEl = pill;
 
 		this.escHandler = (e: KeyboardEvent) => {
 			if (e.key === "Escape") this.cancelCountdown();
@@ -1309,9 +1340,11 @@ export class TerminalView extends ItemView {
 				this.cancelCountdown();
 				void this.sendNext();
 			} else {
-				this.updateSendBtnCountdown();
+				this.updateCountdownLabel();
 			}
 		}, 1000);
+
+		this.app.workspace.trigger("claude-orchestrator:countdown-tick");
 	}
 
 	getCountdownRemaining(): number {
@@ -1328,9 +1361,10 @@ export class TerminalView extends ItemView {
 			this.escHandler = null;
 		}
 		this.countdownRemaining = 0;
+		this.countdownEl?.remove();
+		this.countdownEl = null;
 		if (this.sendBtn) {
-			this.sendBtn.textContent = "Send next ▶";
-			this.sendBtn.classList.remove("co-countdown-active");
+			this.sendBtn.style.display = "";
 		}
 		this.app.workspace.trigger("claude-orchestrator:countdown-tick");
 	}
@@ -1367,10 +1401,9 @@ export class TerminalView extends ItemView {
 		this.playSound();
 	}
 
-	private updateSendBtnCountdown(): void {
-		if (!this.sendBtn) return;
-		this.sendBtn.textContent = `Cancel (${this.countdownRemaining}s)`;
-		this.sendBtn.classList.add("co-countdown-active");
+	private updateCountdownLabel(): void {
+		const label = this.countdownEl?.querySelector(".co-countdown-label");
+		if (label) label.textContent = `Auto-send in ${this.countdownRemaining}s`;
 		this.app.workspace.trigger("claude-orchestrator:countdown-tick");
 	}
 
@@ -1436,6 +1469,7 @@ export class TerminalView extends ItemView {
 		this.queuePanel = null;
 		this.queueList = null;
 		this.sendBtn = null;
+		this.countdownEl = null;
 		this.cancelCountdown();
 		this.sessionNote = null;
 		this.pinLabel = null;

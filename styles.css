@@ -776,24 +776,36 @@
 }
 
 .co-countdown {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
-    background: var(--co-bg-card-focused);
-    border: 1px solid var(--accent);
-    border-radius: 4px;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--s-danger-bg);
+    border: 1px solid var(--s-danger);
+    color: var(--s-danger);
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+.co-countdown-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--s-danger);
+    animation: co-blink 1s step-end infinite;
+}
+.co-countdown .icon-btn {
+    width: 18px;
+    height: 18px;
     font-size: 11px;
-    color: var(--s-auto);
-    margin-top: 4px;
+    color: var(--s-danger);
+    border-radius: 3px;
 }
-.co-countdown-active {
-    color: var(--s-danger) !important;
-    border-color: var(--s-danger) !important;
-}
-.co-countdown-cancel {
-    font-size: 10px !important;
-    padding: 1px 6px !important;
+.co-countdown .icon-btn:hover {
+    background: color-mix(in oklab, var(--s-danger) 25%, transparent);
+    color: #fff;
 }
 
 .segmented {
@@ -1004,7 +1016,7 @@
 .co-sm-status-off { color: #555; }
 .co-sm-status-idle { color: #888; }
 .co-sm-status-running { color: var(--s-running); }
-.co-sm-status-waiting_for_user { color: #e8a838; }
+.co-sm-status-waiting_for_user { color: var(--s-ask); animation: co-pulse 1.4s ease-in-out infinite; }
 
 .co-sm-card-top-actions {
     display: flex;
@@ -1302,6 +1314,53 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Ask banner (waiting_for_user) */
+.co-ask-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 12px 0;
+    padding: 8px 10px;
+    background: color-mix(in oklab, var(--s-ask) 12%, var(--co-bg-elevated));
+    border: 1px solid color-mix(in oklab, var(--s-ask) 45%, transparent);
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--co-text);
+}
+.co-ask-banner-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--s-ask);
+    box-shadow: 0 0 0 4px var(--s-ask-halo);
+    animation: co-pulse 1.4s ease-in-out infinite;
+    flex-shrink: 0;
+}
+.co-ask-banner-text {
+    flex: 1;
+    color: var(--co-text-body);
+}
+.co-ask-banner-text strong {
+    color: var(--s-ask);
+    font-weight: 600;
+    margin-right: 4px;
+}
+
+/* Terminal asking border */
+.claude-orchestrator-term-host[data-ask="true"] {
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--s-ask) 35%, transparent);
+}
+
+/* Animations */
+@keyframes co-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 transparent; }
+    50% { box-shadow: 0 0 0 4px var(--s-ask-halo); }
+}
+@keyframes co-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
 }
 
 /* === xterm.js scrollbar customization === */
