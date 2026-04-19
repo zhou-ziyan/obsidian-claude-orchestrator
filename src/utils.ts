@@ -664,10 +664,10 @@ export function pinLabelText(pinnedNote: string | null): string {
 export function sessionStatusDisplay(
 	hasPanel: boolean,
 	status: string,
-): { cls: string; symbol: string } {
-	if (!hasPanel) return { cls: "co-sm-status co-sm-status-off", symbol: "○" };
-	const symbol = status === "running" ? "▶" : status === "waiting_for_user" ? "⏸" : "○";
-	return { cls: `co-sm-status co-sm-status-${status}`, symbol };
+): { cls: string; dataStatus: string } {
+	if (!hasPanel) return { cls: "co-sm-status-dot", dataStatus: "off" };
+	const dataStatus = status === "running" ? "running" : status === "waiting_for_user" ? "waiting_for_user" : "idle";
+	return { cls: "co-sm-status-dot", dataStatus };
 }
 
 export type ThemeName = "terminal" | "obsidian";

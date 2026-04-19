@@ -453,8 +453,9 @@ export class SessionManagerView extends ItemView {
 		const topRow = card.createDiv({ cls: "co-sm-card-top" });
 
 		const nameRow = topRow.createDiv({ cls: "co-sm-card-name" });
-		const { cls: statusCls, symbol: statusSymbol } = sessionStatusDisplay(session.hasPanel, session.status);
-		nameRow.createSpan({ cls: statusCls, text: statusSymbol });
+		const { cls: statusCls, dataStatus } = sessionStatusDisplay(session.hasPanel, session.status);
+		const statusDot = nameRow.createDiv({ cls: statusCls });
+		statusDot.dataset.s = dataStatus;
 		const displayLabel = session.displayName || session.name.replace(/-(\d+)$/, " #$1");
 		const nameSpan = nameRow.createSpan({ text: displayLabel });
 		nameSpan.addEventListener("dblclick", (e) => {
@@ -534,39 +535,38 @@ export class SessionManagerView extends ItemView {
 		if (session.pinnedNote) {
 			const pinRow = card.createDiv({ cls: "co-sm-card-pin" });
 			const noteName = session.pinnedNote.split("/").pop()?.replace(/\.md$/, "") ?? session.pinnedNote;
-			pinRow.createSpan({ text: `📌 ${noteName}` });
+			pinRow.textContent = noteName;
 		}
 
-		// Info row: queue count + last activity + idle badge
-		const infoRow = card.createDiv({ cls: "co-sm-card-info" });
-		if (idle) {
-			infoRow.createSpan({ cls: "co-sm-idle-badge", text: "\u23F3 idle" });
-		}
+		// Meta row: mode · queue badge · relative time
+		const metaRow = card.createDiv({ cls: "co-sm-card-meta" });
 		if (session.hasNote) {
-			infoRow.createSpan({
-				cls: "co-sm-badge",
-				text: `Queue: ${session.queueCount}`,
-			});
-			infoRow.createSpan({
-				cls: `co-sm-badge co-sm-mode-${session.queueMode}`,
-				text: queueModeLabel(session.queueMode),
-			});
+			const modeEl = metaRow.createSpan({ cls: "co-sm-card-mode" });
+			modeEl.dataset.mode = session.queueMode;
+			modeEl.textContent = queueModeLabel(session.queueMode).toUpperCase();
+
+			metaRow.createSpan({ cls: "co-sm-card-dot-sep", text: "·" });
+
+			const queueBadge = metaRow.createSpan({ cls: "co-sm-card-queue-badge" });
+			queueBadge.textContent = `${session.queueCount}`;
+			if (session.queueCount > 0) queueBadge.dataset.nonzero = "true";
+
 			if (session.lastActivity) {
-				infoRow.createSpan({
-					cls: "co-sm-time",
+				metaRow.createSpan({
+					cls: "co-sm-card-time",
 					text: formatRelativeTime(session.lastActivity),
 				});
 			}
 		} else {
-			infoRow.createSpan({
+			metaRow.createSpan({
 				cls: "co-sm-badge co-sm-unmanaged",
 				text: "no session note",
 			});
 		}
 
-		// Message preview
+		// Note preview (italic gray)
 		if (session.preview) {
-			const previewEl = card.createDiv({ cls: "co-sm-preview" });
+			const previewEl = card.createDiv({ cls: "co-sm-card-note" });
 			previewEl.textContent = session.preview;
 		}
 
@@ -729,17 +729,40 @@ export class SessionManagerView extends ItemView {
 	}
 
 	private showInlineRename(nameSpan: HTMLElement, session: SessionInfo) {
+		const card = nameSpan.closest<HTMLElement>(".co-sm-card");
+		if (!card) return;
+		card.dataset.renaming = "true";
+
 		const current = session.displayName || "";
 		const input = document.createElement("input");
 		input.type = "text";
 		input.value = current;
 		input.placeholder = session.name.replace(/-(\d+)$/, " #$1");
-		input.classList.add("co-sm-form-input", "co-sm-rename-input");
+		input.classList.add("co-sm-card-rename");
 		nameSpan.replaceWith(input);
 		input.focus();
 		input.select();
 
+		const hint = card.createDiv({ cls: "co-sm-card-rename-hint", text: "↵ save · Esc cancel" });
+
+		const topActions = card.querySelector(".co-sm-card-top-actions");
+		const originalButtons = topActions ? Array.from(topActions.children) as HTMLElement[] : [];
+		originalButtons.forEach(b => b.classList.add("hidden"));
+
+		const confirmBtn = topActions?.createEl("button", { cls: "icon-btn", text: "✓" });
+		if (confirmBtn) confirmBtn.dataset.tone = "success";
+		const cancelBtn = topActions?.createEl("button", { cls: "icon-btn", text: "✕" });
+
+		const cleanup = () => {
+			delete card.dataset.renaming;
+			hint.remove();
+			confirmBtn?.remove();
+			cancelBtn?.remove();
+			originalButtons.forEach(b => b.classList.remove("hidden"));
+		};
+
 		const save = () => {
+			cleanup();
 			const newName = input.value.trim();
 			const project = projectFromSessionName(session.name, this.plugin.settings.projects);
 			if (project) {
@@ -760,58 +783,63 @@ export class SessionManagerView extends ItemView {
 			}
 		};
 
+		const cancel = () => {
+			cleanup();
+			void this.refresh();
+		};
+
+		confirmBtn?.addEventListener("click", (e) => { e.stopPropagation(); save(); });
+		cancelBtn?.addEventListener("click", (e) => { e.stopPropagation(); cancel(); });
 		input.addEventListener("keydown", (e) => {
 			if (e.key === "Enter") { e.preventDefault(); save(); }
-			if (e.key === "Escape") { e.preventDefault(); void this.refresh(); }
+			if (e.key === "Escape") { e.preventDefault(); cancel(); }
 		});
 		input.addEventListener("blur", () => save());
 	}
 
 	private showKillConfirm(card: HTMLElement, sessionName: string) {
-		// Remove any existing confirm portal
-		card.querySelector(".co-sm-kill-portal")?.remove();
+		card.querySelector(".co-sm-card-confirm")?.remove();
+		card.dataset.confirming = "kill";
 
-		const portal = card.createDiv({ cls: "co-sm-kill-portal" });
-		portal.createSpan({
-			cls: "co-sm-kill-msg",
-			text: `Kill "${sessionName}"? This will terminate all processes.`,
-		});
-		const portalActions = portal.createDiv({ cls: "co-sm-kill-portal-actions" });
+		const confirm = card.createDiv({ cls: "co-sm-card-confirm" });
+		const msg = confirm.createDiv({ cls: "co-sm-card-confirm-msg" });
+		msg.appendText("Kill ");
+		msg.createSpan({ cls: "co-sm-card-confirm-name", text: `"${sessionName}"` });
+		msg.appendText("? This will terminate all processes.");
 
-		const cancelBtn = portalActions.createEl("button", {
-			cls: "btn",
-			text: "Cancel",
-		});
+		const actions = confirm.createDiv({ cls: "co-sm-card-confirm-actions" });
+
+		const cancelBtn = actions.createEl("button", { cls: "btn", text: "Cancel" });
+		cancelBtn.dataset.variant = "secondary";
 		cancelBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
-			portal.remove();
+			this.dismissKillConfirm(card);
 		});
 
-		const closeTabBtn = portalActions.createEl("button", {
-			cls: "btn",
-			text: "Close tab",
-		});
+		const closeTabBtn = actions.createEl("button", { cls: "btn", text: "Close tab" });
+		closeTabBtn.dataset.variant = "secondary";
 		closeTabBtn.title = "Close terminal tab but keep tmux session running";
 		closeTabBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
-			portal.remove();
+			this.dismissKillConfirm(card);
 			void this.closeSessionTab(sessionName);
 		});
 
-		const confirmBtn = portalActions.createEl("button", {
-			cls: "btn co-sm-kill-confirm",
-			text: "Kill session",
-		});
-		confirmBtn.dataset.variant = "primary";
-		confirmBtn.dataset.tone = "danger";
-		confirmBtn.addEventListener("click", (e) => {
+		const killBtn = actions.createEl("button", { cls: "btn", text: "Kill session" });
+		killBtn.dataset.variant = "primary";
+		killBtn.dataset.tone = "danger";
+		killBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
-			portal.remove();
+			this.dismissKillConfirm(card);
 			void this.killSession(sessionName);
 		});
 
-		// Auto-dismiss after 8 seconds
-		setTimeout(() => portal.remove(), 8000);
+		setTimeout(() => this.dismissKillConfirm(card), 8000);
+	}
+
+	private dismissKillConfirm(card: HTMLElement) {
+		delete card.dataset.confirming;
+		card.querySelector(".co-sm-card-confirm")?.remove();
 	}
 
 	highlightSession(sessionName: string | null) {

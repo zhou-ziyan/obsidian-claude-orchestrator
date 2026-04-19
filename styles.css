@@ -1024,55 +1024,53 @@
     margin-left: auto;
 }
 
+/* --- Session Manager card --- */
 .co-sm-card {
-    margin: 1px 6px;
-    padding: 6px 8px;
+    position: relative;
+    margin: 2px 8px;
+    padding: 8px 10px;
     background: var(--co-bg-card);
-    border-radius: 4px;
+    border-radius: 6px;
     font-size: 12px;
+    cursor: pointer;
+    transition: background 0.12s, transform 0.12s;
 }
 .co-sm-card:hover {
     background: var(--co-bg-card-hover);
 }
 .co-sm-card-focused {
     background: var(--co-bg-card-focused);
-    border-left: 2px solid var(--accent);
-    padding-left: 6px;
 }
 .co-sm-card-focused:hover {
     background: var(--co-bg-card-hover);
 }
 
+.co-sm-card-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
 .co-sm-card-name {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
     font-weight: 500;
     color: var(--co-text);
-    margin-bottom: 2px;
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
-.co-sm-rename-input {
-    font-size: 12px;
-    padding: 1px 4px;
-    min-width: 80px;
-    max-width: 180px;
-}
-
-.co-sm-status {
-    font-size: 12px;
-    color: var(--co-text-dim);
-    flex-shrink: 0;
-    line-height: 1;
-}
-.co-sm-status-off { color: #555; }
-.co-sm-status-idle { color: #888; }
-.co-sm-status-running { color: var(--s-running); }
-.co-sm-status-waiting_for_user { color: var(--s-ask); animation: co-pulse 1.4s ease-in-out infinite; }
-
 .co-sm-card-top-actions {
     display: flex;
-    gap: 2px;
-    flex-shrink: 0;
+    gap: 1px;
+    opacity: 0;
+    transition: opacity 0.12s;
+}
+.co-sm-card:hover .co-sm-card-top-actions {
+    opacity: 1;
 }
 .co-sm-hover-btn {
     opacity: 0;
@@ -1082,27 +1080,69 @@
     opacity: 1;
 }
 
-.co-sm-badge.co-sm-mode-manual { color: var(--co-text-dim); }
-.co-sm-badge.co-sm-mode-listen { color: var(--s-listen); }
-.co-sm-badge.co-sm-mode-auto { color: var(--s-auto); }
-
-.co-sm-card-pin {
-    font-size: 11px;
-    color: var(--co-text-pin);
-    padding-left: 13px;
-    margin-bottom: 2px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+/* Status dot */
+.co-sm-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--co-text-dim);
 }
-.co-sm-card-info {
+.co-sm-status-dot[data-s="running"] {
+    background: var(--s-running);
+    box-shadow: 0 0 0 3px var(--s-running-halo);
+}
+.co-sm-status-dot[data-s="idle"] {
+    background: var(--s-idle);
+}
+.co-sm-status-dot[data-s="waiting_for_user"] {
+    background: var(--s-ask);
+    animation: co-pulse 1.4s ease-in-out infinite;
+}
+.co-sm-status-dot[data-s="off"] {
+    background: var(--co-text-dim);
+}
+
+/* Meta row: mode · queue badge · time */
+.co-sm-card-meta {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding-left: 13px;
-    margin-bottom: 4px;
+    margin-top: 4px;
+    padding-left: 15px;
+    font-size: 11px;
+    color: var(--co-text-muted);
 }
-
+.co-sm-card-mode {
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    font-size: 10px;
+}
+.co-sm-card-mode[data-mode="auto"]   { color: var(--s-auto); }
+.co-sm-card-mode[data-mode="listen"] { color: var(--s-listen); }
+.co-sm-card-mode[data-mode="manual"] { color: var(--co-text-faint); }
+.co-sm-card-dot-sep {
+    color: var(--co-text-dim);
+}
+.co-sm-card-queue-badge {
+    padding: 1px 6px;
+    font-size: 10px;
+    border-radius: 8px;
+    background: var(--co-bg-elevated);
+    color: var(--co-text-body);
+    font-variant-numeric: tabular-nums;
+}
+.co-sm-card-queue-badge[data-nonzero="true"] {
+    background: var(--badge-queue-bg);
+    color: var(--badge-queue-fg);
+}
+.co-sm-card-time {
+    font-size: 11px;
+    color: var(--co-text-faint);
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+}
 .co-sm-badge {
     font-size: 11px;
     color: var(--co-text-muted);
@@ -1112,30 +1152,112 @@
     font-style: italic;
 }
 
-.co-sm-time {
+/* Pin & note preview */
+.co-sm-card-pin {
+    padding-left: 15px;
+    margin-top: 3px;
     font-size: 11px;
-    color: var(--co-text-faint);
+    color: var(--co-text-pin);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.co-sm-card-pin::before {
+    content: "📌 ";
+    opacity: 0.7;
+}
+.co-sm-card-note {
+    padding-left: 15px;
+    margin-top: 3px;
+    font-size: 11px;
+    color: var(--co-text-preview);
+    font-style: italic;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
+/* Card actions */
 .co-sm-card-actions {
     display: flex;
     gap: 4px;
-    padding-left: 13px;
+    padding-left: 15px;
 }
-
-.co-sm-card-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-}
-
 .co-sm-card-actions .btn {
     padding: 1px 8px;
     font-size: 11px;
 }
 
+/* Kill confirm state */
+.co-sm-card[data-confirming="kill"] {
+    border: 1px solid var(--s-danger);
+    background: color-mix(in oklab, var(--s-danger) 6%, var(--co-bg-elevated));
+}
+.co-sm-card[data-confirming="kill"].co-sm-card-focused::before {
+    background: var(--s-danger) !important;
+}
+.co-sm-card-confirm {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 9px 10px;
+    margin: 6px -10px -6px;
+    border-top: 1px solid color-mix(in oklab, var(--s-danger) 40%, transparent);
+    background: color-mix(in oklab, var(--s-danger) 10%, transparent);
+}
+.co-sm-card-confirm-msg {
+    font-size: 11px;
+    color: var(--s-danger);
+    line-height: 1.35;
+}
+.co-sm-card-confirm-name {
+    color: var(--co-text);
+    font-weight: 600;
+}
+.co-sm-card-confirm-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+.co-sm-card-confirm-actions .btn {
+    padding: 4px 10px;
+    font-size: 11px;
+    line-height: 1.2;
+}
+
+/* Rename state */
+.co-sm-card[data-renaming="true"] {
+    background: var(--co-bg-elevated);
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+.co-sm-card-rename {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 3px 6px;
+    background: var(--co-bg-input);
+    border: 1px solid var(--accent);
+    color: var(--co-text);
+    border-radius: 4px;
+    outline: none;
+}
+.co-sm-card-rename-hint {
+    margin-top: 4px;
+    padding-left: 15px;
+    font-size: 10px;
+    color: var(--co-text-faint);
+    letter-spacing: 0.3px;
+}
+.co-sm-card[data-renaming="true"] .co-sm-card-top-actions {
+    opacity: 1;
+}
+
+/* Settings panel */
 .co-sm-settings {
-    padding: 4px 8px 4px 13px;
+    padding: 4px 8px 4px 15px;
     margin-bottom: 2px;
     border-top: 1px solid var(--co-border);
     font-size: 11px;
@@ -1169,37 +1291,6 @@
     margin-top: 4px;
     padding: 1px 8px;
     font-size: 11px;
-}
-
-.co-sm-kill-portal {
-    margin-top: 6px;
-    padding: 8px;
-    background: var(--co-bg-danger);
-    border: 1px solid var(--s-danger);
-    border-radius: 4px;
-}
-
-.co-sm-kill-msg {
-    display: block;
-    font-size: 11px;
-    color: var(--s-danger);
-    margin-bottom: 6px;
-    line-height: 1.4;
-}
-
-.co-sm-kill-portal-actions {
-    display: flex;
-    gap: 6px;
-    justify-content: flex-end;
-}
-
-.co-sm-kill-confirm {
-    color: #fff !important;
-    background: var(--s-danger) !important;
-    border-color: var(--s-danger) !important;
-}
-.co-sm-kill-confirm:hover {
-    background: var(--s-danger) !important;
 }
 
 
@@ -1354,17 +1445,6 @@
     font-size: 11px;
     color: var(--s-idle);
     flex-shrink: 0;
-}
-
-/* Session card message preview */
-.co-sm-preview {
-    font-size: 11px;
-    color: var(--co-text-preview);
-    padding-left: 13px;
-    margin-bottom: 2px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 /* Ask banner (waiting_for_user) */
