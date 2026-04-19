@@ -193,6 +193,12 @@ export class TerminalView extends ItemView {
 		return this.pinnedNote;
 	}
 
+	updatePinnedNote(newPath: string): void {
+		this.pinnedNote = newPath;
+		this.updatePinLabel();
+		void this.saveSessionNote();
+	}
+
 	focusTerminal(): void {
 		// If queue panel is active, focus the input box instead of terminal.
 		const queueInput = this.queuePanel?.querySelector(".co-queue-input:not(.co-queue-edit-input)") as HTMLElement | null;

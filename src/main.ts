@@ -1,7 +1,7 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, parseSessionNote, serializeSessionNote, ensureStopHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, loadSlashCommands, BUILTIN_SLASH_COMMANDS } from "./utils";
+import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, parseSessionNote, serializeSessionNote, ensureStopHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, loadSlashCommands, BUILTIN_SLASH_COMMANDS, updatePinnedNotePath, sessionDirPath } from "./utils";
 import type { ProjectRegistry, SlashCommandEntry } from "./utils";
 import { StopHookWatcher } from "./stop-hook-watcher";
 import { findTerminalLeafBySession, findTerminalLeafByProject, collectOpenSessionNames } from "./workspace-helpers";
@@ -132,6 +132,13 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		);
 
 		this.addSettingTab(new OrchestratorSettingTab(this.app, this));
+
+		// Update pinnedNote references when files are renamed/moved
+		this.registerEvent(
+			this.app.vault.on("rename", (file, oldPath) => {
+				void this.onFileRenamed(oldPath, file.path);
+			}),
+		);
 
 		// Auto-open Session Manager in left sidebar on startup
 		this.app.workspace.onLayoutReady(() => {
@@ -412,6 +419,42 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 	private routeStopSignalToView(tmuxSession: string, reason: "done" | "asking"): void {
 		const match = findTerminalLeafBySession(this.app.workspace, tmuxSession);
 		if (match) match.view.onStopSignal(reason);
+	}
+
+	private async onFileRenamed(oldPath: string, newPath: string): Promise<void> {
+		if (!oldPath.endsWith(".md")) return;
+
+		let updated = false;
+
+		// Scan all session notes and update pinnedNote references
+		for (const config of Object.values(this.settings.projects)) {
+			const dir = sessionDirPath(config.vaultFolder);
+			const sessionsFolder = this.app.vault.getAbstractFileByPath(dir);
+			if (!(sessionsFolder instanceof TFolder)) continue;
+
+			for (const child of sessionsFolder.children) {
+				if (!(child instanceof TFile) || !child.path.endsWith(".md")) continue;
+				const content = await this.app.vault.read(child);
+				const sessionName = child.basename;
+				const result = updatePinnedNotePath(content, sessionName, oldPath, newPath);
+				if (result !== null) {
+					await this.app.vault.modify(child, result);
+					updated = true;
+				}
+			}
+		}
+
+		// Update in-memory state of open TerminalViews
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
+			const view = leaf.view;
+			if (view instanceof TerminalView && view.getPinnedNote() === oldPath) {
+				view.updatePinnedNote(newPath);
+			}
+		}
+
+		if (updated) {
+			this.refreshSessionManager();
+		}
 	}
 
 	// --- Shared helpers ---
