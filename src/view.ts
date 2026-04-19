@@ -106,7 +106,7 @@ export class TerminalView extends ItemView {
 	private stateSeenPreOpen = false;
 	private host: HTMLElement | null = null;
 	private onTerminalFocus?: (project: string, sessionName: string) => void;
-	private getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[] };
+	private getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean };
 	private historyPanel: HTMLElement | null = null;
 	private queuePanel: HTMLElement | null = null;
 	private queueList: HTMLElement | null = null;
@@ -144,7 +144,7 @@ export class TerminalView extends ItemView {
 		leaf: WorkspaceLeaf,
 		pluginDir: string,
 		onTerminalFocus?: (project: string, sessionName: string) => void,
-		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[] },
+		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean },
 	) {
 		super(leaf);
 		this.pluginDir = pluginDir;
@@ -1274,6 +1274,10 @@ export class TerminalView extends ItemView {
 		} else if (action === "notify") {
 			this.notifyUser(`Claude finished — ${this.sessionNote.queue.length} item(s) in queue`);
 		}
+
+		if (stopReason === "asking" && this.getSettings?.().playSoundOnAsking) {
+			this.playSound();
+		}
 	}
 
 	private startCountdown(): void {
@@ -1340,13 +1344,17 @@ export class TerminalView extends ItemView {
 		}
 	}
 
+	private playSound(): void {
+		const { execFile } = require("child_process") as typeof import("child_process");
+		execFile("afplay", ["/System/Library/Sounds/Glass.aiff"], () => {});
+	}
+
 	private notifyUser(message: string): void {
 		new Notice(message);
 		try {
 			new Notification("Claude Orchestrator", { body: message });
 		} catch { /* Notification API may not be available */ }
-		const { execFile } = require("child_process") as typeof import("child_process");
-		execFile("afplay", ["/System/Library/Sounds/Glass.aiff"], () => {});
+		this.playSound();
 	}
 
 	private updateSendBtnCountdown(): void {

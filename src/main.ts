@@ -14,6 +14,7 @@ export interface OrchestratorSettings {
 	projects: ProjectRegistry;
 	quickReplyKeys: string[];
 	sessionOrder: Record<string, string[]>;
+	playSoundOnAsking: boolean;
 }
 
 const DEFAULT_SETTINGS: OrchestratorSettings = {
@@ -21,6 +22,7 @@ const DEFAULT_SETTINGS: OrchestratorSettings = {
 	projects: {},
 	quickReplyKeys: [...QUICK_REPLY_KEYS],
 	sessionOrder: {},
+	playSoundOnAsking: true,
 };
 
 export default class ClaudeOrchestratorPlugin extends Plugin {
@@ -595,6 +597,18 @@ class OrchestratorSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.quickReplyKeys.join(", "))
 					.onChange(async (value) => {
 						this.plugin.settings.quickReplyKeys = parseQuickReplyKeys(value);
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Play sound when asking")
+			.setDesc("Play a chime when Claude stops and is waiting for your input.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.playSoundOnAsking)
+					.onChange(async (value) => {
+						this.plugin.settings.playSoundOnAsking = value;
 						await this.plugin.saveSettings();
 					}),
 			);
