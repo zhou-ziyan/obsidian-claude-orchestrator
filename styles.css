@@ -446,30 +446,46 @@
 
 .co-history-item {
     display: flex;
-    gap: 4px;
-    padding: 2px 0;
-    font-size: 12px;
-    color: var(--co-text-body);
     align-items: flex-start;
+    gap: 8px;
+    padding: 2px 12px;
+    font-size: 11px;
+    color: var(--co-text-body);
+    line-height: 1.4;
+}
+.co-history-item:hover {
+    background: var(--co-bg-hover);
 }
 
 .co-history-icon {
-    width: 14px;
+    width: 12px;
     text-align: center;
     flex-shrink: 0;
+    padding-top: 1px;
+    font-size: 10px;
 }
 .co-history-icon.co-completed { color: var(--s-done); }
-.co-history-icon.co-in-progress { color: var(--s-ask); }
+.co-history-icon.co-in-progress { color: var(--s-running); }
 
 .co-resize-handle {
     flex-shrink: 0;
     height: 5px;
-    background: var(--co-bg-elevated);
+    background: transparent;
+    border-top: 1px solid var(--co-border);
+    border-bottom: 1px solid var(--co-border);
     cursor: row-resize;
-    transition: background 0.1s;
+    position: relative;
 }
-.co-resize-handle:hover {
-    background: var(--co-border-strong);
+.co-resize-handle::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 24px;
+    height: 1px;
+    background: var(--co-text-faint);
+    opacity: 0.5;
 }
 
 .co-queue-panel {
@@ -587,44 +603,50 @@
 }
 
 .co-queue-add {
-    display: flex;
-    gap: 4px;
-    padding: 4px 8px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px;
+    padding: 8px 12px 10px;
     background: var(--co-bg);
-    border-top: 1px solid var(--co-border-subtle);
+    border-top: 1px solid var(--co-border);
     position: relative;
 }
 
 .co-ac-dropdown {
     position: absolute;
     bottom: 100%;
-    left: 8px;
-    right: 32px;
+    left: 12px;
+    right: 80px;
     max-height: 200px;
     overflow-y: auto;
     background: var(--co-bg-elevated);
     border: 1px solid var(--co-border-strong);
-    border-radius: 4px;
+    border-radius: 6px;
     z-index: 10;
-    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+    margin-bottom: 6px;
+    box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.5);
 }
 
 .co-ac-item {
     display: flex;
     align-items: baseline;
-    gap: 8px;
-    padding: 4px 8px;
+    gap: 10px;
+    padding: 5px 10px;
     font-size: 12px;
     color: var(--co-text-secondary);
     cursor: pointer;
 }
 .co-ac-cmd {
-    font-family: monospace;
+    font-family: ui-monospace, Menlo, monospace;
+    color: var(--co-text);
+    font-weight: 500;
+    min-width: 56px;
     flex-shrink: 0;
 }
 .co-ac-desc {
     font-size: 11px;
-    color: var(--co-text-faint);
+    color: var(--co-text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -633,31 +655,31 @@
     background: var(--co-bg-hover);
 }
 .co-ac-item.co-ac-selected {
-    background: var(--co-bg-card-focused);
+    background: var(--autocomplete-selected);
 }
 .co-ac-item.co-ac-selected .co-ac-cmd {
     color: var(--accent);
 }
 
 .co-queue-input {
-    flex: 1;
+    width: 100%;
+    min-height: 32px;
+    max-height: 140px;
+    resize: vertical;
     background: var(--co-bg-input);
     border: 1px solid var(--co-border);
-    color: var(--co-text-secondary);
-    padding: 3px 6px;
-    font-size: 12px;
-    font-family: inherit;
-    border-radius: 3px;
-    resize: none;
+    border-radius: 6px;
+    color: var(--co-text);
+    font: inherit;
+    padding: 6px 10px;
+    line-height: 1.4;
     overflow-x: hidden;
     overflow-y: auto;
-    line-height: 1.4;
-    min-height: 22px;
-    max-height: 200px;
 }
 .co-queue-input:focus {
-    border-color: var(--accent);
     outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-halo);
 }
 
 .btn {
@@ -728,17 +750,13 @@
 .btn[data-selected="true"][data-tone="listen"] { border-color: var(--s-listen); background: color-mix(in oklab, var(--s-listen) 14%, var(--co-bg-elevated)); }
 
 .co-timestamp {
-    font-size: 10px;
+    font-variant-numeric: tabular-nums;
     color: var(--co-text-faint);
-    background: var(--co-bg-input);
-    padding: 1px 4px;
-    border-radius: 3px;
-    white-space: nowrap;
+    font-size: 10px;
     flex-shrink: 0;
-    width: 36px;
-    height: 16px;
-    line-height: 16px;
-    text-align: center;
+    padding-top: 1px;
+    width: 32px;
+    white-space: nowrap;
 }
 
 .co-empty {
