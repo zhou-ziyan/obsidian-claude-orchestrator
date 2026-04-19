@@ -686,7 +686,10 @@ export class TerminalView extends ItemView {
 		this.fitAddon = new FitAddon();
 		this.term.loadAddon(this.fitAddon);
 		this.term.open(this.host);
-		requestAnimationFrame(() => this.fitAddon?.fit());
+		requestAnimationFrame(() => {
+			this.fitAddon?.fit();
+			requestAnimationFrame(() => this.fitAddon?.fit());
+		});
 
 		this.term.attachCustomKeyEventHandler((ev) =>
 			handleTerminalScrollKey(ev.key, (n) => this.term?.scrollPages(n)),

@@ -390,6 +390,7 @@
 
 .claude-orchestrator-term-host {
     position: relative;
+    background: var(--co-xterm-bg);
 }
 
 .claude-orchestrator-term-host::after {
