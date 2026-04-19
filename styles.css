@@ -1014,55 +1014,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.co-sm-card-notes {
-    font-size: 11px;
-    color: var(--co-text-preview);
-    padding-left: 13px;
-    margin-bottom: 2px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-style: italic;
-}
-.co-sm-notes-editable {
-    cursor: pointer;
-}
-.co-sm-notes-editable:hover {
-    color: var(--co-text-primary);
-}
-.co-sm-notes-placeholder {
-    opacity: 0.5;
-    display: none;
-}
-.co-sm-card:hover .co-sm-notes-placeholder {
-    display: block;
-}
-.co-sm-notes-editing {
-    display: flex;
-    flex-direction: column;
-    white-space: normal;
-    overflow: visible;
-}
-.co-sm-notes-textarea {
-    width: 100%;
-    font-size: 11px;
-    font-family: inherit;
-    font-style: italic;
-    border: 1px solid var(--co-border);
-    border-radius: 3px;
-    background: var(--co-bg-input);
-    color: var(--co-text-primary);
-    padding: 4px 6px;
-    resize: vertical;
-    min-height: 40px;
-}
-.co-sm-notes-save {
-    align-self: flex-end;
-    margin-top: 2px;
-    font-size: 12px;
-    color: var(--accent);
-}
-
 .co-sm-card-info {
     display: flex;
     align-items: center;

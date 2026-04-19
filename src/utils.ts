@@ -193,7 +193,6 @@ export interface SessionInfo {
 	lastActivity: string | null;
 	tmuxActivity: number;
 	preview: string | null;
-	notesSummary: string | null;
 	displayName: string | null;
 	status: SessionStatus;
 	queueMode: QueueMode;
@@ -228,7 +227,7 @@ export function projectFromSessionName(
 export function groupSessionsByProject(
 	allSessions: { name: string; activity: number }[],
 	openSessionNames: Set<string>,
-	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null; notesSummary: string | null; displayName: string | null; status: SessionStatus; queueMode: QueueMode }>,
+	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null; displayName: string | null; status: SessionStatus; queueMode: QueueMode }>,
 	projects: ProjectRegistry,
 ): SessionGroup[] {
 	const projectMap = new Map<string, SessionInfo[]>();
@@ -246,7 +245,6 @@ export function groupSessionsByProject(
 			lastActivity: nd?.lastActivity ?? null,
 			tmuxActivity: s.activity,
 			preview: nd?.preview ?? null,
-			notesSummary: nd?.notesSummary ?? null,
 			displayName: nd?.displayName ?? null,
 			status: nd?.status ?? "idle",
 			queueMode: nd?.queueMode ?? "manual",
