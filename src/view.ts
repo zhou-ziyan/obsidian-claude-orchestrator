@@ -27,6 +27,7 @@ import {
 	execTmux,
 	filterSlashCommands,
 	stripTimestamp,
+	handleTerminalScrollKey,
 } from "./utils";
 import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry } from "./utils";
 import { Terminal } from "@xterm/xterm";
@@ -619,6 +620,11 @@ export class TerminalView extends ItemView {
 					return;
 				}
 			}
+			if (e.key === "PageUp" || e.key === "PageDown") {
+				e.preventDefault();
+				this.term?.scrollPages(e.key === "PageUp" ? -1 : 1);
+				return;
+			}
 			if (e.key === "ArrowUp" && !e.shiftKey) {
 				if (historyPrefill("up")) { e.preventDefault(); return; }
 			}
@@ -647,6 +653,10 @@ export class TerminalView extends ItemView {
 		this.term.loadAddon(this.fitAddon);
 		this.term.open(this.host);
 		requestAnimationFrame(() => this.fitAddon?.fit());
+
+		this.term.attachCustomKeyEventHandler((ev) =>
+			handleTerminalScrollKey(ev.key, (n) => this.term?.scrollPages(n)),
+		);
 
 		this.themeObserver = new MutationObserver(() => {
 			const dark = document.body.classList.contains("theme-dark");
