@@ -1141,3 +1141,12 @@ export function ensureStopHookConfig(
 		content: JSON.stringify(settings, null, 2),
 	};
 }
+
+export function handleTerminalScrollKey(
+	key: string,
+	scrollPages: (n: number) => void,
+): boolean {
+	if (key === "PageUp") { scrollPages(-1); return false; }
+	if (key === "PageDown") { scrollPages(+1); return false; }
+	return true;
+}

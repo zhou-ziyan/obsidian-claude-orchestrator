@@ -64,6 +64,7 @@ import {
 	parseSkillMd,
 	BUILTIN_SLASH_COMMANDS,
 	stripTimestamp,
+	handleTerminalScrollKey,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote, SlashCommandEntry } from "../src/utils.ts";
 
@@ -2846,5 +2847,31 @@ describe("stripTimestamp", () => {
 
 	it("returns empty string for empty input", () => {
 		assert.equal(stripTimestamp(""), "");
+	});
+});
+
+// --- handleTerminalScrollKey ---
+
+describe("handleTerminalScrollKey", () => {
+	it("scrolls up on PageUp and returns false", () => {
+		const calls: number[] = [];
+		const result = handleTerminalScrollKey("PageUp", (n) => calls.push(n));
+		assert.equal(result, false);
+		assert.deepStrictEqual(calls, [-1]);
+	});
+
+	it("scrolls down on PageDown and returns false", () => {
+		const calls: number[] = [];
+		const result = handleTerminalScrollKey("PageDown", (n) => calls.push(n));
+		assert.equal(result, false);
+		assert.deepStrictEqual(calls, [1]);
+	});
+
+	it("returns true and does not scroll for regular keys", () => {
+		const calls: number[] = [];
+		for (const key of ["a", "Enter", "ArrowUp", "ArrowDown", "Escape", "Tab"]) {
+			assert.equal(handleTerminalScrollKey(key, (n) => calls.push(n)), true);
+		}
+		assert.deepStrictEqual(calls, []);
 	});
 });
