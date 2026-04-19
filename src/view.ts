@@ -130,13 +130,12 @@ export class TerminalView extends ItemView {
 		if (this.term && this.ptyProcess) {
 			try { this.ptyProcess.resize(this.term.cols, this.term.rows); } catch { /* ignore */ }
 		}
-		if (this.sessionName) {
-			this.refreshTmuxClient();
+		if (this.sessionName && this.term) {
+			void execTmux([
+				"resize-window", "-t", this.sessionName,
+				"-x", String(this.term.cols), "-y", String(this.term.rows),
+			]).catch(() => {});
 		}
-	}
-
-	private refreshTmuxClient(): void {
-		void execTmux(["refresh-client", "-t", this.sessionName!]).catch(() => {});
 	}
 
 	private debouncedFit = debounce(() => this.fitAndResize(), 150, true);
