@@ -411,7 +411,7 @@ export class TerminalView extends ItemView {
 		// Pin note
 		const pinGroup = headerRight.createDiv({ cls: "co-pin-group" });
 		const pinBtn = pinGroup.createEl("button", {
-			cls: "co-icon-btn",
+			cls: "icon-btn",
 			text: "📌",
 		});
 		this.pinLabel = pinGroup.createSpan({ cls: "co-pin-label" });
@@ -463,16 +463,18 @@ export class TerminalView extends ItemView {
 		const keys = this.getSettings?.().quickReplyKeys ?? [...QUICK_REPLY_KEYS];
 		for (const key of keys) {
 			const btn = quickReplyGroup.createEl("button", {
-				cls: "co-text-btn co-quick-reply-btn",
+				cls: "btn co-quick-reply-btn",
 				text: key,
 			});
+			btn.dataset.size = "sm";
 			btn.addEventListener("click", () => { void this.sendQuickReply(key); });
 		}
 
 		this.sendBtn = headerRight.createEl("button", {
-			cls: "co-text-btn",
+			cls: "btn",
 			text: "Send next ▶",
 		});
+		this.sendBtn.dataset.variant = "primary";
 		this.sendBtn.addEventListener("click", () => {
 			if (this.countdownTimer) {
 				this.cancelCountdown();
@@ -572,7 +574,7 @@ export class TerminalView extends ItemView {
 		input.addEventListener("input", updateAc);
 
 		const addBtn = addRow.createEl("button", {
-			cls: "co-icon-btn",
+			cls: "icon-btn",
 			text: "+",
 		});
 		const doAdd = () => {
@@ -1003,7 +1005,7 @@ export class TerminalView extends ItemView {
 
 			// Copy-to-queue button
 			const copyBtn = row.createEl("button", {
-				cls: "co-icon-btn co-history-copy-btn",
+				cls: "icon-btn co-history-copy-btn",
 			});
 			setIcon(copyBtn, "copy");
 			copyBtn.title = "Copy to queue";
@@ -1049,7 +1051,7 @@ export class TerminalView extends ItemView {
 		this.queueList.empty();
 
 		if (this.sendBtn) {
-			this.sendBtn.toggleClass("co-accent", this.sessionNote.queue.length > 0);
+			this.sendBtn.dataset.variant = this.sessionNote.queue.length > 0 ? "primary" : "secondary";
 		}
 
 		if (this.sessionNote.queue.length === 0) {
@@ -1099,7 +1101,7 @@ export class TerminalView extends ItemView {
 
 		if (idx > 0) {
 			const upBtn = actions.createEl("button", {
-				cls: "co-icon-btn co-move-btn",
+				cls: "icon-btn co-move-btn",
 				text: "▴",
 			});
 			upBtn.addEventListener("click", () => {
@@ -1114,7 +1116,7 @@ export class TerminalView extends ItemView {
 		}
 		if (this.sessionNote && idx < this.sessionNote.queue.length - 1) {
 			const downBtn = actions.createEl("button", {
-				cls: "co-icon-btn co-move-btn",
+				cls: "icon-btn co-move-btn",
 				text: "▾",
 			});
 			downBtn.addEventListener("click", () => {
@@ -1129,9 +1131,10 @@ export class TerminalView extends ItemView {
 		}
 
 		const editBtn = actions.createEl("button", {
-			cls: "co-icon-btn co-success",
+			cls: "icon-btn",
 			text: "✎",
 		});
+		editBtn.dataset.tone = "success";
 		editBtn.addEventListener("click", () => {
 			row.empty();
 			const tsMatch = text.match(/^(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] )/);
@@ -1153,9 +1156,10 @@ export class TerminalView extends ItemView {
 			});
 
 			const saveBtn = row.createEl("button", {
-				cls: "co-icon-btn co-success",
+				cls: "icon-btn",
 				text: "✓",
 			});
+			saveBtn.dataset.tone = "success";
 			const cancel = () => {
 				this.renderQueue();
 			};
@@ -1185,9 +1189,10 @@ export class TerminalView extends ItemView {
 		});
 
 		const removeBtn = actions.createEl("button", {
-			cls: "co-icon-btn co-danger",
+			cls: "icon-btn",
 			text: "×",
 		});
+		removeBtn.dataset.tone = "danger";
 		removeBtn.addEventListener("click", () => {
 			this.sessionNote?.queue.splice(idx, 1);
 			this.renderQueue();
