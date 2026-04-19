@@ -137,14 +137,14 @@ export class SessionManagerView extends ItemView {
 		header.createSpan({ cls: "co-sm-title", text: "Sessions" });
 		const headerActions = header.createDiv({ cls: "co-sm-header-actions" });
 		const refreshBtn = headerActions.createEl("button", {
-			cls: "co-icon-btn",
+			cls: "icon-btn",
 			text: "↻",
 		});
 		refreshBtn.title = "Refresh";
 		refreshBtn.addEventListener("click", () => { void this.refresh(); });
 
 		const addBtn = headerActions.createEl("button", {
-			cls: "co-icon-btn",
+			cls: "icon-btn",
 			text: "+",
 		});
 		addBtn.title = "Add project";
@@ -364,7 +364,7 @@ export class SessionManagerView extends ItemView {
 			const restorable = restorableSessionNames(group);
 			if (restorable.length > 0) {
 				const restoreBtn = groupHeader.createEl("button", {
-					cls: "co-icon-btn co-sm-gear",
+					cls: "icon-btn co-sm-gear",
 					text: "⧉",
 				});
 				restoreBtn.title = `Restore ${restorable.length} session(s)`;
@@ -379,7 +379,7 @@ export class SessionManagerView extends ItemView {
 			const panelCount = group.sessions.filter((s) => s.hasPanel).length;
 			if (panelCount >= 2) {
 				const gatherBtn = groupHeader.createEl("button", {
-					cls: "co-icon-btn co-sm-gear",
+					cls: "icon-btn co-sm-gear",
 					text: "⊞",
 				});
 				gatherBtn.title = "Gather terminals into one tab group";
@@ -392,7 +392,7 @@ export class SessionManagerView extends ItemView {
 			}
 
 			const newBtn = groupHeader.createEl("button", {
-				cls: "co-icon-btn co-sm-gear",
+				cls: "icon-btn co-sm-gear",
 				text: "+",
 			});
 			newBtn.title = "New session";
@@ -404,7 +404,7 @@ export class SessionManagerView extends ItemView {
 			});
 
 			const gearBtn = groupHeader.createEl("button", {
-				cls: "co-icon-btn co-sm-gear",
+				cls: "icon-btn co-sm-gear",
 				text: "⚙",
 			});
 			gearBtn.title = "Edit project";
@@ -468,7 +468,7 @@ export class SessionManagerView extends ItemView {
 		const topActions = topRow.createDiv({ cls: "co-sm-card-top-actions" });
 
 		const renameBtn = topActions.createEl("button", {
-			cls: "co-icon-btn co-sm-hover-btn",
+			cls: "icon-btn co-sm-hover-btn",
 			text: "✏",
 		});
 		renameBtn.title = "Rename session";
@@ -480,7 +480,7 @@ export class SessionManagerView extends ItemView {
 		if (project) {
 			const settingsOpen = this.openSettings.has(session.name);
 			const settingsBtn = topActions.createEl("button", {
-				cls: settingsOpen ? "co-icon-btn" : "co-icon-btn co-sm-hover-btn",
+				cls: settingsOpen ? "icon-btn" : "icon-btn co-sm-hover-btn",
 				text: "⚙",
 			});
 			settingsBtn.title = "Session settings";
@@ -496,9 +496,10 @@ export class SessionManagerView extends ItemView {
 		}
 
 		const killBtn = topActions.createEl("button", {
-			cls: "co-icon-btn co-danger co-sm-hover-btn",
+			cls: "icon-btn co-sm-hover-btn",
 			text: "×",
 		});
+		killBtn.dataset.tone = "danger";
 		killBtn.title = "Kill session";
 		killBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
@@ -521,7 +522,7 @@ export class SessionManagerView extends ItemView {
 				} else {
 					noteRow.createSpan({ cls: "co-sm-settings-warn", text: "⚠ not found" });
 					const relinkBtn = settingsPanel.createEl("button", {
-						cls: "co-text-btn",
+						cls: "btn",
 						text: "Relink",
 					});
 					relinkBtn.addEventListener("click", (e) => {
@@ -599,9 +600,14 @@ export class SessionManagerView extends ItemView {
 			const countdown = match?.view.getCountdownRemaining() ?? 0;
 
 			const sendBtn = actions.createEl("button", {
-				cls: countdown > 0 ? "co-text-btn co-countdown-active" : "co-text-btn co-accent",
+				cls: "btn",
 				text: countdown > 0 ? `Cancel (${countdown}s)` : "Send ▶",
 			});
+			if (countdown > 0) {
+				sendBtn.dataset.tone = "danger";
+			} else {
+				sendBtn.dataset.variant = "primary";
+			}
 			sendBtn.addEventListener("click", (e) => {
 				e.stopPropagation();
 				if (match && match.view.getCountdownRemaining() > 0) {
@@ -621,12 +627,12 @@ export class SessionManagerView extends ItemView {
 			const remaining = match?.view.getCountdownRemaining() ?? 0;
 			if (remaining > 0) {
 				btn.textContent = `Cancel (${remaining}s)`;
-				btn.classList.add("co-countdown-active");
-				btn.classList.remove("co-accent");
+				btn.dataset.tone = "danger";
+				delete btn.dataset.variant;
 			} else {
 				btn.textContent = "Send ▶";
-				btn.classList.remove("co-countdown-active");
-				btn.classList.add("co-accent");
+				delete btn.dataset.tone;
+				btn.dataset.variant = "primary";
 			}
 		}
 	}
@@ -791,7 +797,7 @@ export class SessionManagerView extends ItemView {
 		};
 
 		const saveBtn = notesRow.createEl("button", {
-			cls: "co-icon-btn co-sm-notes-save",
+			cls: "icon-btn co-sm-notes-save",
 			text: "✓",
 		});
 		saveBtn.title = "Save notes";
@@ -822,7 +828,7 @@ export class SessionManagerView extends ItemView {
 		const portalActions = portal.createDiv({ cls: "co-sm-kill-portal-actions" });
 
 		const cancelBtn = portalActions.createEl("button", {
-			cls: "co-text-btn",
+			cls: "btn",
 			text: "Cancel",
 		});
 		cancelBtn.addEventListener("click", (e) => {
@@ -831,7 +837,7 @@ export class SessionManagerView extends ItemView {
 		});
 
 		const closeTabBtn = portalActions.createEl("button", {
-			cls: "co-text-btn",
+			cls: "btn",
 			text: "Close tab",
 		});
 		closeTabBtn.title = "Close terminal tab but keep tmux session running";
@@ -842,9 +848,11 @@ export class SessionManagerView extends ItemView {
 		});
 
 		const confirmBtn = portalActions.createEl("button", {
-			cls: "co-text-btn co-sm-kill-confirm",
+			cls: "btn co-sm-kill-confirm",
 			text: "Kill session",
 		});
+		confirmBtn.dataset.variant = "primary";
+		confirmBtn.dataset.tone = "danger";
 		confirmBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
 			portal.remove();
@@ -972,7 +980,7 @@ export class SessionManagerView extends ItemView {
 			folderInput.title = "Note folder cannot be changed after creation (session note paths would break)";
 		}
 		if (!isEdit) {
-			const folderBrowseBtn = folderRow.createEl("button", { cls: "co-icon-btn co-sm-browse-btn", text: "📂" });
+			const folderBrowseBtn = folderRow.createEl("button", { cls: "icon-btn co-sm-browse-btn", text: "📂" });
 			folderBrowseBtn.title = "Browse vault folders";
 			folderBrowseBtn.addEventListener("click", () => {
 				new VaultFolderModal(this.app, (folder) => {
@@ -986,7 +994,7 @@ export class SessionManagerView extends ItemView {
 		const cwdInput = cwdRow.createEl("input", { cls: "co-sm-form-input", type: "text" });
 		cwdInput.placeholder = "(optional)";
 		if (config?.workingDirectory) cwdInput.value = config.workingDirectory;
-		const cwdBrowseBtn = cwdRow.createEl("button", { cls: "co-icon-btn co-sm-browse-btn", text: "📂" });
+		const cwdBrowseBtn = cwdRow.createEl("button", { cls: "icon-btn co-sm-browse-btn", text: "📂" });
 		cwdBrowseBtn.title = "Browse filesystem folders";
 		cwdBrowseBtn.addEventListener("click", () => void (async () => {
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Electron remote from require
@@ -1009,7 +1017,8 @@ export class SessionManagerView extends ItemView {
 		const actions = form.createDiv({ cls: "co-sm-form-actions" });
 
 		if (isEdit) {
-			const rmBtn = actions.createEl("button", { cls: "co-text-btn co-danger", text: "Unregister" });
+			const rmBtn = actions.createEl("button", { cls: "btn", text: "Unregister" });
+			rmBtn.dataset.tone = "danger";
 			rmBtn.title = "Remove from project list. Session notes and tmux sessions are kept.";
 			let rmConfirmPending = false;
 			rmBtn.addEventListener("click", () => {
@@ -1031,13 +1040,14 @@ export class SessionManagerView extends ItemView {
 			});
 		}
 
-		const cancelBtn = actions.createEl("button", { cls: "co-text-btn", text: "Cancel" });
+		const cancelBtn = actions.createEl("button", { cls: "btn", text: "Cancel" });
 		cancelBtn.addEventListener("click", () => {
 			this.editing = false;
 			void this.refresh();
 		});
 
-		const saveBtn = actions.createEl("button", { cls: "co-text-btn co-accent", text: "Save" });
+		const saveBtn = actions.createEl("button", { cls: "btn", text: "Save" });
+		saveBtn.dataset.variant = "primary";
 		saveBtn.addEventListener("click", () => {
 			const key = nameInput.value.trim();
 			const vaultFolder = normalizeVaultFolder(folderInput.value.trim());
