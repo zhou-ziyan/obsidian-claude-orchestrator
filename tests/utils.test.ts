@@ -65,6 +65,7 @@ import {
 	BUILTIN_SLASH_COMMANDS,
 	stripTimestamp,
 	handleTerminalScrollKey,
+	classifyAcKey,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote, SlashCommandEntry } from "../src/utils.ts";
 
@@ -2873,5 +2874,47 @@ describe("handleTerminalScrollKey", () => {
 			assert.equal(handleTerminalScrollKey(key, (n) => calls.push(n)), true);
 		}
 		assert.deepStrictEqual(calls, []);
+	});
+});
+
+// --- classifyAcKey ---
+
+describe("classifyAcKey", () => {
+	it("returns 'accept' for Enter without shift", () => {
+		assert.equal(classifyAcKey("Enter", false), "accept");
+	});
+
+	it("returns null for Enter with shift", () => {
+		assert.equal(classifyAcKey("Enter", true), null);
+	});
+
+	it("returns 'accept' for Tab without shift", () => {
+		assert.equal(classifyAcKey("Tab", false), "accept");
+	});
+
+	it("returns null for Tab with shift", () => {
+		assert.equal(classifyAcKey("Tab", true), null);
+	});
+
+	it("returns 'accept' for ArrowRight without shift", () => {
+		assert.equal(classifyAcKey("ArrowRight", false), "accept");
+	});
+
+	it("returns 'close' for Escape", () => {
+		assert.equal(classifyAcKey("Escape", false), "close");
+	});
+
+	it("returns 'next' for ArrowDown", () => {
+		assert.equal(classifyAcKey("ArrowDown", false), "next");
+	});
+
+	it("returns 'prev' for ArrowUp", () => {
+		assert.equal(classifyAcKey("ArrowUp", false), "prev");
+	});
+
+	it("returns null for unrelated keys", () => {
+		for (const key of ["a", "Backspace", "ArrowLeft", "Home", "End"]) {
+			assert.equal(classifyAcKey(key, false), null);
+		}
 	});
 });

@@ -1150,3 +1150,13 @@ export function handleTerminalScrollKey(
 	if (key === "PageDown") { scrollPages(+1); return false; }
 	return true;
 }
+
+export type AcKeyAction = "accept" | "close" | "next" | "prev" | null;
+
+export function classifyAcKey(key: string, shiftKey: boolean): AcKeyAction {
+	if (key === "ArrowDown") return "next";
+	if (key === "ArrowUp") return "prev";
+	if (key === "Escape") return "close";
+	if ((key === "Enter" || key === "Tab" || key === "ArrowRight") && !shiftKey) return "accept";
+	return null;
+}
