@@ -28,6 +28,7 @@ import {
 	filterSlashCommands,
 	stripTimestamp,
 	handleTerminalScrollKey,
+	wheelDeltaToLines,
 	classifyAcKey,
 } from "./utils";
 import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry } from "./utils";
@@ -339,6 +340,14 @@ export class TerminalView extends ItemView {
 
 		host.addEventListener("focusin", this.onHostFocusIn);
 		host.addEventListener("focusout", this.onHostFocusOut);
+
+		host.addEventListener("wheel", (e) => {
+			if (!this.term) return;
+			const lines = wheelDeltaToLines(e.deltaY, e.deltaMode);
+			if (lines !== 0) this.term.scrollLines(lines);
+			e.preventDefault();
+			e.stopPropagation();
+		}, { passive: false });
 	}
 
 	private createQueuePanel(container: HTMLElement): void {
