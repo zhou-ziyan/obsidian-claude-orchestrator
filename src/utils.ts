@@ -1208,3 +1208,20 @@ export function allSessionNotePaths(
 	}
 	return paths;
 }
+
+export function pickRecoverySession(
+	tmuxSessions: { name: string; activity: number }[],
+	projects: ProjectRegistry,
+	claimedNames: Set<string>,
+): { project: string; sessionName: string } | null {
+	let best: { project: string; sessionName: string; activity: number } | null = null;
+	for (const s of tmuxSessions) {
+		if (claimedNames.has(s.name)) continue;
+		const project = projectFromSessionName(s.name, projects);
+		if (!project) continue;
+		if (!best || s.activity > best.activity) {
+			best = { project, sessionName: s.name, activity: s.activity };
+		}
+	}
+	return best ? { project: best.project, sessionName: best.sessionName } : null;
+}

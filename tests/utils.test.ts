@@ -71,6 +71,7 @@ import {
 	updatePinnedNotePath,
 	allSessionNotePaths,
 	escapeLeadingBang,
+	pickRecoverySession,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote, SlashCommandEntry } from "../src/utils.ts";
 
@@ -3101,5 +3102,77 @@ describe("escapeLeadingBang", () => {
 
 	it("returns empty string unchanged", () => {
 		assert.equal(escapeLeadingBang(""), "");
+	});
+});
+
+// --- pickRecoverySession ---
+
+describe("pickRecoverySession", () => {
+	it("picks the most recently active unclaimed session", () => {
+		const sessions = [
+			{ name: "15_Claude_Orchestrator-1", activity: 100 },
+			{ name: "15_Claude_Orchestrator-2", activity: 200 },
+		];
+		const result = pickRecoverySession(sessions, TEST_PROJECTS, new Set());
+		assert.deepStrictEqual(result, {
+			project: "15_Claude_Orchestrator",
+			sessionName: "15_Claude_Orchestrator-2",
+		});
+	});
+
+	it("skips sessions already claimed by other views", () => {
+		const sessions = [
+			{ name: "15_Claude_Orchestrator-1", activity: 100 },
+			{ name: "15_Claude_Orchestrator-2", activity: 200 },
+		];
+		const claimed = new Set(["15_Claude_Orchestrator-2"]);
+		const result = pickRecoverySession(sessions, TEST_PROJECTS, claimed);
+		assert.deepStrictEqual(result, {
+			project: "15_Claude_Orchestrator",
+			sessionName: "15_Claude_Orchestrator-1",
+		});
+	});
+
+	it("returns null when all sessions are claimed", () => {
+		const sessions = [
+			{ name: "15_Claude_Orchestrator-1", activity: 100 },
+		];
+		const claimed = new Set(["15_Claude_Orchestrator-1"]);
+		assert.equal(pickRecoverySession(sessions, TEST_PROJECTS, claimed), null);
+	});
+
+	it("returns null when no sessions match registered projects", () => {
+		const sessions = [
+			{ name: "unknown-project-1", activity: 100 },
+		];
+		assert.equal(pickRecoverySession(sessions, TEST_PROJECTS, new Set()), null);
+	});
+
+	it("returns null for empty session list", () => {
+		assert.equal(pickRecoverySession([], TEST_PROJECTS, new Set()), null);
+	});
+
+	it("picks from multiple projects correctly", () => {
+		const sessions = [
+			{ name: "14_Mobile_Claude_Code-1", activity: 300 },
+			{ name: "15_Claude_Orchestrator-1", activity: 100 },
+		];
+		const result = pickRecoverySession(sessions, TEST_PROJECTS, new Set());
+		assert.deepStrictEqual(result, {
+			project: "14_Mobile_Claude_Code",
+			sessionName: "14_Mobile_Claude_Code-1",
+		});
+	});
+
+	it("skips unregistered sessions even if more recent", () => {
+		const sessions = [
+			{ name: "unknown-session", activity: 999 },
+			{ name: "15_Claude_Orchestrator-1", activity: 100 },
+		];
+		const result = pickRecoverySession(sessions, TEST_PROJECTS, new Set());
+		assert.deepStrictEqual(result, {
+			project: "15_Claude_Orchestrator",
+			sessionName: "15_Claude_Orchestrator-1",
+		});
 	});
 });
