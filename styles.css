@@ -977,6 +977,43 @@
     font-size: 11px;
 }
 
+.co-sm-settings {
+    padding: 4px 8px 4px 13px;
+    margin-bottom: 2px;
+    border-top: 1px solid var(--co-border);
+    font-size: 11px;
+}
+.co-sm-settings-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.co-sm-settings-label {
+    color: var(--co-text-dim);
+    flex-shrink: 0;
+}
+.co-sm-settings-path {
+    color: var(--co-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.co-sm-settings-ok {
+    color: var(--co-green);
+    flex-shrink: 0;
+}
+.co-sm-settings-warn {
+    color: #e8a838;
+    flex-shrink: 0;
+}
+.co-sm-settings .co-text-btn {
+    margin-top: 4px;
+    padding: 1px 8px;
+    font-size: 11px;
+}
+
 .co-sm-kill-portal {
     margin-top: 6px;
     padding: 8px;

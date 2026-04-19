@@ -101,6 +101,7 @@ export class SessionManagerView extends ItemView {
 	private editing = false;
 	private focusedSession: string | null = null;
 	private sendBtns = new Map<string, HTMLElement>();
+	private openSettings = new Set<string>();
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClaudeOrchestratorPlugin) {
 		super(leaf);
@@ -474,6 +475,24 @@ export class SessionManagerView extends ItemView {
 			this.showInlineRename(nameSpan, session);
 		});
 
+		if (project) {
+			const settingsOpen = this.openSettings.has(session.name);
+			const settingsBtn = topActions.createEl("button", {
+				cls: settingsOpen ? "co-icon-btn" : "co-icon-btn co-sm-hover-btn",
+				text: "⚙",
+			});
+			settingsBtn.title = "Session settings";
+			settingsBtn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				if (this.openSettings.has(session.name)) {
+					this.openSettings.delete(session.name);
+				} else {
+					this.openSettings.add(session.name);
+				}
+				void this.refresh();
+			});
+		}
+
 		const killBtn = topActions.createEl("button", {
 			cls: "co-icon-btn co-danger co-sm-hover-btn",
 			text: "×",
@@ -483,6 +502,33 @@ export class SessionManagerView extends ItemView {
 			e.stopPropagation();
 			this.showKillConfirm(card, session.name);
 		});
+
+		// Settings panel (expandable)
+		if (project && this.openSettings.has(session.name)) {
+			const config = this.plugin.settings.projects[project];
+			if (config) {
+				const settingsPanel = card.createDiv({ cls: "co-sm-settings" });
+				const noteRow = settingsPanel.createDiv({ cls: "co-sm-settings-row" });
+				const expectedPath = sessionNotePath(config.vaultFolder, session.name);
+
+				noteRow.createSpan({ cls: "co-sm-settings-label", text: "Session note:" });
+				noteRow.createSpan({ cls: "co-sm-settings-path", text: expectedPath });
+
+				if (session.hasNote) {
+					noteRow.createSpan({ cls: "co-sm-settings-ok", text: "✓" });
+				} else {
+					noteRow.createSpan({ cls: "co-sm-settings-warn", text: "⚠ not found" });
+					const relinkBtn = settingsPanel.createEl("button", {
+						cls: "co-text-btn",
+						text: "Relink",
+					});
+					relinkBtn.addEventListener("click", (e) => {
+						e.stopPropagation();
+						void this.linkSessionNote(session.name, project);
+					});
+				}
+			}
+		}
 
 		// Pinned note (if any)
 		if (session.pinnedNote) {
@@ -527,16 +573,6 @@ export class SessionManagerView extends ItemView {
 				cls: "co-sm-badge co-sm-unmanaged",
 				text: "no session note",
 			});
-			if (project) {
-				const linkBtn = infoRow.createEl("button", {
-					cls: "co-text-btn",
-					text: "Link",
-				});
-				linkBtn.addEventListener("click", (e) => {
-					e.stopPropagation();
-					void this.linkSessionNote(session.name, project);
-				});
-			}
 		}
 
 		// Message preview
