@@ -28,6 +28,7 @@ import {
 	filterSlashCommands,
 	stripTimestamp,
 	handleTerminalScrollKey,
+	classifyAcKey,
 } from "./utils";
 import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry } from "./utils";
 import { Terminal } from "@xterm/xterm";
@@ -595,26 +596,27 @@ export class TerminalView extends ItemView {
 		addBtn.addEventListener("click", doAdd);
 		input.addEventListener("keydown", (e) => {
 			if (acDropdown && acItems.length > 0) {
-				if (e.key === "ArrowDown") {
+				const action = classifyAcKey(e.key, e.shiftKey);
+				if (action === "next") {
 					e.preventDefault();
 					acSelected = (acSelected + 1) % acItems.length;
 					renderAc();
 					return;
 				}
-				if (e.key === "ArrowUp") {
+				if (action === "prev") {
 					e.preventDefault();
 					acSelected = (acSelected - 1 + acItems.length) % acItems.length;
 					renderAc();
 					return;
 				}
-				if (e.key === "Enter" && !e.shiftKey) {
+				if (action === "accept") {
 					e.preventDefault();
 					input.value = acItems[acSelected]!.command + " ";
 					closeAc();
 					requestAnimationFrame(autoResize);
 					return;
 				}
-				if (e.key === "Escape") {
+				if (action === "close") {
 					e.preventDefault();
 					closeAc();
 					return;

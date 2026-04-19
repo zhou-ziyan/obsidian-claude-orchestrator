@@ -907,6 +907,10 @@
 }
 .co-sm-notes-placeholder {
     opacity: 0.5;
+    display: none;
+}
+.co-sm-card:hover .co-sm-notes-placeholder {
+    display: block;
 }
 .co-sm-notes-editing {
     display: flex;
