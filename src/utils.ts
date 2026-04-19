@@ -672,16 +672,18 @@ export function sessionStatusDisplay(
 	return { cls: `co-sm-status co-sm-status-${status}`, symbol };
 }
 
+export type ThemeName = "v1" | "v2";
+
 export interface TerminalTheme {
 	background: string;
 	foreground: string;
 	cursor?: string;
 }
 
-export function terminalTheme(isDark: boolean): TerminalTheme {
-	return isDark
-		? { background: "#1e1e1e", foreground: "#d4d4d4" }
-		: { background: "#f5f5f5", foreground: "#383a42", cursor: "#383a42" };
+export function terminalTheme(theme: ThemeName): TerminalTheme {
+	return theme === "v1"
+		? { background: "#06090a", foreground: "#d6d7c9" }
+		: { background: "#16161a", foreground: "#dcddde" };
 }
 
 export function findTmuxBinary(exists?: (p: string) => boolean): string {

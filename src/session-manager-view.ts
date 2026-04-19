@@ -121,10 +121,16 @@ export class SessionManagerView extends ItemView {
 		return "layout-grid";
 	}
 
+	applyTheme(theme: string): void {
+		const container = this.containerEl.children[1] as HTMLElement | undefined;
+		if (container) container.dataset.theme = theme;
+	}
+
 	async onOpen() {
 		const container = this.containerEl.children[1] as HTMLElement;
 		container.empty();
 		container.addClass("co-sm-container");
+		container.dataset.theme = this.plugin.settings.theme;
 
 		// Header
 		const header = container.createDiv({ cls: "co-sm-header" });

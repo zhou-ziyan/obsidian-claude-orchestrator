@@ -2,7 +2,7 @@ import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFil
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
 import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, parseSessionNote, serializeSessionNote, ensureStopHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, loadSlashCommands, BUILTIN_SLASH_COMMANDS, updatePinnedNotePath, sessionDirPath } from "./utils";
-import type { ProjectRegistry, SlashCommandEntry } from "./utils";
+import type { ProjectRegistry, SlashCommandEntry, ThemeName } from "./utils";
 import { StopHookWatcher } from "./stop-hook-watcher";
 import { findTerminalLeafBySession, findTerminalLeafByProject, collectOpenSessionNames } from "./workspace-helpers";
 import { readFileSync, writeFileSync } from "fs";
@@ -15,6 +15,7 @@ export interface OrchestratorSettings {
 	quickReplyKeys: string[];
 	sessionOrder: Record<string, string[]>;
 	playSoundOnAsking: boolean;
+	theme: ThemeName;
 }
 
 const DEFAULT_SETTINGS: OrchestratorSettings = {
@@ -23,6 +24,7 @@ const DEFAULT_SETTINGS: OrchestratorSettings = {
 	quickReplyKeys: [...QUICK_REPLY_KEYS],
 	sessionOrder: {},
 	playSoundOnAsking: true,
+	theme: "v2",
 };
 
 export default class ClaudeOrchestratorPlugin extends Plugin {
@@ -190,6 +192,21 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	applyThemeToAllViews(): void {
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
+			const view = leaf.view;
+			if (view instanceof TerminalView) {
+				view.applyTheme(this.settings.theme);
+			}
+		}
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_SESSION_MANAGER)) {
+			const view = leaf.view;
+			if (view instanceof SessionManagerView) {
+				view.applyTheme(this.settings.theme);
+			}
+		}
 	}
 
 	private async onTerminalFocus(_project: string, sessionName: string) {
@@ -610,6 +627,21 @@ class OrchestratorSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.playSoundOnAsking = value;
 						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Theme")
+			.setDesc("Visual theme for the plugin UI.")
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("v1", "V1 Terminal")
+					.addOption("v2", "V2 Obsidian")
+					.setValue(this.plugin.settings.theme)
+					.onChange(async (value) => {
+						this.plugin.settings.theme = value as ThemeName;
+						await this.plugin.saveSettings();
+						this.plugin.applyThemeToAllViews();
 					}),
 			);
 	}

@@ -38,7 +38,7 @@ import {
 	pinLabelText,
 	terminalTheme,
 } from "./utils";
-import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry } from "./utils";
+import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry, ThemeName } from "./utils";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { IPty } from "node-pty";
@@ -108,7 +108,7 @@ export class TerminalView extends ItemView {
 	private stateSeenPreOpen = false;
 	private host: HTMLElement | null = null;
 	private onTerminalFocus?: (project: string, sessionName: string) => void;
-	private getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean };
+	private getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean; theme: ThemeName };
 	private historyPanel: HTMLElement | null = null;
 	private queuePanel: HTMLElement | null = null;
 	private queueList: HTMLElement | null = null;
@@ -123,8 +123,6 @@ export class TerminalView extends ItemView {
 	private escHandler: ((e: KeyboardEvent) => void) | null = null;
 	private claudeIdle = false;
 	private loadedAt = 0;
-	private themeObserver: MutationObserver | null = null;
-
 	private fitAndResize(): void {
 		if (!this.host || this.host.clientWidth < 50) return;
 		this.fitAddon?.fit();
@@ -146,7 +144,7 @@ export class TerminalView extends ItemView {
 		leaf: WorkspaceLeaf,
 		pluginDir: string,
 		onTerminalFocus?: (project: string, sessionName: string) => void,
-		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean },
+		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean; theme: ThemeName },
 	) {
 		super(leaf);
 		this.pluginDir = pluginDir;
@@ -230,6 +228,12 @@ export class TerminalView extends ItemView {
 		}
 	}
 
+	applyTheme(theme: ThemeName): void {
+		const container = this.containerEl.children[1] as HTMLElement | undefined;
+		if (container) container.dataset.theme = theme;
+		if (this.term) this.term.options.theme = terminalTheme(theme);
+	}
+
 	async onOpen() {
 		const container = this.containerEl.children[1] as HTMLElement;
 		container.empty();
@@ -237,6 +241,7 @@ export class TerminalView extends ItemView {
 		container.style.display = "flex";
 		container.style.flexDirection = "column";
 		container.style.overflow = "hidden";
+		container.dataset.theme = this.getSettings?.().theme ?? "v2";
 
 		this.registerSessionNoteEvents();
 
@@ -669,7 +674,7 @@ export class TerminalView extends ItemView {
 			fontFamily: "Menlo, Monaco, 'Courier New', monospace",
 			fontSize: 13,
 			lineHeight: 1.2,
-			theme: terminalTheme(document.body.classList.contains("theme-dark")),
+			theme: terminalTheme(this.getSettings?.().theme ?? "v2"),
 		});
 		this.fitAddon = new FitAddon();
 		this.term.loadAddon(this.fitAddon);
@@ -679,11 +684,6 @@ export class TerminalView extends ItemView {
 		this.term.attachCustomKeyEventHandler((ev) =>
 			handleTerminalScrollKey(ev.key, (n) => this.term?.scrollPages(n)),
 		);
-
-		this.themeObserver = new MutationObserver(() => {
-			this.term!.options.theme = terminalTheme(document.body.classList.contains("theme-dark"));
-		});
-		this.themeObserver.observe(document.body, { attributes: true, attributeFilter: ["class"] });
 
 		this.term.textarea?.addEventListener("focus", () => {
 			if (this.termFocusIndicator) this.termFocusIndicator.style.display = "";
@@ -1408,8 +1408,6 @@ export class TerminalView extends ItemView {
 				view.host.classList.remove("is-dimmed");
 			}
 		}
-		this.themeObserver?.disconnect();
-		this.themeObserver = null;
 		this.host?.removeEventListener("focusin", this.onHostFocusIn);
 		this.host?.removeEventListener("focusout", this.onHostFocusOut);
 		this.host = null;

@@ -3235,17 +3235,15 @@ describe("sessionStatusDisplay", () => {
 // --- terminalTheme ---
 
 describe("terminalTheme", () => {
-	it("returns dark theme colors", () => {
-		const t = terminalTheme(true);
-		assert.equal(t.background, "#1e1e1e");
-		assert.equal(t.foreground, "#d4d4d4");
-		assert.equal(t.cursor, undefined);
+	it("returns V1 terminal colors", () => {
+		const t = terminalTheme("v1");
+		assert.equal(t.background, "#06090a");
+		assert.equal(t.foreground, "#d6d7c9");
 	});
 
-	it("returns light theme colors with cursor", () => {
-		const t = terminalTheme(false);
-		assert.equal(t.background, "#f5f5f5");
-		assert.equal(t.foreground, "#383a42");
-		assert.equal(t.cursor, "#383a42");
+	it("returns V2 terminal colors", () => {
+		const t = terminalTheme("v2");
+		assert.equal(t.background, "#16161a");
+		assert.equal(t.foreground, "#dcddde");
 	});
 });
