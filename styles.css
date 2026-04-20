@@ -375,7 +375,7 @@
 [data-theme="terminal"] .claude-orchestrator-term-host { border-radius: 0; }
 [data-theme="terminal"] .segmented { border-radius: 2px; }
 [data-theme="terminal"] .segmented button { border-radius: 0; }
-[data-theme="terminal"] .co-panel-header::before {
+[data-theme="terminal"] .co-panel-header:not(.co-queue-header)::before {
     content: "» ";
     color: var(--accent);
     opacity: 0.6;
