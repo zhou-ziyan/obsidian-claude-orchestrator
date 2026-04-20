@@ -142,9 +142,11 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		this.stopHookWatcher = new StopHookWatcher(() => this.settings.projects);
 		this.stopHookWatcher.onSignal((signal, project) => {
 			const reason = signal.stopReason ?? "done";
-			void this.updateSessionStatus(project, signal.tmuxSession, reason);
+			const routed = this.routeStopSignalToView(signal.tmuxSession, reason);
+			if (!routed) {
+				void this.updateSessionStatus(project, signal.tmuxSession, reason);
+			}
 			this.refreshSessionManager();
-			this.routeStopSignalToView(signal.tmuxSession, reason);
 		});
 		this.stopHookWatcher.start();
 	}
@@ -399,9 +401,13 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		}
 	}
 
-	private routeStopSignalToView(tmuxSession: string, reason: "done" | "asking"): void {
+	private routeStopSignalToView(tmuxSession: string, reason: "done" | "asking"): boolean {
 		const match = findTerminalLeafBySession(this.app.workspace, tmuxSession);
-		if (match) match.view.onStopSignal(reason);
+		if (match) {
+			match.view.onStopSignal(reason);
+			return true;
+		}
+		return false;
 	}
 
 	// --- Shared helpers ---
