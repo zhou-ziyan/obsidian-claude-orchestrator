@@ -1549,3 +1549,9 @@
 .xterm .xterm-scrollable-element > .shadow.top.left {
 	box-shadow: var(--vscode-scrollbar-shadow, #000) 6px 0 6px -6px inset;
 }
+
+/* ── Hide view headers to reclaim vertical space ── */
+.workspace-leaf-content[data-type="claude-orchestrator-terminal"] .view-header,
+.workspace-leaf-content[data-type="claude-orchestrator-session-manager"] .view-header {
+	display: none;
+}
