@@ -856,6 +856,8 @@ export class TerminalView extends ItemView {
 
 		this.ptyProcess = newPty;
 
+		requestAnimationFrame(() => this.fitAndResize());
+
 		this.ptyListeners = [
 			newPty.onData((data) => {
 				if (this.ptyGen !== myGen) return;

@@ -392,6 +392,9 @@
     position: relative;
     background: var(--co-xterm-bg);
 }
+.claude-orchestrator-term-host > .xterm {
+    height: 100%;
+}
 
 .claude-orchestrator-term-host::after {
     content: "";
