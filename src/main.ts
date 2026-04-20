@@ -428,14 +428,18 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 		const { workspace } = this.app;
 
-		const terminals = workspace.getLeavesOfType(VIEW_TYPE_TERMINAL);
+		// Only consider terminals in the center workspace, not sidebar leftovers.
+		const terminals = workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)
+			.filter(l => l.getRoot() === workspace.rootSplit);
 
 		let leaf;
-		const sameProject = project ? findTerminalLeafByProject(workspace, project) : null;
+		const sameProject = project
+			? terminals.find(l => l.view instanceof TerminalView && l.view.getProject() === project)
+			: null;
 
 		if (sameProject) {
 			// Same project → new tab in the same tab group.
-			workspace.setActiveLeaf(sameProject.leaf, { focus: false });
+			workspace.setActiveLeaf(sameProject, { focus: false });
 			leaf = workspace.getLeaf("tab");
 		} else if (terminals.length > 0) {
 			// Different project → vertical split next to the last terminal group.
