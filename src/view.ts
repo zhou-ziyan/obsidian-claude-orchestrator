@@ -34,7 +34,6 @@ import {
 	tmuxLs,
 	parseAllTmuxSessions,
 	pickRecoverySession,
-	pinLabelText,
 	terminalTheme,
 	QUEUE_MODES,
 	SessionLifecycle,
@@ -109,14 +108,11 @@ export class TerminalView extends ItemView {
 	private xtermReady = false;
 	private stateSeenPreOpen = false;
 	private host: HTMLElement | null = null;
-	private onTerminalFocus?: (project: string, sessionName: string) => void;
 	private getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean; theme: ThemeName };
 	private historyPanel: HTMLElement | null = null;
 	private queuePanel: HTMLElement | null = null;
 	private queueList: HTMLElement | null = null;
 	private sessionNote: SessionNote | null = null;
-	private pinnedNote: string | null = null;
-	private pinLabel: HTMLElement | null = null;
 	private termFocusIndicator: HTMLElement | null = null;
 	private modeBtn: HTMLElement | null = null;
 	private sendBtn: HTMLElement | null = null;
@@ -145,12 +141,10 @@ export class TerminalView extends ItemView {
 	constructor(
 		leaf: WorkspaceLeaf,
 		pluginDir: string,
-		onTerminalFocus?: (project: string, sessionName: string) => void,
 		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean; theme: ThemeName },
 	) {
 		super(leaf);
 		this.pluginDir = pluginDir;
-		this.onTerminalFocus = onTerminalFocus;
 		this.getSettings = getSettings;
 	}
 
@@ -197,16 +191,6 @@ export class TerminalView extends ItemView {
 
 	getSessionName(): string | null {
 		return this.sessionName;
-	}
-
-	getPinnedNote(): string | null {
-		return this.pinnedNote;
-	}
-
-	updatePinnedNote(newPath: string): void {
-		this.pinnedNote = newPath;
-		this.updatePinLabel();
-		void this.saveSessionNote();
 	}
 
 	focusTerminal(): void {
@@ -444,34 +428,20 @@ export class TerminalView extends ItemView {
 		// Separator
 		queueBar.createSpan({ cls: "co-queue-bar-sep" });
 
-		// Pin chip group (shrinkable)
+		// Pin chip — always points to this session's note
 		const pinChipGroup = queueBar.createDiv({ cls: "co-queue-bar-group co-queue-bar-shrinkable" });
 		const pinChip = pinChipGroup.createDiv({ cls: "co-pin-chip" });
-		pinChip.dataset.empty = "true";
 		pinChip.createSpan({ text: "📌" });
-		this.pinLabel = pinChip.createSpan({ cls: "co-pin-label" });
-		this.pinLabel.textContent = "No note pinned";
+		const pinLabel = pinChip.createSpan({ cls: "co-pin-label" });
+		pinLabel.textContent = this.sessionName ?? "session";
 
 		pinChip.addEventListener("click", () => {
-			if (this.pinnedNote) {
-				this.pinnedNote = null;
-				this.updatePinLabel();
-				void this.saveSessionNote();
-			} else {
-				let filePath: string | null = null;
-				for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-					if (leaf.getRoot() === this.app.workspace.rootSplit) {
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access -- Obsidian MarkdownView.file not in public typings
-						const file = (leaf.view as any)?.file as { path: string } | undefined;
-						filePath = file?.path ?? null;
-						break;
-					}
-				}
-				if (filePath) {
-					this.pinnedNote = filePath;
-					this.updatePinLabel();
-					void this.saveSessionNote();
-				}
+			const folder = this.vaultFolder();
+			if (folder === null || !this.sessionName) return;
+			const notePath = sessionNotePath(folder, this.sessionName);
+			const file = this.app.vault.getAbstractFileByPath(notePath);
+			if (file instanceof TFile) {
+				void this.app.workspace.getLeaf("tab").openFile(file);
 			}
 		});
 
@@ -951,13 +921,11 @@ export class TerminalView extends ItemView {
 		const content = await this.app.vault.read(file);
 		if (this.lifecycle.isStale(myGen)) return;
 		this.sessionNote = parseSessionNote(content, this.sessionName);
-		this.pinnedNote = this.sessionNote.pinnedNote;
 		this.claudeIdle = this.sessionNote.status === "idle";
 		this.loadedAt = Date.now();
 		this.sessionNoteLoaded = true;
 		this.renderHistory();
 		this.renderQueue();
-		this.updatePinLabel();
 		this.updateModeBtn();
 		/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Obsidian internal API */
 		(this.leaf as any).updateHeader?.();
@@ -971,7 +939,6 @@ export class TerminalView extends ItemView {
 	private async saveSessionNote(): Promise<void> {
 		if (!this.project || !this.sessionName || !this.sessionNote) return;
 		this.lifecycle.markDirty();
-		this.sessionNote.pinnedNote = this.pinnedNote;
 		const folder = this.vaultFolder();
 		if (folder === null) return;
 		const notePath = sessionNotePath(folder, this.sessionName);
@@ -1055,13 +1022,6 @@ export class TerminalView extends ItemView {
 
 		// Scroll to bottom to show the most recent item
 		content.scrollTop = content.scrollHeight;
-	}
-
-	private updatePinLabel(): void {
-		if (!this.pinLabel) return;
-		this.pinLabel.textContent = pinLabelText(this.pinnedNote);
-		const chip = this.pinLabel.parentElement;
-		if (chip) chip.dataset.empty = this.pinnedNote ? "false" : "true";
 	}
 
 	private updateModeBtn(): void {
@@ -1451,21 +1411,6 @@ export class TerminalView extends ItemView {
 				view.host.classList.toggle("is-dimmed", view !== this);
 			}
 		}
-		if (this.project && this.sessionName && this.onTerminalFocus) {
-			if (this.sessionNoteLoaded) {
-				this.onTerminalFocus(this.project, this.sessionName);
-			} else {
-				// Session note still loading — wait and retry
-				const check = () => {
-					if (this.sessionNoteLoaded && this.project && this.sessionName && this.onTerminalFocus) {
-						this.onTerminalFocus(this.project, this.sessionName);
-					} else {
-						setTimeout(check, 50);
-					}
-				};
-				setTimeout(check, 50);
-			}
-		}
 	};
 
 	private onHostFocusOut = () => {
@@ -1510,7 +1455,6 @@ export class TerminalView extends ItemView {
 		this.countdownEl = null;
 		this.cancelCountdown();
 		this.sessionNote = null;
-		this.pinLabel = null;
 		this.termFocusIndicator = null;
 		this.ptyGen++; // invalidate pending callbacks
 		this.resizeObserver?.disconnect();

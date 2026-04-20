@@ -212,7 +212,6 @@ export class SessionManagerView extends ItemView {
 
 		// 3. Read session notes for managed sessions
 		const noteData = new Map<string, {
-			pinnedNote: string | null;
 			queueCount: number;
 			lastActivity: string | null;
 			preview: string | null;
@@ -247,7 +246,6 @@ export class SessionManagerView extends ItemView {
 					}
 				}
 				noteData.set(s.name, {
-					pinnedNote: note.pinnedNote,
 					queueCount: note.queue.length,
 					lastActivity,
 					preview: extractSessionPreview(note),
@@ -529,13 +527,6 @@ export class SessionManagerView extends ItemView {
 					});
 				}
 			}
-		}
-
-		// Pinned note (if any)
-		if (session.pinnedNote) {
-			const pinRow = card.createDiv({ cls: "co-sm-card-pin" });
-			const noteName = session.pinnedNote.split("/").pop()?.replace(/\.md$/, "") ?? session.pinnedNote;
-			pinRow.textContent = noteName;
 		}
 
 		// Meta row: mode · queue badge · relative time

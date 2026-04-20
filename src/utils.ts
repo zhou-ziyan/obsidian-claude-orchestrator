@@ -198,7 +198,6 @@ export interface SessionInfo {
 	name: string;
 	hasPanel: boolean;
 	hasNote: boolean;
-	pinnedNote: string | null;
 	queueCount: number;
 	lastActivity: string | null;
 	tmuxActivity: number;
@@ -237,7 +236,7 @@ export function projectFromSessionName(
 export function groupSessionsByProject(
 	allSessions: { name: string; activity: number }[],
 	openSessionNames: Set<string>,
-	noteData: Map<string, { pinnedNote: string | null; queueCount: number; lastActivity: string | null; preview: string | null; displayName: string | null; status: SessionStatus; queueMode: QueueMode }>,
+	noteData: Map<string, { queueCount: number; lastActivity: string | null; preview: string | null; displayName: string | null; status: SessionStatus; queueMode: QueueMode }>,
 	projects: ProjectRegistry,
 ): SessionGroup[] {
 	const projectMap = new Map<string, SessionInfo[]>();
@@ -250,7 +249,6 @@ export function groupSessionsByProject(
 			name: s.name,
 			hasPanel: openSessionNames.has(s.name),
 			hasNote: noteData.has(s.name),
-			pinnedNote: nd?.pinnedNote ?? null,
 			queueCount: nd?.queueCount ?? 0,
 			lastActivity: nd?.lastActivity ?? null,
 			tmuxActivity: s.activity,
@@ -348,7 +346,6 @@ export interface HistoryItem {
 export interface SessionNote {
 	session: string;
 	status: SessionStatus;
-	pinnedNote: string | null;
 	queueMode: QueueMode;
 	displayName: string;
 	summary: string;
@@ -382,7 +379,6 @@ export function createDefaultSessionNote(sessionName: string): string {
 		"---",
 		`session: ${sessionName}`,
 		"status: idle",
-		"pinnedNote: ",
 		"queueMode: manual",
 		"---",
 		"",
@@ -405,7 +401,6 @@ export function parseSessionNote(
 	const note: SessionNote = {
 		session: fallbackSession,
 		status: "idle",
-		pinnedNote: null,
 		queueMode: "manual",
 		displayName: "",
 		summary: "",
@@ -429,8 +424,6 @@ export function parseSessionNote(
 				if (key === "session") note.session = value;
 				if (key === "status" && isSessionStatus(value))
 					note.status = value;
-				if (key === "pinnedNote" && value)
-					note.pinnedNote = value;
 				if (key === "queueMode" && isQueueMode(value))
 					note.queueMode = value;
 				if (key === "displayName" && value)
@@ -534,7 +527,6 @@ export function serializeSessionNote(note: SessionNote): string {
 		"---",
 		`session: ${note.session}`,
 		`status: ${note.status}`,
-		`pinnedNote: ${note.pinnedNote ?? ""}`,
 		`queueMode: ${note.queueMode}`,
 	];
 	if (note.displayName) lines.push(`displayName: ${note.displayName}`);
@@ -664,11 +656,6 @@ export function buildQuickReplyTmuxArgs(
 export function escapeLeadingBang(text: string): string {
 	if (text.startsWith("!")) return " " + text;
 	return text;
-}
-
-export function pinLabelText(pinnedNote: string | null): string {
-	if (!pinnedNote) return "No note pinned";
-	return pinnedNote.split("/").pop()?.replace(/\.md$/, "") ?? pinnedNote;
 }
 
 export function sessionStatusDisplay(
@@ -1215,22 +1202,6 @@ export function classifyAcKey(key: string, shiftKey: boolean): AcKeyAction {
 	if (key === "Escape") return "close";
 	if ((key === "Enter" || key === "Tab" || key === "ArrowRight") && !shiftKey) return "accept";
 	return null;
-}
-
-/**
- * If the session note's pinnedNote matches `oldPath`, return updated
- * markdown with the pinnedNote changed to `newPath`. Otherwise return null.
- */
-export function updatePinnedNotePath(
-	markdown: string,
-	sessionName: string,
-	oldPath: string,
-	newPath: string,
-): string | null {
-	const note = parseSessionNote(markdown, sessionName);
-	if (note.pinnedNote !== oldPath) return null;
-	note.pinnedNote = newPath;
-	return serializeSessionNote(note);
 }
 
 /**

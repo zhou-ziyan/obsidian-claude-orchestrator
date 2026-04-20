@@ -1,7 +1,7 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, parseSessionNote, serializeSessionNote, ensureStopHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, loadSlashCommands, BUILTIN_SLASH_COMMANDS, updatePinnedNotePath, sessionDirPath, migrateThemeName } from "./utils";
+import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, parseSessionNote, serializeSessionNote, ensureStopHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, loadSlashCommands, BUILTIN_SLASH_COMMANDS, migrateThemeName } from "./utils";
 import type { ProjectRegistry, SlashCommandEntry, ThemeName } from "./utils";
 import { StopHookWatcher } from "./stop-hook-watcher";
 import { findTerminalLeafBySession, findTerminalLeafByProject, collectOpenSessionNames } from "./workspace-helpers";
@@ -45,9 +45,6 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 				new TerminalView(
 					leaf,
 					pluginDir,
-					(project, sessionName) => {
-						void this.onTerminalFocus(project, sessionName);
-					},
 					() => ({ ...this.settings, slashCommands: this.slashCommands }),
 				),
 		);
@@ -121,13 +118,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 				if (!leaf) return;
 				const view = leaf.view;
 				if (view instanceof TerminalView) {
-					// Auto-focus the terminal so the user can type immediately
 					view.focusTerminal();
-					const project = view.getProject();
-					const sessionName = view.getSessionName();
-					if (project && sessionName) {
-						void this.onTerminalFocus(project, sessionName);
-					}
 					this.highlightSessionInManager(view.getSessionName());
 				} else {
 					this.highlightSessionInManager(null);
@@ -136,13 +127,6 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		);
 
 		this.addSettingTab(new OrchestratorSettingTab(this.app, this));
-
-		// Update pinnedNote references when files are renamed/moved
-		this.registerEvent(
-			this.app.vault.on("rename", (file, oldPath) => {
-				void this.onFileRenamed(oldPath, file.path);
-			}),
-		);
 
 		// Auto-open Session Manager in left sidebar on startup
 		this.app.workspace.onLayoutReady(() => {
@@ -208,38 +192,6 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 				view.applyTheme(this.settings.theme);
 			}
 		}
-	}
-
-	private async onTerminalFocus(_project: string, sessionName: string) {
-		// Only jump if this session has an explicitly pinned note.
-		// No pin → do nothing.
-		const match = findTerminalLeafBySession(this.app.workspace, sessionName);
-		const pinnedPath = match?.view.getPinnedNote() ?? null;
-
-		if (!pinnedPath) return;
-
-		const file = this.app.vault.getAbstractFileByPath(pinnedPath);
-		if (!(file instanceof TFile)) return;
-
-		// Find a markdown leaf in the main area (skip terminal views).
-		let targetLeaf = null;
-		const allLeaves = this.app.workspace.getLeavesOfType("markdown");
-		for (const leaf of allLeaves) {
-			if (leaf.getRoot() === this.app.workspace.rootSplit) {
-				targetLeaf = leaf;
-				break;
-			}
-		}
-		// No markdown leaf in main area — create a new tab there.
-		if (!targetLeaf) {
-			targetLeaf = this.app.workspace.getLeaf("tab");
-		}
-
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access -- MarkdownView.file not in public typings
-		const currentFile = (targetLeaf.view as any)?.file as TFile | undefined;
-		if (currentFile?.path === file.path) return;
-
-		await targetLeaf.openFile(file, { active: false });
 	}
 
 	private collectSessionNames(): Set<string> {
@@ -450,42 +402,6 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 	private routeStopSignalToView(tmuxSession: string, reason: "done" | "asking"): void {
 		const match = findTerminalLeafBySession(this.app.workspace, tmuxSession);
 		if (match) match.view.onStopSignal(reason);
-	}
-
-	private async onFileRenamed(oldPath: string, newPath: string): Promise<void> {
-		if (!oldPath.endsWith(".md")) return;
-
-		let updated = false;
-
-		// Scan all session notes and update pinnedNote references
-		for (const config of Object.values(this.settings.projects)) {
-			const dir = sessionDirPath(config.vaultFolder);
-			const sessionsFolder = this.app.vault.getAbstractFileByPath(dir);
-			if (!(sessionsFolder instanceof TFolder)) continue;
-
-			for (const child of sessionsFolder.children) {
-				if (!(child instanceof TFile) || !child.path.endsWith(".md")) continue;
-				const content = await this.app.vault.read(child);
-				const sessionName = child.basename;
-				const result = updatePinnedNotePath(content, sessionName, oldPath, newPath);
-				if (result !== null) {
-					await this.app.vault.modify(child, result);
-					updated = true;
-				}
-			}
-		}
-
-		// Update in-memory state of open TerminalViews
-		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
-			const view = leaf.view;
-			if (view instanceof TerminalView && view.getPinnedNote() === oldPath) {
-				view.updatePinnedNote(newPath);
-			}
-		}
-
-		if (updated) {
-			this.refreshSessionManager();
-		}
 	}
 
 	// --- Shared helpers ---

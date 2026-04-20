@@ -68,11 +68,9 @@ import {
 	wheelDeltaToLines,
 	WHEEL_LINES_PER_PAGE,
 	classifyAcKey,
-	updatePinnedNotePath,
 	allSessionNotePaths,
 	escapeLeadingBang,
 	pickRecoverySession,
-	pinLabelText,
 	sessionStatusDisplay,
 	terminalTheme,
 	migrateThemeName,
@@ -681,7 +679,6 @@ describe("serializeSessionNote", () => {
 		const original = {
 			session: "15_Claude_Orchestrator-2",
 			status: "waiting_for_user" as const,
-			pinnedNote: "01_Projects/15_Claude_Orchestrator/15_Claude_Orchestrator.md",
 			queueMode: "manual" as const,
 			displayName: "",
 			summary: "",
@@ -701,7 +698,6 @@ describe("serializeSessionNote", () => {
 		const note = {
 			session: "empty",
 			status: "idle" as const,
-			pinnedNote: null,
 			queueMode: "manual" as const,
 			displayName: "",
 			summary: "",
@@ -801,8 +797,8 @@ describe("groupSessionsByProject", () => {
 			sessions,
 			new Set(["15_Claude_Orchestrator", "14_Mobile_Claude_Code"]),
 			new Map([
-				["15_Claude_Orchestrator", { pinnedNote: "note.md", queueCount: 2, lastActivity: "2026-04-15 14:30", preview: "do the thing" }],
-				["14_Mobile_Claude_Code", { pinnedNote: null, queueCount: 0, lastActivity: null, preview: null }],
+				["15_Claude_Orchestrator", { queueCount: 2, lastActivity: "2026-04-15 14:30", preview: "do the thing" }],
+				["14_Mobile_Claude_Code", { queueCount: 0, lastActivity: null, preview: null }],
 			]),
 			TEST_PROJECTS,
 		);
@@ -833,13 +829,12 @@ describe("groupSessionsByProject", () => {
 			sessions,
 			new Set(),
 			new Map([
-				["15_Claude_Orchestrator", { pinnedNote: "a.md", queueCount: 3, lastActivity: "2026-04-15 10:00", preview: "task preview" }],
+				["15_Claude_Orchestrator", { queueCount: 3, lastActivity: "2026-04-15 10:00", preview: "task preview" }],
 			]),
 			TEST_PROJECTS,
 		);
 		const orch = groups.find((g) => g.project === "15_Claude_Orchestrator")!;
 		assert.equal(orch.sessions[0].hasNote, true);
-		assert.equal(orch.sessions[0].pinnedNote, "a.md");
 		assert.equal(orch.sessions[0].queueCount, 3);
 		assert.equal(orch.sessions[1].hasNote, false);
 		assert.equal(orch.sessions[1].queueCount, 0);
@@ -965,7 +960,6 @@ describe("parseSessionNote multiline", () => {
 		const original = {
 			session: "test",
 			status: "idle" as const,
-			pinnedNote: null,
 			history: [
 				{ text: "line1\nline2\nline3", completed: true },
 			],
@@ -1009,7 +1003,6 @@ describe("parseSessionNote multiline", () => {
 		const original = {
 			session: "test",
 			status: "idle" as const,
-			pinnedNote: null,
 			history: [],
 			queue: ["[2026-04-16 23:12] Line one\n\n## Section\nContent"],
 		};
@@ -1020,21 +1013,6 @@ describe("parseSessionNote multiline", () => {
 		assert.ok(parsed.queue[0]!.includes("Content"));
 	});
 
-	it("parses pinnedNote from frontmatter", () => {
-		const md = [
-			"---",
-			"session: test",
-			"status: running",
-			"pinnedNote: 01_Projects/15_Claude/notes.md",
-			"---",
-			"",
-			"## History",
-			"## Queue",
-		].join("\n");
-		const note = parseSessionNote(md);
-		assert.equal(note.pinnedNote, "01_Projects/15_Claude/notes.md");
-		assert.equal(note.status, "running");
-	});
 });
 
 // --- migrateSettings ---
@@ -1445,7 +1423,6 @@ describe("restorableSessionNames", () => {
 		name,
 		hasPanel,
 		hasNote: true,
-		pinnedNote: null,
 		queueCount: 0,
 		lastActivity: null,
 	});
@@ -1955,7 +1932,6 @@ describe("extractSessionPreview", () => {
 	const mkNote = (queue: string[], history: Array<{ text: string; completed: boolean }>, notes = "", summary = ""): SessionNote => ({
 		session: "test",
 		status: "idle",
-		pinnedNote: null,
 		queueMode: "manual",
 		displayName: "",
 		summary,
@@ -2104,7 +2080,7 @@ describe("groupSessionsByProject preview", () => {
 			sessions,
 			new Set(),
 			new Map([
-				["15_Claude_Orchestrator", { pinnedNote: null, queueCount: 1, lastActivity: null, preview: "task preview" }],
+				["15_Claude_Orchestrator", { queueCount: 1, lastActivity: null, preview: "task preview" }],
 			]),
 			TEST_PROJECTS,
 		);
@@ -3008,106 +2984,6 @@ describe("classifyAcKey", () => {
 	});
 });
 
-// --- updatePinnedNotePath ---
-
-describe("updatePinnedNotePath", () => {
-	const baseNote = [
-		"---",
-		"session: test-1",
-		"status: idle",
-		"pinnedNote: 01_Projects/Foo/Foo.md",
-		"queueMode: manual",
-		"---",
-		"",
-		"## Notes",
-		"",
-		"## History",
-		"",
-		"## Queue",
-		"",
-	].join("\n");
-
-	it("updates pinnedNote when oldPath matches", () => {
-		const result = updatePinnedNotePath(
-			baseNote,
-			"test-1",
-			"01_Projects/Foo/Foo.md",
-			"01_Projects/Bar/Bar.md",
-		);
-		assert.notStrictEqual(result, null);
-		const parsed = parseSessionNote(result!, "test-1");
-		assert.equal(parsed.pinnedNote, "01_Projects/Bar/Bar.md");
-	});
-
-	it("returns null when pinnedNote does not match oldPath", () => {
-		const result = updatePinnedNotePath(
-			baseNote,
-			"test-1",
-			"01_Projects/Other/Other.md",
-			"01_Projects/Bar/Bar.md",
-		);
-		assert.strictEqual(result, null);
-	});
-
-	it("returns null when pinnedNote is empty", () => {
-		const emptyPin = baseNote.replace(
-			"pinnedNote: 01_Projects/Foo/Foo.md",
-			"pinnedNote: ",
-		);
-		const result = updatePinnedNotePath(
-			emptyPin,
-			"test-1",
-			"01_Projects/Foo/Foo.md",
-			"01_Projects/Bar/Bar.md",
-		);
-		assert.strictEqual(result, null);
-	});
-
-	it("does not match partial paths", () => {
-		const result = updatePinnedNotePath(
-			baseNote,
-			"test-1",
-			"01_Projects/Foo/Foo",
-			"01_Projects/Bar/Bar",
-		);
-		assert.strictEqual(result, null);
-	});
-
-	it("preserves other session note fields", () => {
-		const noteWithData = [
-			"---",
-			"session: test-2",
-			"status: running",
-			"pinnedNote: a/b.md",
-			"queueMode: auto",
-			"displayName: my agent",
-			"summary: doing stuff",
-			"---",
-			"",
-			"## Notes",
-			"some notes here",
-			"",
-			"## History",
-			"- [ ] [2026-04-18 10:00] task one",
-			"",
-			"## Queue",
-			"- [2026-04-18 11:00] next task",
-			"",
-		].join("\n");
-		const result = updatePinnedNotePath(noteWithData, "test-2", "a/b.md", "c/d.md");
-		assert.notStrictEqual(result, null);
-		const parsed = parseSessionNote(result!, "test-2");
-		assert.equal(parsed.pinnedNote, "c/d.md");
-		assert.equal(parsed.status, "running");
-		assert.equal(parsed.queueMode, "auto");
-		assert.equal(parsed.displayName, "my agent");
-		assert.equal(parsed.summary, "doing stuff");
-		assert.equal(parsed.notes, "some notes here");
-		assert.equal(parsed.history.length, 1);
-		assert.equal(parsed.queue.length, 1);
-	});
-});
-
 // --- allSessionNotePaths ---
 
 describe("allSessionNotePaths", () => {
@@ -3257,30 +3133,6 @@ describe("pickRecoverySession", () => {
 			project: "15_Claude_Orchestrator",
 			sessionName: "15_Claude_Orchestrator-1",
 		});
-	});
-});
-
-// --- pinLabelText ---
-
-describe("pinLabelText", () => {
-	it("extracts filename without .md extension from path", () => {
-		assert.equal(pinLabelText("01_Projects/15_Claude_Orchestrator/README.md"), "README");
-	});
-
-	it("handles deeply nested paths", () => {
-		assert.equal(pinLabelText("a/b/c/d/MyNote.md"), "MyNote");
-	});
-
-	it("handles file without .md extension", () => {
-		assert.equal(pinLabelText("folder/file.txt"), "file.txt");
-	});
-
-	it("returns 'No note pinned' when null", () => {
-		assert.equal(pinLabelText(null), "No note pinned");
-	});
-
-	it("returns 'No note pinned' when empty string", () => {
-		assert.equal(pinLabelText(""), "No note pinned");
 	});
 });
 
@@ -3618,5 +3470,75 @@ describe("SessionLifecycle", () => {
 			assert.equal(lc.isStale(gen), true);
 			assert.equal(lc.captureTarget(), "B-1");
 		});
+	});
+});
+
+// --- pinnedNote removal ---
+
+describe("pinnedNote removal", () => {
+	it("serializeSessionNote does not include pinnedNote in frontmatter", () => {
+		const note: SessionNote = {
+			session: "test",
+			status: "idle" as const,
+			queueMode: "manual" as const,
+			displayName: "",
+			summary: "",
+			notes: "",
+			history: [],
+			queue: [],
+		};
+		const result = serializeSessionNote(note);
+		const lines = result.split("\n");
+		const hasPinnedNote = lines.some((l) => l.startsWith("pinnedNote:"));
+		assert.ok(!hasPinnedNote, "serialized note should not contain pinnedNote field");
+	});
+
+	it("parseSessionNote handles legacy pinnedNote frontmatter gracefully", () => {
+		const md = [
+			"---",
+			"session: legacy",
+			"status: running",
+			"pinnedNote: 01_Projects/old/note.md",
+			"queueMode: auto",
+			"---",
+			"",
+			"## Notes",
+			"some notes",
+			"",
+			"## History",
+			"- [ ] [2026-04-18 10:00] task",
+			"",
+			"## Queue",
+			"- [2026-04-18 11:00] next",
+			"",
+		].join("\n");
+		const note = parseSessionNote(md, "legacy");
+		assert.equal(note.session, "legacy");
+		assert.equal(note.status, "running");
+		assert.equal(note.queueMode, "auto");
+		assert.equal(note.notes, "some notes");
+		assert.equal(note.history.length, 1);
+		assert.equal(note.queue.length, 1);
+	});
+
+	it("round-trip serialization drops pinnedNote from legacy notes", () => {
+		const md = [
+			"---",
+			"session: test-rt",
+			"status: idle",
+			"pinnedNote: old/path.md",
+			"queueMode: manual",
+			"---",
+			"",
+			"## Notes",
+			"",
+			"## History",
+			"",
+			"## Queue",
+			"",
+		].join("\n");
+		const note = parseSessionNote(md, "test-rt");
+		const serialized = serializeSessionNote(note);
+		assert.ok(!serialized.includes("pinnedNote:"), "re-serialized note should drop pinnedNote");
 	});
 });
