@@ -351,9 +351,12 @@
 
 /* V1: monospace typography + square corners */
 [data-theme="terminal"] .co-sm-card-name,
+[data-theme="terminal"] .co-sm-card-meta,
+[data-theme="terminal"] .co-sm-card-time,
 [data-theme="terminal"] .co-sm-info,
 [data-theme="terminal"] .co-history-text,
 [data-theme="terminal"] .co-queue-text,
+[data-theme="terminal"] .co-timestamp,
 [data-theme="terminal"] .btn,
 [data-theme="terminal"] .co-sm-title,
 [data-theme="terminal"] .co-panel-header {
@@ -416,8 +419,10 @@
 
 .co-panel-header {
     padding: 4px 8px;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.9px;
+    text-transform: uppercase;
     color: var(--co-text-muted);
     background: var(--co-bg-header);
     cursor: pointer;
@@ -514,7 +519,7 @@
     display: flex;
     align-items: flex-start;
     padding: 4px 0;
-    font-size: 12px;
+    font-size: 11px;
     color: var(--co-text-secondary);
     gap: 4px;
     border-radius: 3px;
@@ -1067,6 +1072,7 @@
 .co-sm-group-count {
     color: var(--co-text-faint);
     font-size: 10px;
+    font-variant-numeric: tabular-nums;
     flex-shrink: 0;
     margin-left: auto;
     padding: 0 4px;
