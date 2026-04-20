@@ -1255,6 +1255,8 @@ export class TerminalView extends ItemView {
 
 		const target = this.sessionName;
 
+		this.term?.scrollToBottom();
+
 		void (async () => {
 			await execTmux(cancelCopyModeArgs(target)).catch(() => {});
 			try {
@@ -1281,6 +1283,7 @@ export class TerminalView extends ItemView {
 
 		const { textArgs, enterArgs } = buildQuickReplyTmuxArgs(target, escapeLeadingBang(key));
 
+		this.term?.scrollToBottom();
 		await execTmux(cancelCopyModeArgs(target)).catch(() => {});
 		try {
 			await execTmux(textArgs);
