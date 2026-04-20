@@ -989,14 +989,7 @@ export class TerminalView extends ItemView {
 					if (seg.type === "text") {
 						textSpan.createSpan({ text: seg.content });
 					} else {
-						const img = textSpan.createEl("img", { cls: "co-queue-img" });
-						img.alt = seg.content.split("/").pop() ?? seg.content;
-						const file = this.app.metadataCache.getFirstLinkpathDest(seg.content, "");
-						if (file) {
-							img.src = this.app.vault.getResourcePath(file);
-						} else {
-							img.src = seg.content;
-						}
+						this.renderEmbedImg(textSpan, seg.content);
 					}
 				}
 			} else {
@@ -1085,14 +1078,7 @@ export class TerminalView extends ItemView {
 				if (seg.type === "text") {
 					textSpan.createSpan({ text: seg.content });
 				} else {
-					const img = textSpan.createEl("img", { cls: "co-queue-img" });
-					img.alt = seg.content.split("/").pop() ?? seg.content;
-					const file = this.app.metadataCache.getFirstLinkpathDest(seg.content, "");
-					if (file) {
-						img.src = this.app.vault.getResourcePath(file);
-					} else {
-						img.src = seg.content;
-					}
+					this.renderEmbedImg(textSpan, seg.content);
 				}
 			}
 		} else {
@@ -1202,6 +1188,15 @@ export class TerminalView extends ItemView {
 			this.sessionNote?.queue.splice(idx, 1);
 			this.renderQueue();
 			void this.saveSessionNote();
+		});
+	}
+
+	private renderEmbedImg(parent: HTMLElement, ref: string): void {
+		const filename = ref.split("/").pop() ?? ref;
+		const chip = parent.createSpan({ cls: "co-embed-img", text: `🖼 ${filename}` });
+		chip.addEventListener("click", (e) => {
+			e.stopPropagation();
+			void this.app.workspace.openLinkText(ref, "", false);
 		});
 	}
 
