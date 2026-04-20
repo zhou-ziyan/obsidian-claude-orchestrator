@@ -27,6 +27,8 @@ import {
 	SessionGroup,
 	SessionInfo,
 	sessionStatusDisplay,
+	sessionsMissingNotes,
+	createDefaultSessionNote,
 } from "./utils";
 import { findTerminalLeafBySession, collectOpenSessionNames } from "./workspace-helpers";
 import type { ProjectConfig, PtyLevel } from "./utils";
@@ -210,7 +212,33 @@ export class SessionManagerView extends ItemView {
 		// 2. Collect open terminal panel session names
 		const openNames = collectOpenSessionNames(this.app.workspace);
 
-		// 3. Read session notes for managed sessions
+		const projects = this.plugin.settings.projects;
+
+		// 3. Auto-create missing session notes for managed sessions
+		const existingPaths = new Set<string>();
+		for (const s of allSessions) {
+			const project = projectFromSessionName(s.name, projects);
+			if (!project) continue;
+			const config = projects[project];
+			if (!config) continue;
+			const np = sessionNotePath(config.vaultFolder, s.name);
+			if (this.app.vault.getAbstractFileByPath(np)) existingPaths.add(np);
+		}
+		const missing = sessionsMissingNotes(
+			allSessions.map((s) => s.name),
+			projects,
+			existingPaths,
+		);
+		for (const m of missing) {
+			try {
+				if (!this.app.vault.getAbstractFileByPath(m.dirPath)) {
+					await this.app.vault.createFolder(m.dirPath);
+				}
+				await this.app.vault.create(m.notePath, createDefaultSessionNote(m.sessionName));
+			} catch { /* race: another view may have created it */ }
+		}
+
+		// 4. Read session notes for managed sessions
 		const noteData = new Map<string, {
 			queueCount: number;
 			lastActivity: string | null;
@@ -219,8 +247,6 @@ export class SessionManagerView extends ItemView {
 			status: import("./utils").SessionStatus;
 			queueMode: import("./utils").QueueMode;
 		}>();
-
-		const projects = this.plugin.settings.projects;
 		for (const s of allSessions) {
 			const project = projectFromSessionName(s.name, projects);
 			if (!project) continue;
@@ -258,10 +284,10 @@ export class SessionManagerView extends ItemView {
 			}
 		}
 
-		// 4. Group
+		// 5. Group
 		this.groups = groupSessionsByProject(allSessions, openNames, noteData, projects);
 
-		// 5. Render
+		// 6. Render
 		this.render();
 	}
 
