@@ -837,6 +837,7 @@ export class SessionManagerView extends ItemView {
 
 		const cancelBtn = actions.createEl("button", { cls: "btn", text: "Cancel" });
 		cancelBtn.dataset.variant = "secondary";
+		cancelBtn.dataset.size = "sm";
 		cancelBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
 			this.dismissKillConfirm(card);
@@ -844,6 +845,7 @@ export class SessionManagerView extends ItemView {
 
 		const closeTabBtn = actions.createEl("button", { cls: "btn", text: "Close tab" });
 		closeTabBtn.dataset.variant = "secondary";
+		closeTabBtn.dataset.size = "sm";
 		closeTabBtn.title = "Close terminal tab but keep tmux session running";
 		closeTabBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
@@ -853,6 +855,7 @@ export class SessionManagerView extends ItemView {
 
 		const archiveBtn = actions.createEl("button", { cls: "btn", text: "Archive" });
 		archiveBtn.dataset.tone = "warn";
+		archiveBtn.dataset.size = "sm";
 		archiveBtn.title = "Kill session, archive note";
 		archiveBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
@@ -863,6 +866,7 @@ export class SessionManagerView extends ItemView {
 		const deleteBtn = actions.createEl("button", { cls: "btn", text: "Kill" });
 		deleteBtn.dataset.variant = "primary";
 		deleteBtn.dataset.tone = "danger";
+		deleteBtn.dataset.size = "sm";
 		deleteBtn.title = "Kill session, delete note";
 		deleteBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
