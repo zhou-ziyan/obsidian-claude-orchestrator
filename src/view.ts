@@ -215,6 +215,7 @@ export class TerminalView extends ItemView {
 	}
 
 	focusTerminal(): void {
+		this.term?.scrollToBottom();
 		// If queue panel is active, focus the input box instead of terminal.
 		const queueInput = this.queuePanel?.querySelector(".co-queue-input:not(.co-queue-edit-input)") as HTMLElement | null;
 		if (queueInput) {
