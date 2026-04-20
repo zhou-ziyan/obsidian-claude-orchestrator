@@ -37,6 +37,7 @@ import {
 	pinLabelText,
 	terminalTheme,
 	QUEUE_MODES,
+	SessionLifecycle,
 } from "./utils";
 import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry, ThemeName } from "./utils";
 import { Terminal } from "@xterm/xterm";
@@ -98,6 +99,7 @@ export class TerminalView extends ItemView {
 	private ptyProcess: IPty | null = null;
 	private ptyListeners: { dispose(): void }[] = [];
 	private ptyGen = 0;
+	private lifecycle = new SessionLifecycle();
 	private resizeObserver: ResizeObserver | null = null;
 	private pluginDir: string;
 	private ptyModule: typeof import("node-pty") | null = null;
@@ -176,6 +178,7 @@ export class TerminalView extends ItemView {
 
 	async setState(state: unknown, result: ViewStateResult): Promise<void> {
 		const normalized = normalizeViewState(state);
+		const { gen } = this.lifecycle.beginSwitch(normalized.project, normalized.sessionName);
 		this.project = normalized.project;
 		this.sessionName = normalized.sessionName;
 		if (!this.xtermReady) {
@@ -184,7 +187,7 @@ export class TerminalView extends ItemView {
 		await super.setState(state, result);
 		if (this.xtermReady && !this.ptyProcess) {
 			void this.spawnShell();
-			void this.loadSessionNote();
+			void this.loadSessionNote(gen);
 		}
 	}
 
@@ -217,14 +220,20 @@ export class TerminalView extends ItemView {
 	}
 
 	setProject(project: string | null, sessionName?: string): void {
+		const sn = sessionName ?? project;
+		const { gen, needsSave } = this.lifecycle.beginSwitch(project, sn);
 		this.project = project;
-		this.sessionName = sessionName ?? project;
+		this.sessionName = sn;
 		/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Obsidian internal API for tab title refresh */
 		(this.leaf as any).updateHeader?.();
 		/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 		if (this.xtermReady) {
-			void this.spawnShell();
-			void this.loadSessionNote();
+			void (async () => {
+				if (needsSave) await this.saveSessionNote();
+				if (this.lifecycle.isStale(gen)) return;
+				void this.spawnShell();
+				await this.loadSessionNote(gen);
+			})();
 		}
 	}
 
@@ -735,7 +744,7 @@ export class TerminalView extends ItemView {
 
 		if (this.stateSeenPreOpen) {
 			void this.spawnShell();
-			void this.loadSessionNote();
+			void this.loadSessionNote(this.lifecycle.gen);
 		}
 	}
 
@@ -879,12 +888,13 @@ export class TerminalView extends ItemView {
 			const match = pickRecoverySession(sessions, projects, claimedNames);
 			if (!match) return;
 
+			const { gen } = this.lifecycle.beginSwitch(match.project, match.sessionName);
 			this.project = match.project;
 			this.sessionName = match.sessionName;
 			/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Obsidian internal API */
 			(this.leaf as any).updateHeader?.();
 			/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
-			void this.loadSessionNote();
+			void this.loadSessionNote(gen);
 		} catch {
 			// tmux not available — keep plain shell
 		}
@@ -920,10 +930,12 @@ export class TerminalView extends ItemView {
 	private sessionNoteLoaded = false;
 	private savingSessionNote = false;
 
-	private async loadSessionNote(): Promise<void> {
+	private async loadSessionNote(gen?: number): Promise<void> {
 		if (!this.project || !this.sessionName) return;
+		const myGen = gen ?? this.lifecycle.gen;
 		this.sessionNoteLoaded = false;
 		await this.ensureSessionNote();
+		if (this.lifecycle.isStale(myGen)) return;
 		const folder = this.vaultFolder();
 		if (folder === null) return;
 		const notePath = sessionNotePath(folder, this.sessionName);
@@ -935,6 +947,7 @@ export class TerminalView extends ItemView {
 		}
 		if (!(file instanceof TFile)) return;
 		const content = await this.app.vault.read(file);
+		if (this.lifecycle.isStale(myGen)) return;
 		this.sessionNote = parseSessionNote(content, this.sessionName);
 		this.pinnedNote = this.sessionNote.pinnedNote;
 		this.claudeIdle = this.sessionNote.status === "idle";
@@ -955,6 +968,7 @@ export class TerminalView extends ItemView {
 
 	private async saveSessionNote(): Promise<void> {
 		if (!this.project || !this.sessionName || !this.sessionNote) return;
+		this.lifecycle.markDirty();
 		this.sessionNote.pinnedNote = this.pinnedNote;
 		const folder = this.vaultFolder();
 		if (folder === null) return;
@@ -962,11 +976,18 @@ export class TerminalView extends ItemView {
 		const file = this.app.vault.getAbstractFileByPath(notePath);
 		if (file instanceof TFile) {
 			this.savingSessionNote = true;
-			await this.app.vault.modify(
+			const p = this.app.vault.modify(
 				file,
 				serializeSessionNote(this.sessionNote),
-			);
-			this.savingSessionNote = false;
+			).then(() => {
+				this.savingSessionNote = false;
+				this.lifecycle.markClean();
+			}, (err) => {
+				this.savingSessionNote = false;
+				throw err;
+			});
+			this.lifecycle.trackSave(p);
+			await p;
 		}
 	}
 
@@ -1260,7 +1281,8 @@ export class TerminalView extends ItemView {
 	}
 
 	private async sendQuickReply(key: string): Promise<void> {
-		if (!this.sessionName) return;
+		const target = this.lifecycle.captureTarget();
+		if (!target) return;
 
 		if (this.sessionNote) {
 			this.sessionNote.status = "running";
@@ -1270,9 +1292,9 @@ export class TerminalView extends ItemView {
 			void this.saveSessionNote();
 		}
 
-		const { textArgs, enterArgs } = buildQuickReplyTmuxArgs(this.sessionName, escapeLeadingBang(key));
+		const { textArgs, enterArgs } = buildQuickReplyTmuxArgs(target, escapeLeadingBang(key));
 
-		await execTmux(cancelCopyModeArgs(this.sessionName)).catch(() => {});
+		await execTmux(cancelCopyModeArgs(target)).catch(() => {});
 		try {
 			await execTmux(textArgs);
 			await new Promise((r) => setTimeout(r, 150));
@@ -1468,6 +1490,7 @@ export class TerminalView extends ItemView {
 	};
 
 	async onClose() {
+		await this.lifecycle.flush();
 		// Clear dimming on remaining terminals when this one closes
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
 			const view = leaf.view;

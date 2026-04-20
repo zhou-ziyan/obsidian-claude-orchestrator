@@ -1267,3 +1267,60 @@ export function pickRecoverySession(
 	}
 	return best ? { project: best.project, sessionName: best.sessionName } : null;
 }
+
+export interface SwitchResult {
+	gen: number;
+	needsSave: boolean;
+	oldProject: string | null;
+	oldSessionName: string | null;
+}
+
+export class SessionLifecycle {
+	private _gen = 0;
+	private _project: string | null = null;
+	private _sessionName: string | null = null;
+	private _dirty = false;
+	private _pendingSave: Promise<void> | null = null;
+
+	get gen(): number { return this._gen; }
+	get project(): string | null { return this._project; }
+	get sessionName(): string | null { return this._sessionName; }
+	get dirty(): boolean { return this._dirty; }
+
+	markDirty(): void { this._dirty = true; }
+	markClean(): void { this._dirty = false; }
+
+	beginSwitch(project: string | null, sessionName: string | null): SwitchResult {
+		const oldProject = this._project;
+		const oldSessionName = this._sessionName;
+		const needsSave = this._dirty;
+		this._gen++;
+		this._project = project;
+		this._sessionName = sessionName;
+		this._dirty = false;
+		return { gen: this._gen, needsSave, oldProject, oldSessionName };
+	}
+
+	isStale(capturedGen: number): boolean {
+		return capturedGen !== this._gen;
+	}
+
+	captureTarget(): string | null {
+		return this._sessionName;
+	}
+
+	trackSave(promise: Promise<void>): void {
+		const tracked = promise.catch(() => {}).finally(() => {
+			if (this._pendingSave === tracked) {
+				this._pendingSave = null;
+			}
+		});
+		this._pendingSave = tracked;
+	}
+
+	async flush(): Promise<void> {
+		if (this._pendingSave) {
+			await this._pendingSave;
+		}
+	}
+}
