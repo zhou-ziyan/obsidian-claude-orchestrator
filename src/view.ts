@@ -463,10 +463,11 @@ export class TerminalView extends ItemView {
 		const keys = this.getSettings?.().quickReplyKeys ?? [...QUICK_REPLY_KEYS];
 		for (const key of keys) {
 			const btn = quickReplyGroup.createEl("button", {
-				cls: "btn co-quick-reply-btn",
+				cls: "btn",
 				text: key,
 			});
 			btn.dataset.size = "sm";
+			btn.dataset.variant = "secondary";
 			btn.addEventListener("click", () => { void this.sendQuickReply(key); });
 		}
 
@@ -477,6 +478,7 @@ export class TerminalView extends ItemView {
 			text: "Send next ▶",
 		});
 		this.sendBtn.dataset.variant = "primary";
+		this.sendBtn.dataset.size = "md";
 		this.sendBtn.addEventListener("click", () => {
 			if (this.countdownTimer) {
 				this.cancelCountdown();
