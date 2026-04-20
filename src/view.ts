@@ -408,7 +408,7 @@ export class TerminalView extends ItemView {
 		queueTitle.textContent = "Queue";
 
 		this.termFocusIndicator = queueHeader.createSpan({ cls: "co-term-indicator", text: "▴" });
-		this.termFocusIndicator.style.display = "none";
+		this.termFocusIndicator.style.visibility = "hidden";
 
 		this.queueList = this.queuePanel.createDiv({ cls: "co-queue-list" });
 
@@ -695,10 +695,10 @@ export class TerminalView extends ItemView {
 		);
 
 		this.term.textarea?.addEventListener("focus", () => {
-			if (this.termFocusIndicator) this.termFocusIndicator.style.display = "";
+			if (this.termFocusIndicator) this.termFocusIndicator.style.visibility = "";
 		});
 		this.term.textarea?.addEventListener("blur", () => {
-			if (this.termFocusIndicator) this.termFocusIndicator.style.display = "none";
+			if (this.termFocusIndicator) this.termFocusIndicator.style.visibility = "hidden";
 		});
 
 		try {

@@ -436,6 +436,7 @@
     align-items: center;
     border-bottom: none;
     border-top: 1px solid var(--co-border);
+    height: 28px;
 }
 
 .co-history-panel {
@@ -795,7 +796,8 @@
     flex-wrap: nowrap;
     gap: 10px;
     align-items: center;
-    padding: 8px 12px;
+    padding: 0 12px;
+    height: 44px;
     border-top: 1px solid var(--co-border);
     background: var(--co-bg);
     min-width: 0;
