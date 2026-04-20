@@ -908,21 +908,7 @@ export class SessionManagerView extends ItemView {
 
 	private async attachSession(session: SessionInfo) {
 		const project = projectFromSessionName(session.name, this.plugin.settings.projects);
-		const { workspace } = this.app;
-
-		const leaf = workspace.getRightLeaf(false);
-		if (!leaf) return;
-
-		await leaf.setViewState({
-			type: VIEW_TYPE_TERMINAL,
-			active: true,
-		});
-
-		const view = leaf.view;
-		if (view instanceof TerminalView) {
-			view.setProject(project, session.name);
-		}
-		void workspace.revealLeaf(leaf);
+		await this.plugin.createTerminalLeaf(project, session.name);
 
 		// Refresh to update hasPanel state
 		setTimeout(() => { void this.refresh(); }, 500);

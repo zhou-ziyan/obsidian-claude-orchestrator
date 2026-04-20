@@ -412,7 +412,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 	// --- Shared helpers ---
 
-	private async createTerminalLeaf(
+	async createTerminalLeaf(
 		project: string | null,
 		sessionName: string | null,
 	): Promise<void> {
