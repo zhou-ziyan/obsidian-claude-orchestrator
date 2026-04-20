@@ -1123,7 +1123,7 @@ export class TerminalView extends ItemView {
 		if (idx > 0) {
 			const upBtn = actions.createEl("button", {
 				cls: "icon-btn co-move-btn",
-				text: "▴",
+				text: "↑",
 			});
 			upBtn.addEventListener("click", () => {
 				if (!this.sessionNote) return;
@@ -1138,7 +1138,7 @@ export class TerminalView extends ItemView {
 		if (this.sessionNote && idx < this.sessionNote.queue.length - 1) {
 			const downBtn = actions.createEl("button", {
 				cls: "icon-btn co-move-btn",
-				text: "▾",
+				text: "↓",
 			});
 			downBtn.addEventListener("click", () => {
 				if (!this.sessionNote) return;
@@ -1155,7 +1155,6 @@ export class TerminalView extends ItemView {
 			cls: "icon-btn",
 			text: "✎",
 		});
-		editBtn.dataset.tone = "success";
 		editBtn.addEventListener("click", () => {
 			row.empty();
 			const tsMatch = text.match(/^(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] )/);
@@ -1211,7 +1210,7 @@ export class TerminalView extends ItemView {
 
 		const removeBtn = actions.createEl("button", {
 			cls: "icon-btn",
-			text: "×",
+			text: "✕",
 		});
 		removeBtn.dataset.tone = "danger";
 		removeBtn.addEventListener("click", () => {

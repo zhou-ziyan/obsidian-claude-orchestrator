@@ -595,8 +595,13 @@
 
 .co-queue-actions {
     display: flex;
-    gap: 2px;
+    gap: 1px;
     flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.12s;
+}
+.co-queue-item:hover .co-queue-actions {
+    opacity: 1;
 }
 
 .icon-btn {
