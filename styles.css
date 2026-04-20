@@ -1235,6 +1235,66 @@
     white-space: nowrap;
 }
 
+/* Send next button (Manual + queued) */
+.co-sm-card-send {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 0 -2px 15px;
+    padding: 3px 10px;
+    background: var(--accent);
+    color: var(--accent-on);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    line-height: 1.2;
+}
+.co-sm-card-send:hover { filter: brightness(1.1); }
+.co-sm-card-send-icon { font-size: 9px; }
+
+/* Per-card auto-send countdown (Auto + ticking) */
+.co-sm-card-countdown {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0 -2px 15px;
+    padding: 4px 10px;
+    background: var(--s-danger-bg);
+    border: 1px solid var(--s-danger);
+    color: var(--s-danger);
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+.co-sm-card-countdown-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--s-danger);
+    animation: co-blink 1s step-end infinite;
+}
+.co-sm-card-countdown-x {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--s-danger);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 0 2px;
+    border-radius: 2px;
+    line-height: 1;
+}
+.co-sm-card-countdown-x:hover {
+    background: color-mix(in oklab, var(--s-danger) 25%, transparent);
+    color: #fff;
+}
+
 /* Card actions */
 .co-sm-card-actions {
     display: flex;

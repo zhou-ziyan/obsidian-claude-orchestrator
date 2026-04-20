@@ -589,37 +589,27 @@ export class SessionManagerView extends ItemView {
 			previewEl.textContent = session.preview;
 		}
 
-		card.addEventListener("dblclick", () => {
-			if (session.hasPanel) {
-				this.focusSession(session.name);
-			} else {
-				void this.attachSession(session);
-			}
-		});
-
-		// Actions (bottom-left)
-		const actions = card.createDiv({ cls: "co-sm-card-actions" });
-
+		// Send next / Countdown (below meta/preview, per design reference)
 		if (session.hasPanel && session.queueCount > 0) {
 			const match = findTerminalLeafBySession(this.app.workspace, session.name);
 			const countdown = match?.view.getCountdownRemaining() ?? 0;
 
 			if (countdown > 0) {
-				const pill = actions.createDiv({ cls: "co-countdown" });
-				pill.createDiv({ cls: "co-countdown-dot" });
-				pill.createSpan({ cls: "co-countdown-label", text: `Auto-send in ${countdown}s` });
-				const cancelBtn = pill.createEl("button", { cls: "icon-btn", text: "✕" });
+				const cdEl = card.createDiv({ cls: "co-sm-card-countdown" });
+				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
+				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: `Auto-send in ${countdown}s` });
+				const cancelBtn = cdEl.createEl("button", { cls: "co-sm-card-countdown-x", text: "✕" });
+				cancelBtn.title = "Cancel";
 				cancelBtn.addEventListener("click", (e) => {
 					e.stopPropagation();
 					match?.view.cancelCountdown();
 				});
-				this.sendBtns.set(session.name, pill);
+				this.sendBtns.set(session.name, cdEl);
 			} else {
-				const sendBtn = actions.createEl("button", {
-					cls: "btn",
-					text: "Send ▶",
-				});
-				sendBtn.dataset.variant = "primary";
+				const sendBtn = card.createEl("button", { cls: "co-sm-card-send" });
+				sendBtn.createSpan({ cls: "co-sm-card-send-icon", text: "▶" });
+				sendBtn.createSpan({ text: "Send next" });
+				sendBtn.title = "Send next queue item";
 				sendBtn.addEventListener("click", (e) => {
 					e.stopPropagation();
 					void this.sendNextForSession(session.name);
@@ -627,6 +617,14 @@ export class SessionManagerView extends ItemView {
 				this.sendBtns.set(session.name, sendBtn);
 			}
 		}
+
+		card.addEventListener("dblclick", () => {
+			if (session.hasPanel) {
+				this.focusSession(session.name);
+			} else {
+				void this.attachSession(session);
+			}
+		});
 
 	}
 
@@ -637,25 +635,28 @@ export class SessionManagerView extends ItemView {
 			const parent = el.parentElement;
 			if (!parent) continue;
 
-			const isPill = el.classList.contains("co-countdown");
-			if (remaining > 0 && isPill) {
-				const label = el.querySelector(".co-countdown-label");
+			const isCd = el.classList.contains("co-sm-card-countdown");
+			if (remaining > 0 && isCd) {
+				const label = el.querySelector(".co-sm-card-countdown-text");
 				if (label) label.textContent = `Auto-send in ${remaining}s`;
-			} else if (remaining > 0 && !isPill) {
+			} else if (remaining > 0 && !isCd) {
 				el.remove();
-				const pill = parent.createDiv({ cls: "co-countdown" });
-				pill.createDiv({ cls: "co-countdown-dot" });
-				pill.createSpan({ cls: "co-countdown-label", text: `Auto-send in ${remaining}s` });
-				const cancelBtn = pill.createEl("button", { cls: "icon-btn", text: "✕" });
+				const cdEl = parent.createDiv({ cls: "co-sm-card-countdown" });
+				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
+				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: `Auto-send in ${remaining}s` });
+				const cancelBtn = cdEl.createEl("button", { cls: "co-sm-card-countdown-x", text: "✕" });
+				cancelBtn.title = "Cancel";
 				cancelBtn.addEventListener("click", (e) => {
 					e.stopPropagation();
 					match?.view.cancelCountdown();
 				});
-				this.sendBtns.set(sessionName, pill);
-			} else if (remaining <= 0 && isPill) {
+				this.sendBtns.set(sessionName, cdEl);
+			} else if (remaining <= 0 && isCd) {
 				el.remove();
-				const sendBtn = parent.createEl("button", { cls: "btn", text: "Send ▶" });
-				sendBtn.dataset.variant = "primary";
+				const sendBtn = parent.createEl("button", { cls: "co-sm-card-send" });
+				sendBtn.createSpan({ cls: "co-sm-card-send-icon", text: "▶" });
+				sendBtn.createSpan({ text: "Send next" });
+				sendBtn.title = "Send next queue item";
 				sendBtn.addEventListener("click", (e) => {
 					e.stopPropagation();
 					void this.sendNextForSession(sessionName);
