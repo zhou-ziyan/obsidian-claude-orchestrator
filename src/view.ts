@@ -122,9 +122,22 @@ export class TerminalView extends ItemView {
 	private escHandler: ((e: KeyboardEvent) => void) | null = null;
 	private claudeIdle = false;
 	private loadedAt = 0;
+	private fitTerminal(): void {
+		if (!this.term || !this.host) return;
+		/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment -- xterm internal API (same pattern as FitAddon) */
+		const dims = (this.term as any)._core?._renderService?.dimensions;
+		if (!dims || dims.css.cell.width === 0 || dims.css.cell.height === 0) return;
+		const cols = Math.max(2, Math.floor(this.host.clientWidth / dims.css.cell.width));
+		const rows = Math.max(1, Math.floor(this.host.clientHeight / dims.css.cell.height));
+		/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
+		if (this.term.cols !== cols || this.term.rows !== rows) {
+			this.term.resize(cols, rows);
+		}
+	}
+
 	private fitAndResize(): void {
 		if (!this.host || this.host.clientWidth < 50) return;
-		this.fitAddon?.fit();
+		this.fitTerminal();
 		if (this.term && this.ptyProcess) {
 			try { this.ptyProcess.resize(this.term.cols, this.term.rows); } catch { /* ignore */ }
 		}
@@ -688,8 +701,8 @@ export class TerminalView extends ItemView {
 		this.term.loadAddon(this.fitAddon);
 		this.term.open(this.host);
 		requestAnimationFrame(() => {
-			this.fitAddon?.fit();
-			requestAnimationFrame(() => this.fitAddon?.fit());
+			this.fitTerminal();
+			requestAnimationFrame(() => this.fitTerminal());
 		});
 
 		this.term.attachCustomKeyEventHandler((ev) =>
