@@ -476,7 +476,7 @@ export class TerminalView extends ItemView {
 
 		const addRow = this.queuePanel.createDiv({ cls: "co-queue-add" });
 		const input = addRow.createEl("textarea", {
-			placeholder: "Add task...",
+			placeholder: "Add to queue\u2026  /  slash for commands  /  \u2191 for history",
 			cls: "co-queue-input",
 		});
 		input.rows = 1;

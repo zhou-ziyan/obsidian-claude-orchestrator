@@ -539,7 +539,7 @@ export class SessionManagerView extends ItemView {
 			metaRow.createSpan({ cls: "co-sm-card-dot-sep", text: "·" });
 
 			const queueBadge = metaRow.createSpan({ cls: "co-sm-card-queue-badge" });
-			queueBadge.textContent = `${session.queueCount}`;
+			queueBadge.textContent = `Q ${session.queueCount}`;
 			if (session.queueCount > 0) queueBadge.dataset.nonzero = "true";
 
 			if (session.lastActivity) {
