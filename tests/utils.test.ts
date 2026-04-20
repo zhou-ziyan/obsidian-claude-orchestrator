@@ -709,6 +709,29 @@ describe("serializeSessionNote", () => {
 		const parsed = parseSessionNote(md);
 		assert.deepEqual(parsed, note);
 	});
+
+	it("status-only update preserves history completion state", () => {
+		const note: SessionNote = {
+			session: "test-1",
+			status: "running",
+			queueMode: "manual",
+			displayName: "",
+			summary: "",
+			notes: "",
+			history: [
+				{ text: "[2026-04-19 12:00] fix auth", completed: true },
+				{ text: "[2026-04-19 12:05] add tests", completed: false },
+			],
+			queue: ["next task"],
+		};
+		// Simulate: only update status (like updateSessionStatus does)
+		note.status = "idle";
+		const md = serializeSessionNote(note);
+		const reparsed = parseSessionNote(md);
+		assert.equal(reparsed.status, "idle");
+		assert.equal(reparsed.history[0]?.completed, true, "completed item must stay completed");
+		assert.equal(reparsed.history[1]?.completed, false, "uncompleted item must stay uncompleted");
+	});
 });
 
 // --- parseAllTmuxSessions ---
