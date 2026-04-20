@@ -77,6 +77,8 @@ import {
 	collectNoteNamesFromFiles,
 	SessionLifecycle,
 	sessionsMissingNotes,
+	archiveSessionNotePath,
+	renamedSessionNotePath,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote, SlashCommandEntry } from "../src/utils.ts";
 
@@ -556,6 +558,40 @@ describe("sessionNotePath", () => {
 			sessionNotePath("/", "ClaudeRoot-2"),
 			"sessions/ClaudeRoot-2.md",
 		);
+	});
+});
+
+// --- archiveSessionNotePath ---
+
+describe("archiveSessionNotePath", () => {
+	it("returns archive path with prefix", () => {
+		assert.equal(
+			archiveSessionNotePath("01_Projects/MyProject", "MyProject-1"),
+			"01_Projects/MyProject/sessions/archive-MyProject-1.md",
+		);
+	});
+
+	it("handles vault root", () => {
+		assert.equal(
+			archiveSessionNotePath("", "my-session"),
+			"sessions/archive-my-session.md",
+		);
+	});
+});
+
+// --- renamedSessionNotePath ---
+
+describe("renamedSessionNotePath", () => {
+	it("returns old and new paths for rename", () => {
+		const result = renamedSessionNotePath("01_Projects/MyProject", "MyProject-1", "MyProject-2");
+		assert.equal(result.oldPath, "01_Projects/MyProject/sessions/MyProject-1.md");
+		assert.equal(result.newPath, "01_Projects/MyProject/sessions/MyProject-2.md");
+	});
+
+	it("handles vault root", () => {
+		const result = renamedSessionNotePath("", "old-session", "new-session");
+		assert.equal(result.oldPath, "sessions/old-session.md");
+		assert.equal(result.newPath, "sessions/new-session.md");
 	});
 });
 

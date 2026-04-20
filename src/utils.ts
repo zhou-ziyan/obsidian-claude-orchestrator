@@ -390,6 +390,25 @@ export function sessionNotePath(
 	return `${sessionDirPath(vaultFolder)}/${sessionName}.md`;
 }
 
+export function archiveSessionNotePath(
+	vaultFolder: string,
+	sessionName: string,
+): string {
+	return `${sessionDirPath(vaultFolder)}/archive-${sessionName}.md`;
+}
+
+export function renamedSessionNotePath(
+	vaultFolder: string,
+	oldSessionName: string,
+	newSessionName: string,
+): { oldPath: string; newPath: string } {
+	const dir = sessionDirPath(vaultFolder);
+	return {
+		oldPath: `${dir}/${oldSessionName}.md`,
+		newPath: `${dir}/${newSessionName}.md`,
+	};
+}
+
 /**
  * Create default markdown content for a new session note.
  */
