@@ -76,6 +76,7 @@ import {
 	sessionStatusDisplay,
 	terminalTheme,
 	migrateThemeName,
+	collectNoteNamesFromFiles,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote, SlashCommandEntry } from "../src/utils.ts";
 
@@ -158,6 +159,83 @@ describe("generateSessionName", () => {
 		]);
 		assert.equal(
 			generateSessionName("15_Claude_Orchestrator", existing),
+			"15_Claude_Orchestrator-2",
+		);
+	});
+});
+
+// --- collectNoteNamesFromFiles ---
+
+describe("collectNoteNamesFromFiles", () => {
+	it("returns empty set for empty list", () => {
+		assert.deepEqual(collectNoteNamesFromFiles([]), new Set());
+	});
+
+	it("strips .md extension from filenames", () => {
+		const result = collectNoteNamesFromFiles([
+			"15_Claude_Orchestrator-1.md",
+			"15_Claude_Orchestrator-2.md",
+		]);
+		assert.deepEqual(
+			result,
+			new Set(["15_Claude_Orchestrator-1", "15_Claude_Orchestrator-2"]),
+		);
+	});
+
+	it("ignores non-.md files", () => {
+		const result = collectNoteNamesFromFiles([
+			"15_Claude_Orchestrator-1.md",
+			".DS_Store",
+			"notes.txt",
+		]);
+		assert.deepEqual(
+			result,
+			new Set(["15_Claude_Orchestrator-1"]),
+		);
+	});
+
+	it("handles bare project name note", () => {
+		const result = collectNoteNamesFromFiles(["15_Claude_Orchestrator.md"]);
+		assert.deepEqual(
+			result,
+			new Set(["15_Claude_Orchestrator"]),
+		);
+	});
+});
+
+// --- generateSessionName with disk note dedup ---
+
+describe("generateSessionName with disk note names", () => {
+	it("skips numbers used by disk notes even when no tabs are open", () => {
+		const diskNotes = collectNoteNamesFromFiles([
+			"15_Claude_Orchestrator-1.md",
+			"15_Claude_Orchestrator-2.md",
+		]);
+		assert.equal(
+			generateSessionName("15_Claude_Orchestrator", diskNotes),
+			"15_Claude_Orchestrator-3",
+		);
+	});
+
+	it("skips numbers used by both tabs and disk notes", () => {
+		const openTabs = new Set(["15_Claude_Orchestrator-1"]);
+		const diskNotes = collectNoteNamesFromFiles([
+			"15_Claude_Orchestrator-2.md",
+		]);
+		const merged = new Set([...openTabs, ...diskNotes]);
+		assert.equal(
+			generateSessionName("15_Claude_Orchestrator", merged),
+			"15_Claude_Orchestrator-3",
+		);
+	});
+
+	it("fills gap between disk notes", () => {
+		const diskNotes = collectNoteNamesFromFiles([
+			"15_Claude_Orchestrator-1.md",
+			"15_Claude_Orchestrator-3.md",
+		]);
+		assert.equal(
+			generateSessionName("15_Claude_Orchestrator", diskNotes),
 			"15_Claude_Orchestrator-2",
 		);
 	});
