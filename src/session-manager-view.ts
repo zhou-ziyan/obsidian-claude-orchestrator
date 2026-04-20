@@ -478,10 +478,10 @@ export class SessionManagerView extends ItemView {
 		// Top row: name + kill button in top-right corner
 		const topRow = card.createDiv({ cls: "co-sm-card-top" });
 
-		const nameRow = topRow.createDiv({ cls: "co-sm-card-name" });
 		const { cls: statusCls, dataStatus } = sessionStatusDisplay(session.hasPanel, session.status);
-		const statusDot = nameRow.createDiv({ cls: statusCls });
+		const statusDot = topRow.createDiv({ cls: statusCls });
 		statusDot.dataset.s = dataStatus;
+		const nameRow = topRow.createDiv({ cls: "co-sm-card-name" });
 		const displayLabel = session.displayName || session.name.replace(/-(\d+)$/, " #$1");
 		const nameSpan = nameRow.createSpan({ text: displayLabel });
 		nameSpan.addEventListener("dblclick", (e) => {
