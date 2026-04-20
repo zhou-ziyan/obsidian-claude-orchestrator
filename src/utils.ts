@@ -25,6 +25,16 @@ export function generateSessionName(
 	}
 }
 
+export function collectNoteNamesFromFiles(fileNames: string[]): Set<string> {
+	const names = new Set<string>();
+	for (const f of fileNames) {
+		if (f.endsWith(".md")) {
+			names.add(f.slice(0, -3));
+		}
+	}
+	return names;
+}
+
 export function normalizeVaultFolder(raw: string): string {
 	const trimmed = raw.replace(/^\/+|\/+$/g, "");
 	return trimmed === "." ? "" : trimmed;

@@ -1,7 +1,7 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, parseSessionNote, serializeSessionNote, ensureStopHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, loadSlashCommands, BUILTIN_SLASH_COMMANDS, updatePinnedNotePath, sessionDirPath, migrateThemeName } from "./utils";
+import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, parseSessionNote, serializeSessionNote, ensureStopHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, loadSlashCommands, BUILTIN_SLASH_COMMANDS, updatePinnedNotePath, sessionDirPath, migrateThemeName } from "./utils";
 import type { ProjectRegistry, SlashCommandEntry, ThemeName } from "./utils";
 import { StopHookWatcher } from "./stop-hook-watcher";
 import { findTerminalLeafBySession, findTerminalLeafByProject, collectOpenSessionNames } from "./workspace-helpers";
@@ -351,10 +351,21 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 	}
 
 	async createNewTerminalForProject(project: string) {
-		const sessionName = generateSessionName(
-			project,
-			this.collectSessionNames(),
-		);
+		const openNames = this.collectSessionNames();
+		const config = this.settings.projects[project];
+		if (config) {
+			const dir = sessionDirPath(config.vaultFolder);
+			const folder = this.app.vault.getAbstractFileByPath(dir);
+			if (folder instanceof TFolder) {
+				const fileNames = folder.children
+					.filter((c): c is TFile => c instanceof TFile)
+					.map((f) => f.name);
+				for (const n of collectNoteNamesFromFiles(fileNames)) {
+					openNames.add(n);
+				}
+			}
+		}
+		const sessionName = generateSessionName(project, openNames);
 		await this.createTerminalLeaf(project, sessionName);
 	}
 
