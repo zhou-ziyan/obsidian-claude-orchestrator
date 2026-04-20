@@ -40,7 +40,6 @@ import {
 } from "./utils";
 import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry, ThemeName } from "./utils";
 import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
 import type { IPty } from "node-pty";
 import * as os from "os";
 import * as path from "path";
@@ -94,7 +93,6 @@ function extractTimestamp(text: string): { stamp: string | null; body: string } 
 
 export class TerminalView extends ItemView {
 	private term: Terminal | null = null;
-	private fitAddon: FitAddon | null = null;
 	private ptyProcess: IPty | null = null;
 	private ptyListeners: { dispose(): void }[] = [];
 	private ptyGen = 0;
@@ -260,7 +258,10 @@ export class TerminalView extends ItemView {
 
 		this.registerSessionNoteEvents();
 		this.registerEvent(
-			this.app.workspace.on("layout-change", () => this.debouncedFit()),
+			this.app.workspace.on("layout-change", () => {
+				this.debouncedFit();
+				setTimeout(() => this.fitAndResize(), 300);
+			}),
 		);
 
 		const queueEnabled = !(this.getSettings?.().simpleMode ?? false);
@@ -698,13 +699,12 @@ export class TerminalView extends ItemView {
 			lineHeight: 1.2,
 			theme: terminalTheme(this.getSettings?.().theme ?? "obsidian"),
 		});
-		this.fitAddon = new FitAddon();
-		this.term.loadAddon(this.fitAddon);
 		this.term.open(this.host);
 		requestAnimationFrame(() => {
 			this.fitTerminal();
 			requestAnimationFrame(() => this.fitTerminal());
 		});
+		setTimeout(() => this.fitAndResize(), 300);
 
 		this.term.attachCustomKeyEventHandler((ev) =>
 			handleTerminalScrollKey(ev.key, (n) => this.term?.scrollPages(n)),
@@ -854,6 +854,7 @@ export class TerminalView extends ItemView {
 		this.ptyProcess = newPty;
 
 		requestAnimationFrame(() => this.fitAndResize());
+		setTimeout(() => this.fitAndResize(), 300);
 
 		this.ptyListeners = [
 			newPty.onData((data) => {
@@ -1491,7 +1492,6 @@ export class TerminalView extends ItemView {
 		this.ptyModule = null;
 		this.term?.dispose();
 		this.term = null;
-		this.fitAddon = null;
 		this.xtermReady = false;
 	}
 }
