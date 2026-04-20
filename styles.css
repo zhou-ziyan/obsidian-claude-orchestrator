@@ -1446,9 +1446,10 @@
 .co-sm-pty {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 1px 10px;
-    font-size: 9px;
+    gap: 8px;
+    padding: 6px 12px;
+    font-size: 10px;
+    color: var(--co-text-muted);
     border-top: 1px solid var(--co-border);
     flex-shrink: 0;
 }
@@ -1459,6 +1460,7 @@
 .co-sm-pty-label {
     white-space: nowrap;
     flex-shrink: 0;
+    font-family: ui-monospace, "JetBrains Mono", Menlo, monospace;
 }
 .co-sm-pty-label.co-pty-ok { color: var(--co-text-muted); }
 .co-sm-pty-label.co-pty-warning { color: var(--s-ask); }
@@ -1466,15 +1468,15 @@
 
 .co-sm-pty-bar {
     flex: 1;
-    height: 2px;
+    height: 3px;
     background: var(--co-border);
-    border-radius: 1px;
+    border-radius: 2px;
     overflow: hidden;
 }
 
 .co-sm-pty-fill {
     height: 100%;
-    border-radius: 1px;
+    border-radius: 2px;
     transition: width 0.3s;
 }
 .co-sm-pty-fill.co-pty-ok { background: var(--s-running); }

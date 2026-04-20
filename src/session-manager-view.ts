@@ -358,7 +358,7 @@ export class SessionManagerView extends ItemView {
 		const pct = Math.min(100, Math.round((used / max) * 100));
 
 		const label = this.ptyEl.createSpan({ cls: `co-sm-pty-label co-pty-${level}` });
-		label.textContent = `PTY ${used}/${max}`;
+		label.textContent = `PTY ${used} / ${max}`;
 
 		const bar = this.ptyEl.createDiv({ cls: "co-sm-pty-bar" });
 		const fill = bar.createDiv({ cls: `co-sm-pty-fill co-pty-${level}` });
