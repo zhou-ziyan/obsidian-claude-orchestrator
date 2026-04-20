@@ -1248,7 +1248,7 @@
 
 /* Kill confirm state */
 .co-sm-card[data-confirming="kill"] {
-    border: 1px solid var(--s-danger);
+    box-shadow: inset 0 0 0 1px var(--s-danger);
     background: color-mix(in oklab, var(--s-danger) 6%, var(--co-bg-elevated));
 }
 .co-sm-card[data-confirming="kill"].co-sm-card-focused::before {

@@ -869,7 +869,7 @@ export class SessionManagerView extends ItemView {
 		const msg = confirm.createDiv({ cls: "co-sm-card-confirm-msg" });
 		msg.appendText("Kill ");
 		msg.createSpan({ cls: "co-sm-card-confirm-name", text: `"${sessionName}"` });
-		msg.appendText("? Session note:");
+		msg.appendText("?");
 
 		const actions = confirm.createDiv({ cls: "co-sm-card-confirm-actions" });
 
@@ -880,19 +880,28 @@ export class SessionManagerView extends ItemView {
 			this.dismissKillConfirm(card);
 		});
 
-		const archiveBtn = actions.createEl("button", { cls: "btn", text: "Kill + archive" });
+		const closeTabBtn = actions.createEl("button", { cls: "btn", text: "Close tab" });
+		closeTabBtn.dataset.variant = "secondary";
+		closeTabBtn.title = "Close terminal tab but keep tmux session running";
+		closeTabBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			this.dismissKillConfirm(card);
+			void this.closeSessionTab(sessionName);
+		});
+
+		const archiveBtn = actions.createEl("button", { cls: "btn", text: "Archive" });
 		archiveBtn.dataset.tone = "warn";
-		archiveBtn.title = "Kill session and rename note to archive-" + sessionName;
+		archiveBtn.title = "Kill session, archive note";
 		archiveBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
 			this.dismissKillConfirm(card);
 			void this.killSession(sessionName, "archive");
 		});
 
-		const deleteBtn = actions.createEl("button", { cls: "btn", text: "Kill + delete" });
+		const deleteBtn = actions.createEl("button", { cls: "btn", text: "Kill" });
 		deleteBtn.dataset.variant = "primary";
 		deleteBtn.dataset.tone = "danger";
-		deleteBtn.title = "Kill session and delete the session note";
+		deleteBtn.title = "Kill session, delete note";
 		deleteBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
 			this.dismissKillConfirm(card);
