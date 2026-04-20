@@ -77,6 +77,7 @@ import {
 	terminalTheme,
 	migrateThemeName,
 	collectNoteNamesFromFiles,
+	SessionLifecycle,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote, SlashCommandEntry } from "../src/utils.ts";
 
@@ -3355,5 +3356,267 @@ describe("migrateThemeName", () => {
 		assert.equal(migrateThemeName("unknown"), "obsidian");
 		assert.equal(migrateThemeName(null), "obsidian");
 		assert.equal(migrateThemeName(undefined), "obsidian");
+	});
+});
+
+// --- SessionLifecycle ---
+
+describe("SessionLifecycle", () => {
+	describe("initial state", () => {
+		it("starts with gen 0, null project/session, clean", () => {
+			const lc = new SessionLifecycle();
+			assert.equal(lc.gen, 0);
+			assert.equal(lc.project, null);
+			assert.equal(lc.sessionName, null);
+			assert.equal(lc.dirty, false);
+		});
+	});
+
+	describe("beginSwitch", () => {
+		it("increments generation on each switch", () => {
+			const lc = new SessionLifecycle();
+			const s1 = lc.beginSwitch("A", "A-1");
+			assert.equal(s1.gen, 1);
+			const s2 = lc.beginSwitch("B", "B-1");
+			assert.equal(s2.gen, 2);
+			const s3 = lc.beginSwitch("C", "C-1");
+			assert.equal(s3.gen, 3);
+		});
+
+		it("updates project and sessionName", () => {
+			const lc = new SessionLifecycle();
+			lc.beginSwitch("ProjectA", "ProjectA-1");
+			assert.equal(lc.project, "ProjectA");
+			assert.equal(lc.sessionName, "ProjectA-1");
+		});
+
+		it("returns old project/session info", () => {
+			const lc = new SessionLifecycle();
+			lc.beginSwitch("A", "A-1");
+			const s2 = lc.beginSwitch("B", "B-1");
+			assert.equal(s2.oldProject, "A");
+			assert.equal(s2.oldSessionName, "A-1");
+		});
+
+		it("returns null old values on first switch", () => {
+			const lc = new SessionLifecycle();
+			const s1 = lc.beginSwitch("A", "A-1");
+			assert.equal(s1.oldProject, null);
+			assert.equal(s1.oldSessionName, null);
+		});
+
+		it("reports needsSave=true when dirty", () => {
+			const lc = new SessionLifecycle();
+			lc.beginSwitch("A", "A-1");
+			lc.markDirty();
+			const s2 = lc.beginSwitch("B", "B-1");
+			assert.equal(s2.needsSave, true);
+		});
+
+		it("reports needsSave=false when clean", () => {
+			const lc = new SessionLifecycle();
+			lc.beginSwitch("A", "A-1");
+			const s2 = lc.beginSwitch("B", "B-1");
+			assert.equal(s2.needsSave, false);
+		});
+
+		it("resets dirty flag after switch", () => {
+			const lc = new SessionLifecycle();
+			lc.beginSwitch("A", "A-1");
+			lc.markDirty();
+			assert.equal(lc.dirty, true);
+			lc.beginSwitch("B", "B-1");
+			assert.equal(lc.dirty, false);
+		});
+
+		it("handles switch to null project", () => {
+			const lc = new SessionLifecycle();
+			lc.beginSwitch("A", "A-1");
+			const s2 = lc.beginSwitch(null, null);
+			assert.equal(lc.project, null);
+			assert.equal(lc.sessionName, null);
+			assert.equal(s2.oldProject, "A");
+		});
+	});
+
+	describe("isStale", () => {
+		it("returns false for current generation", () => {
+			const lc = new SessionLifecycle();
+			const { gen } = lc.beginSwitch("A", "A-1");
+			assert.equal(lc.isStale(gen), false);
+		});
+
+		it("returns true after another switch invalidates it", () => {
+			const lc = new SessionLifecycle();
+			const { gen: gen1 } = lc.beginSwitch("A", "A-1");
+			lc.beginSwitch("B", "B-1");
+			assert.equal(lc.isStale(gen1), true);
+		});
+
+		it("only the latest generation is current", () => {
+			const lc = new SessionLifecycle();
+			const { gen: g1 } = lc.beginSwitch("A", "A-1");
+			const { gen: g2 } = lc.beginSwitch("B", "B-1");
+			const { gen: g3 } = lc.beginSwitch("C", "C-1");
+			assert.equal(lc.isStale(g1), true);
+			assert.equal(lc.isStale(g2), true);
+			assert.equal(lc.isStale(g3), false);
+		});
+
+		it("gen 0 is stale after any switch", () => {
+			const lc = new SessionLifecycle();
+			assert.equal(lc.isStale(0), false);
+			lc.beginSwitch("A", "A-1");
+			assert.equal(lc.isStale(0), true);
+		});
+	});
+
+	describe("captureTarget", () => {
+		it("returns current sessionName", () => {
+			const lc = new SessionLifecycle();
+			lc.beginSwitch("A", "A-1");
+			assert.equal(lc.captureTarget(), "A-1");
+		});
+
+		it("returns null before any switch", () => {
+			const lc = new SessionLifecycle();
+			assert.equal(lc.captureTarget(), null);
+		});
+
+		it("captured value is immutable — does not change after switch", () => {
+			const lc = new SessionLifecycle();
+			lc.beginSwitch("A", "A-1");
+			const target = lc.captureTarget();
+			lc.beginSwitch("B", "B-1");
+			assert.equal(target, "A-1");
+			assert.equal(lc.captureTarget(), "B-1");
+		});
+	});
+
+	describe("dirty tracking", () => {
+		it("markDirty sets dirty to true", () => {
+			const lc = new SessionLifecycle();
+			lc.markDirty();
+			assert.equal(lc.dirty, true);
+		});
+
+		it("markClean sets dirty to false", () => {
+			const lc = new SessionLifecycle();
+			lc.markDirty();
+			lc.markClean();
+			assert.equal(lc.dirty, false);
+		});
+
+		it("multiple markDirty calls are idempotent", () => {
+			const lc = new SessionLifecycle();
+			lc.markDirty();
+			lc.markDirty();
+			assert.equal(lc.dirty, true);
+		});
+	});
+
+	describe("flush (in-flight save tracking)", () => {
+		it("resolves immediately when no save is in flight", async () => {
+			const lc = new SessionLifecycle();
+			await lc.flush();
+		});
+
+		it("waits for tracked save to complete", async () => {
+			const lc = new SessionLifecycle();
+			let resolved = false;
+			const savePromise = new Promise<void>((resolve) => {
+				setTimeout(() => { resolved = true; resolve(); }, 10);
+			});
+			lc.trackSave(savePromise);
+			assert.equal(resolved, false);
+			await lc.flush();
+			assert.equal(resolved, true);
+		});
+
+		it("clears tracked save after completion", async () => {
+			const lc = new SessionLifecycle();
+			let callCount = 0;
+			const savePromise = new Promise<void>((resolve) => {
+				callCount++;
+				resolve();
+			});
+			lc.trackSave(savePromise);
+			await lc.flush();
+			assert.equal(callCount, 1);
+			await lc.flush();
+		});
+
+		it("handles rejected saves without throwing from flush", async () => {
+			const lc = new SessionLifecycle();
+			lc.trackSave(Promise.reject(new Error("write failed")));
+			await lc.flush();
+		});
+
+		it("tracks only the latest save when multiple are registered", async () => {
+			const lc = new SessionLifecycle();
+			const order: string[] = [];
+			const save1 = new Promise<void>((resolve) => {
+				setTimeout(() => { order.push("save1"); resolve(); }, 20);
+			});
+			const save2 = new Promise<void>((resolve) => {
+				setTimeout(() => { order.push("save2"); resolve(); }, 5);
+			});
+			lc.trackSave(save1);
+			lc.trackSave(save2);
+			await lc.flush();
+			assert.ok(order.includes("save2"));
+		});
+	});
+
+	describe("lifecycle scenarios", () => {
+		it("project switch: save-before-switch flow", () => {
+			const lc = new SessionLifecycle();
+			lc.beginSwitch("A", "A-1");
+			lc.markDirty();
+
+			const switchResult = lc.beginSwitch("B", "B-1");
+			assert.equal(switchResult.needsSave, true);
+			assert.equal(switchResult.oldProject, "A");
+			assert.equal(switchResult.oldSessionName, "A-1");
+			assert.equal(lc.project, "B");
+			assert.equal(lc.sessionName, "B-1");
+			assert.equal(lc.dirty, false);
+		});
+
+		it("rapid switch: first load is stale, second is current", () => {
+			const lc = new SessionLifecycle();
+			const { gen: g1 } = lc.beginSwitch("A", "A-1");
+			const { gen: g2 } = lc.beginSwitch("B", "B-1");
+			assert.equal(lc.isStale(g1), true);
+			assert.equal(lc.isStale(g2), false);
+		});
+
+		it("tab close: flush waits for save then allows cleanup", async () => {
+			const lc = new SessionLifecycle();
+			lc.beginSwitch("A", "A-1");
+			lc.markDirty();
+
+			let saved = false;
+			lc.trackSave(new Promise<void>((resolve) => {
+				setTimeout(() => { saved = true; resolve(); }, 10);
+			}));
+
+			await lc.flush();
+			assert.equal(saved, true);
+		});
+
+		it("sendMessage: captured target survives project switch", () => {
+			const lc = new SessionLifecycle();
+			lc.beginSwitch("A", "A-1");
+
+			const target = lc.captureTarget();
+			const gen = lc.gen;
+
+			lc.beginSwitch("B", "B-1");
+
+			assert.equal(target, "A-1");
+			assert.equal(lc.isStale(gen), true);
+			assert.equal(lc.captureTarget(), "B-1");
+		});
 	});
 });
