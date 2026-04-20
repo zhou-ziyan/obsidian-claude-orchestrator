@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-claude-orchestrator",
-	"version": "0.0.77",
+	"version": "0.0.78",
 	"description": "Orchestrate multiple Claude Code sessions from inside Obsidian via per-project tmux sessions.",
 	"main": "main.js",
 	"type": "module",
