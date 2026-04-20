@@ -29,6 +29,8 @@ import {
 	sessionStatusDisplay,
 	sessionsMissingNotes,
 	createDefaultSessionNote,
+	archiveSessionNotePath,
+	renamedSessionNotePath,
 } from "./utils";
 import { findTerminalLeafBySession, collectOpenSessionNames } from "./workspace-helpers";
 import type { ProjectConfig, PtyLevel } from "./utils";
@@ -760,27 +762,39 @@ export class SessionManagerView extends ItemView {
 		input.focus();
 		input.select();
 
-		const hint = card.createDiv({ cls: "co-sm-card-rename-hint", text: "↵ save · Esc cancel" });
+		const hint = card.createDiv({ cls: "co-sm-card-rename-hint", text: "↵ display name · Esc cancel" });
 
 		const topActions = card.querySelector(".co-sm-card-top-actions");
 		const originalButtons = topActions ? Array.from(topActions.children) as HTMLElement[] : [];
 		originalButtons.forEach(b => b.classList.add("hidden"));
 
 		const confirmBtn = topActions?.createEl("button", { cls: "icon-btn", text: "✓" });
-		if (confirmBtn) confirmBtn.dataset.tone = "success";
+		if (confirmBtn) {
+			confirmBtn.dataset.tone = "success";
+			confirmBtn.title = "Save display name";
+		}
+		const tmuxRenameBtn = topActions?.createEl("button", { cls: "icon-btn", text: "⇄" });
+		if (tmuxRenameBtn) {
+			tmuxRenameBtn.title = "Rename tmux session + note file";
+		}
 		const cancelBtn = topActions?.createEl("button", { cls: "icon-btn", text: "✕" });
 
 		const cleanup = () => {
 			delete card.dataset.renaming;
 			hint.remove();
 			confirmBtn?.remove();
+			tmuxRenameBtn?.remove();
 			cancelBtn?.remove();
 			originalButtons.forEach(b => b.classList.remove("hidden"));
 		};
 
 		const save = () => {
 			cleanup();
-			const newName = input.value.trim();
+			const newDisplayName = input.value.trim();
+			if (!newDisplayName || newDisplayName === current) {
+				void this.refresh();
+				return;
+			}
 			const project = projectFromSessionName(session.name, this.plugin.settings.projects);
 			if (project) {
 				const config = this.plugin.settings.projects[project];
@@ -791,7 +805,7 @@ export class SessionManagerView extends ItemView {
 						void (async () => {
 							const content = await this.app.vault.read(file);
 							const note = parseSessionNote(content, session.name);
-							note.displayName = newName;
+							note.displayName = newDisplayName;
 							await this.app.vault.modify(file, serializeSessionNote(note));
 							void this.refresh();
 						})();
@@ -800,12 +814,45 @@ export class SessionManagerView extends ItemView {
 			}
 		};
 
+		const renameSession = () => {
+			cleanup();
+			const newTmuxName = input.value.trim();
+			if (!newTmuxName || newTmuxName === session.name) {
+				void this.refresh();
+				return;
+			}
+			const project = projectFromSessionName(session.name, this.plugin.settings.projects);
+			if (!project) return;
+			const config = this.plugin.settings.projects[project];
+			if (!config) return;
+			void (async () => {
+				await execTmux(["rename-session", "-t", session.name, newTmuxName]).catch(() => {});
+				const paths = renamedSessionNotePath(config.vaultFolder, session.name, newTmuxName);
+				const file = this.app.vault.getAbstractFileByPath(paths.oldPath);
+				if (file instanceof TFile) {
+					const content = await this.app.vault.read(file);
+					const note = parseSessionNote(content, session.name);
+					note.session = newTmuxName;
+					await this.app.vault.modify(file, serializeSessionNote(note));
+					await this.app.vault.rename(file, paths.newPath);
+				}
+				for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
+					const view = leaf.view;
+					if (view instanceof TerminalView && view.getSessionName() === session.name) {
+						view.updateSessionName(newTmuxName);
+					}
+				}
+				void this.refresh();
+			})();
+		};
+
 		const cancel = () => {
 			cleanup();
 			void this.refresh();
 		};
 
 		confirmBtn?.addEventListener("click", (e) => { e.stopPropagation(); save(); });
+		tmuxRenameBtn?.addEventListener("click", (e) => { e.stopPropagation(); renameSession(); });
 		cancelBtn?.addEventListener("click", (e) => { e.stopPropagation(); cancel(); });
 		input.addEventListener("keydown", (e) => {
 			if (e.key === "Enter") { e.preventDefault(); save(); }
@@ -822,7 +869,7 @@ export class SessionManagerView extends ItemView {
 		const msg = confirm.createDiv({ cls: "co-sm-card-confirm-msg" });
 		msg.appendText("Kill ");
 		msg.createSpan({ cls: "co-sm-card-confirm-name", text: `"${sessionName}"` });
-		msg.appendText("? This will terminate all processes.");
+		msg.appendText("? Session note:");
 
 		const actions = confirm.createDiv({ cls: "co-sm-card-confirm-actions" });
 
@@ -833,22 +880,23 @@ export class SessionManagerView extends ItemView {
 			this.dismissKillConfirm(card);
 		});
 
-		const closeTabBtn = actions.createEl("button", { cls: "btn", text: "Close tab" });
-		closeTabBtn.dataset.variant = "secondary";
-		closeTabBtn.title = "Close terminal tab but keep tmux session running";
-		closeTabBtn.addEventListener("click", (e) => {
+		const archiveBtn = actions.createEl("button", { cls: "btn", text: "Kill + archive" });
+		archiveBtn.dataset.tone = "warn";
+		archiveBtn.title = "Kill session and rename note to archive-" + sessionName;
+		archiveBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
 			this.dismissKillConfirm(card);
-			void this.closeSessionTab(sessionName);
+			void this.killSession(sessionName, "archive");
 		});
 
-		const killBtn = actions.createEl("button", { cls: "btn", text: "Kill session" });
-		killBtn.dataset.variant = "primary";
-		killBtn.dataset.tone = "danger";
-		killBtn.addEventListener("click", (e) => {
+		const deleteBtn = actions.createEl("button", { cls: "btn", text: "Kill + delete" });
+		deleteBtn.dataset.variant = "primary";
+		deleteBtn.dataset.tone = "danger";
+		deleteBtn.title = "Kill session and delete the session note";
+		deleteBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
 			this.dismissKillConfirm(card);
-			void this.killSession(sessionName);
+			void this.killSession(sessionName, "delete");
 		});
 
 		setTimeout(() => this.dismissKillConfirm(card), 8000);
@@ -1093,8 +1141,27 @@ export class SessionManagerView extends ItemView {
 		setTimeout(() => { void this.refresh(); }, 300);
 	}
 
-	private async killSession(sessionName: string) {
+	private async killSession(sessionName: string, noteAction?: "archive" | "delete") {
+		this.closeSessionTab(sessionName);
 		await execTmux(["kill-session", "-t", sessionName]).catch(() => {});
+		if (noteAction) {
+			const project = projectFromSessionName(sessionName, this.plugin.settings.projects);
+			if (project) {
+				const config = this.plugin.settings.projects[project];
+				if (config) {
+					const notePath = sessionNotePath(config.vaultFolder, sessionName);
+					const file = this.app.vault.getAbstractFileByPath(notePath);
+					if (file instanceof TFile) {
+						if (noteAction === "archive") {
+							const archivePath = archiveSessionNotePath(config.vaultFolder, sessionName);
+							await this.app.vault.rename(file, archivePath).catch(() => {});
+						} else {
+							await this.app.vault.delete(file).catch(() => {});
+						}
+					}
+				}
+			}
+		}
 		setTimeout(() => { void this.refresh(); }, 500);
 	}
 }

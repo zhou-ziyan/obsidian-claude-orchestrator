@@ -193,6 +193,14 @@ export class TerminalView extends ItemView {
 		return this.sessionName;
 	}
 
+	updateSessionName(newName: string): void {
+		this.sessionName = newName;
+		/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Obsidian internal API */
+		(this.leaf as any).updateHeader?.();
+		/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+		void this.loadSessionNote();
+	}
+
 	focusTerminal(): void {
 		// If queue panel is active, focus the input box instead of terminal.
 		const queueInput = this.queuePanel?.querySelector(".co-queue-input:not(.co-queue-edit-input)") as HTMLElement | null;
