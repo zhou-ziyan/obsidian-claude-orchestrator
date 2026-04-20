@@ -441,7 +441,7 @@ export class TerminalView extends ItemView {
 		for (const m of QUEUE_MODES) {
 			const btn = this.modeBtn.createEl("button", { text: queueModeLabel(m) });
 			btn.setAttribute("role", "tab");
-			btn.dataset.mode = m;
+			btn.dataset.value = m;
 			btn.addEventListener("click", () => {
 				if (!this.sessionNote) return;
 				this.sessionNote.queueMode = m;
@@ -1057,18 +1057,13 @@ export class TerminalView extends ItemView {
 	private updateModeBtn(): void {
 		if (!this.modeBtn) return;
 		const mode: QueueMode = this.sessionNote?.queueMode ?? "manual";
+		this.modeBtn.dataset.value = mode;
 		const buttons = Array.from(this.modeBtn.querySelectorAll("button"));
 		for (const b of buttons) {
-			const isActive = b.dataset.mode === mode;
-			if (isActive) {
+			if (b.dataset.value === mode) {
 				b.dataset.active = "true";
-				const fg = mode === "auto" ? "var(--s-auto)" : mode === "listen" ? "var(--s-listen)" : "var(--accent)";
-				b.style.setProperty("--seg-active-fg", fg);
-				b.style.setProperty("--seg-active-border", fg);
 			} else {
 				delete b.dataset.active;
-				b.style.removeProperty("--seg-active-fg");
-				b.style.removeProperty("--seg-active-border");
 			}
 		}
 	}

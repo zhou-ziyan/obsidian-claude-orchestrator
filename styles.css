@@ -972,9 +972,25 @@
 .segmented button:hover { color: var(--co-text); }
 .segmented button[data-active="true"] {
     background: var(--co-bg-elevated);
-    color: var(--seg-active-fg, var(--accent));
-    box-shadow: 0 0 0 1px var(--seg-active-border, var(--accent));
+    color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
 }
+.segmented button[data-active="true"][data-value="manual"] {
+    color: var(--co-text);
+    box-shadow: 0 0 0 1px var(--co-border-strong);
+}
+.segmented button[data-active="true"][data-value="listen"] {
+    color: var(--s-listen);
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--s-listen) 60%, transparent);
+    background: color-mix(in oklab, var(--s-listen) 12%, var(--co-bg-elevated));
+}
+.segmented button[data-active="true"][data-value="auto"] {
+    color: var(--s-auto);
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--s-auto) 60%, transparent);
+    background: color-mix(in oklab, var(--s-auto) 12%, var(--co-bg-elevated));
+}
+.segmented[data-value="listen"] { border-color: color-mix(in oklab, var(--s-listen) 30%, var(--co-border)); }
+.segmented[data-value="auto"] { border-color: color-mix(in oklab, var(--s-auto) 30%, var(--co-border)); }
 .co-quick-reply-group {
     display: inline-flex;
     gap: 4px;
