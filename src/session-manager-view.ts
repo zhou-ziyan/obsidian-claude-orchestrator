@@ -1,4 +1,4 @@
-import { FuzzySuggestModal, ItemView, Notice, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import { FuzzySuggestModal, ItemView, Notice, setIcon, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import type { App } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import {
@@ -141,15 +141,15 @@ export class SessionManagerView extends ItemView {
 		const headerActions = header.createDiv({ cls: "co-sm-header-actions" });
 		const refreshBtn = headerActions.createEl("button", {
 			cls: "icon-btn",
-			text: "↻",
 		});
+		setIcon(refreshBtn, "rotate-cw");
 		refreshBtn.title = "Refresh";
 		refreshBtn.addEventListener("click", () => { void this.refresh(); });
 
 		const addBtn = headerActions.createEl("button", {
 			cls: "icon-btn",
-			text: "+",
 		});
+		setIcon(addBtn, "plus");
 		addBtn.title = "Add project";
 		addBtn.addEventListener("click", () => { this.showProjectForm(); });
 
@@ -330,10 +330,8 @@ export class SessionManagerView extends ItemView {
 		if (!this.listEl) return;
 		const section = this.listEl.createDiv({ cls: "co-sm-inactive-section" });
 		const header = section.createDiv({ cls: "co-sm-inactive-header" });
-		header.createSpan({
-			cls: "co-sm-arrow",
-			text: this.inactiveCollapsed ? "▸" : "▾",
-		});
+		const inactiveArrow = header.createSpan({ cls: "co-sm-arrow" });
+		setIcon(inactiveArrow, this.inactiveCollapsed ? "chevron-right" : "chevron-down");
 		header.createSpan({ text: `Inactive projects (${groups.length})` });
 		header.addEventListener("click", () => {
 			this.inactiveCollapsed = !this.inactiveCollapsed;
@@ -373,10 +371,8 @@ export class SessionManagerView extends ItemView {
 
 		// Group header
 		const groupHeader = groupEl.createDiv({ cls: "co-sm-group-header" });
-		groupHeader.createSpan({
-			cls: "co-sm-arrow",
-			text: collapsed ? "▸" : "▾",
-		});
+		const groupArrow = groupHeader.createSpan({ cls: "co-sm-arrow" });
+		setIcon(groupArrow, collapsed ? "chevron-right" : "chevron-down");
 		groupHeader.createSpan({
 			cls: "co-sm-group-name",
 			text: group.project,
@@ -387,8 +383,8 @@ export class SessionManagerView extends ItemView {
 			if (restorable.length > 0) {
 				const restoreBtn = groupHeader.createEl("button", {
 					cls: "icon-btn co-sm-gear",
-					text: "⧉",
 				});
+				setIcon(restoreBtn, "undo-2");
 				restoreBtn.title = `Restore ${restorable.length} session(s)`;
 				restoreBtn.addEventListener("click", (e) => {
 					e.stopPropagation();
@@ -402,8 +398,8 @@ export class SessionManagerView extends ItemView {
 			if (panelCount >= 2) {
 				const gatherBtn = groupHeader.createEl("button", {
 					cls: "icon-btn co-sm-gear",
-					text: "⊞",
 				});
+				setIcon(gatherBtn, "layout-grid");
 				gatherBtn.title = "Gather terminals into one tab group";
 				gatherBtn.addEventListener("click", (e) => {
 					e.stopPropagation();
@@ -415,8 +411,8 @@ export class SessionManagerView extends ItemView {
 
 			const newBtn = groupHeader.createEl("button", {
 				cls: "icon-btn co-sm-gear",
-				text: "+",
 			});
+			setIcon(newBtn, "plus");
 			newBtn.title = "New session";
 			newBtn.addEventListener("click", (e) => {
 				e.stopPropagation();
@@ -427,8 +423,8 @@ export class SessionManagerView extends ItemView {
 
 			const gearBtn = groupHeader.createEl("button", {
 				cls: "icon-btn co-sm-gear",
-				text: "⚙",
 			});
+			setIcon(gearBtn, "settings");
 			gearBtn.title = "Edit project";
 			gearBtn.addEventListener("click", (e) => {
 				e.stopPropagation();
@@ -492,8 +488,8 @@ export class SessionManagerView extends ItemView {
 
 		const renameBtn = topActions.createEl("button", {
 			cls: "icon-btn co-sm-hover-btn",
-			text: "✏",
 		});
+		setIcon(renameBtn, "pencil");
 		renameBtn.title = "Rename session";
 		renameBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
@@ -504,8 +500,8 @@ export class SessionManagerView extends ItemView {
 			const settingsOpen = this.openSettings.has(session.name);
 			const settingsBtn = topActions.createEl("button", {
 				cls: settingsOpen ? "icon-btn" : "icon-btn co-sm-hover-btn",
-				text: "⚙",
 			});
+			setIcon(settingsBtn, "settings");
 			settingsBtn.title = "Session settings";
 			settingsBtn.addEventListener("click", (e) => {
 				e.stopPropagation();
@@ -520,8 +516,8 @@ export class SessionManagerView extends ItemView {
 
 		const killBtn = topActions.createEl("button", {
 			cls: "icon-btn co-sm-hover-btn",
-			text: "×",
 		});
+		setIcon(killBtn, "x");
 		killBtn.dataset.tone = "danger";
 		killBtn.title = "Kill session";
 		killBtn.addEventListener("click", (e) => {
@@ -541,7 +537,8 @@ export class SessionManagerView extends ItemView {
 				noteRow.createSpan({ cls: "co-sm-settings-path", text: expectedPath });
 
 				if (session.hasNote) {
-					noteRow.createSpan({ cls: "co-sm-settings-ok", text: "✓" });
+					const okSpan = noteRow.createSpan({ cls: "co-sm-settings-ok" });
+					setIcon(okSpan, "check");
 				} else {
 					noteRow.createSpan({ cls: "co-sm-settings-warn", text: "⚠ not found" });
 					const relinkBtn = settingsPanel.createEl("button", {
@@ -597,7 +594,8 @@ export class SessionManagerView extends ItemView {
 				const cdEl = card.createDiv({ cls: "co-sm-card-countdown" });
 				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
 				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: `Auto-send in ${countdown}s` });
-				const cancelBtn = cdEl.createEl("button", { cls: "co-sm-card-countdown-x", text: "✕" });
+				const cancelBtn = cdEl.createEl("button", { cls: "co-sm-card-countdown-x" });
+				setIcon(cancelBtn, "x");
 				cancelBtn.title = "Cancel";
 				cancelBtn.addEventListener("click", (e) => {
 					e.stopPropagation();
@@ -606,7 +604,8 @@ export class SessionManagerView extends ItemView {
 				this.sendBtns.set(session.name, cdEl);
 			} else {
 				const sendBtn = card.createEl("button", { cls: "co-sm-card-send" });
-				sendBtn.createSpan({ cls: "co-sm-card-send-icon", text: "▶" });
+				const sendIconSpan = sendBtn.createSpan({ cls: "co-sm-card-send-icon" });
+				setIcon(sendIconSpan, "play");
 				sendBtn.createSpan({ text: "Send next" });
 				sendBtn.title = "Send next queue item";
 				sendBtn.addEventListener("click", (e) => {
@@ -643,7 +642,8 @@ export class SessionManagerView extends ItemView {
 				const cdEl = parent.createDiv({ cls: "co-sm-card-countdown" });
 				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
 				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: `Auto-send in ${remaining}s` });
-				const cancelBtn = cdEl.createEl("button", { cls: "co-sm-card-countdown-x", text: "✕" });
+				const cancelBtn = cdEl.createEl("button", { cls: "co-sm-card-countdown-x" });
+				setIcon(cancelBtn, "x");
 				cancelBtn.title = "Cancel";
 				cancelBtn.addEventListener("click", (e) => {
 					e.stopPropagation();
@@ -653,7 +653,8 @@ export class SessionManagerView extends ItemView {
 			} else if (remaining <= 0 && isCd) {
 				el.remove();
 				const sendBtn = parent.createEl("button", { cls: "co-sm-card-send" });
-				sendBtn.createSpan({ cls: "co-sm-card-send-icon", text: "▶" });
+				const sendIconSpan2 = sendBtn.createSpan({ cls: "co-sm-card-send-icon" });
+				setIcon(sendIconSpan2, "play");
 				sendBtn.createSpan({ text: "Send next" });
 				sendBtn.title = "Send next queue item";
 				sendBtn.addEventListener("click", (e) => {
@@ -768,12 +769,14 @@ export class SessionManagerView extends ItemView {
 		const originalButtons = topActions ? Array.from(topActions.children) as HTMLElement[] : [];
 		originalButtons.forEach(b => { b.style.display = "none"; });
 
-		const confirmBtn = topActions?.createEl("button", { cls: "icon-btn", text: "✓" });
+		const confirmBtn = topActions?.createEl("button", { cls: "icon-btn" });
 		if (confirmBtn) {
+			setIcon(confirmBtn, "check");
 			confirmBtn.dataset.tone = "success";
 			confirmBtn.title = "Save display name";
 		}
-		const cancelBtn = topActions?.createEl("button", { cls: "icon-btn", text: "✕" });
+		const cancelBtn = topActions?.createEl("button", { cls: "icon-btn" });
+		if (cancelBtn) setIcon(cancelBtn, "x");
 
 		const cleanup = () => {
 			delete card.dataset.renaming;
@@ -985,7 +988,8 @@ export class SessionManagerView extends ItemView {
 			folderInput.title = "Note folder cannot be changed after creation (session note paths would break)";
 		}
 		if (!isEdit) {
-			const folderBrowseBtn = folderRow.createEl("button", { cls: "icon-btn co-sm-browse-btn", text: "📂" });
+			const folderBrowseBtn = folderRow.createEl("button", { cls: "icon-btn co-sm-browse-btn" });
+			setIcon(folderBrowseBtn, "folder");
 			folderBrowseBtn.title = "Browse vault folders";
 			folderBrowseBtn.addEventListener("click", () => {
 				new VaultFolderModal(this.app, (folder) => {
@@ -999,7 +1003,8 @@ export class SessionManagerView extends ItemView {
 		const cwdInput = cwdRow.createEl("input", { cls: "co-sm-form-input", type: "text" });
 		cwdInput.placeholder = "(optional)";
 		if (config?.workingDirectory) cwdInput.value = config.workingDirectory;
-		const cwdBrowseBtn = cwdRow.createEl("button", { cls: "icon-btn co-sm-browse-btn", text: "📂" });
+		const cwdBrowseBtn = cwdRow.createEl("button", { cls: "icon-btn co-sm-browse-btn" });
+		setIcon(cwdBrowseBtn, "folder");
 		cwdBrowseBtn.title = "Browse filesystem folders";
 		cwdBrowseBtn.addEventListener("click", () => void (async () => {
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Electron remote from require

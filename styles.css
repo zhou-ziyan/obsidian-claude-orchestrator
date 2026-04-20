@@ -431,8 +431,13 @@
 }
 
 .co-panel-arrow {
-    font-size: 16px;
+    display: inline-flex;
+    align-items: center;
     vertical-align: middle;
+}
+.co-panel-arrow svg {
+    width: 14px;
+    height: 14px;
 }
 
 .co-queue-header {
@@ -470,10 +475,15 @@
 
 .co-history-icon {
     width: 12px;
-    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
     padding-top: 1px;
-    font-size: 10px;
+}
+.co-history-icon svg {
+    width: 10px;
+    height: 10px;
 }
 .co-history-icon.co-completed { color: var(--s-done); }
 .co-history-icon.co-in-progress { color: var(--s-running); }
@@ -560,6 +570,11 @@
     color: var(--co-text-muted);
     cursor: pointer;
 }
+.co-embed-img svg {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+}
 .co-embed-img:hover {
     color: var(--co-text);
     border-color: var(--accent);
@@ -625,6 +640,11 @@
     line-height: 1;
     flex-shrink: 0;
     transition: all 0.12s;
+}
+.icon-btn svg {
+    width: 14px;
+    height: 14px;
+    stroke-width: 2;
 }
 .icon-btn:hover { color: var(--co-text); background: var(--co-bg-hover); }
 .icon-btn[data-tone="danger"]:hover { color: var(--s-danger); }
@@ -741,6 +761,11 @@
     white-space: nowrap;
     flex-shrink: 0;
     font-variant-numeric: tabular-nums;
+}
+.btn svg {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
 }
 .btn:hover { background: var(--btn-bg-hover); color: var(--btn-fg-hover); }
 .btn:active { transform: translateY(0.5px); }
@@ -958,10 +983,20 @@
 
 .co-term-indicator {
     color: var(--accent);
-    font-size: 16px;
+    display: inline-flex;
+    align-items: center;
     flex-shrink: 0;
 }
+.co-term-indicator svg {
+    width: 14px;
+    height: 14px;
+}
 
+.co-pin-chip svg {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+}
 .co-pin-chip {
     display: inline-flex;
     align-items: center;
@@ -1067,10 +1102,15 @@
 }
 
 .co-sm-arrow {
-    font-size: 10px;
+    display: inline-flex;
+    align-items: center;
     width: 12px;
     flex-shrink: 0;
     color: var(--co-text-faint);
+}
+.co-sm-arrow svg {
+    width: 10px;
+    height: 10px;
 }
 
 .co-sm-group-name {
@@ -1607,9 +1647,16 @@
     color: var(--co-text-body);
 }
 .co-ask-banner-text strong {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     color: var(--s-ask);
     font-weight: 600;
     margin-right: 4px;
+}
+.co-ask-banner-text strong svg {
+    width: 12px;
+    height: 12px;
 }
 
 /* Terminal asking border */

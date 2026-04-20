@@ -309,14 +309,15 @@ export class TerminalView extends ItemView {
 	private createHistoryPanel(container: HTMLElement): void {
 		this.historyPanel = container.createDiv({ cls: "co-history-panel" });
 		const header = this.historyPanel.createDiv({ cls: "co-panel-header" });
-		const arrow = header.createSpan({ cls: "co-panel-arrow", text: "▾" });
+		const arrow = header.createSpan({ cls: "co-panel-arrow" });
+		setIcon(arrow, "chevron-down");
 		header.createSpan({ text: " History" });
 		header.addEventListener("click", () => {
 			const content = this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null;
 			if (content) {
 				const collapsed = content.style.display === "none";
 				content.style.display = collapsed ? "block" : "none";
-				arrow.textContent = collapsed ? "▾" : "▸";
+				setIcon(arrow, collapsed ? "chevron-down" : "chevron-right");
 				if (collapsed) {
 					requestAnimationFrame(() => {
 						content.scrollTop = content.scrollHeight;
@@ -422,7 +423,8 @@ export class TerminalView extends ItemView {
 		const queueTitle = queueHeader.createSpan();
 		queueTitle.textContent = "Queue";
 
-		this.termFocusIndicator = queueHeader.createSpan({ cls: "co-term-indicator", text: "▴" });
+		this.termFocusIndicator = queueHeader.createSpan({ cls: "co-term-indicator" });
+		setIcon(this.termFocusIndicator, "chevron-up");
 		this.termFocusIndicator.style.visibility = "hidden";
 
 		this.queueList = this.queuePanel.createDiv({ cls: "co-queue-list" });
@@ -457,7 +459,8 @@ export class TerminalView extends ItemView {
 		// Pin chip — always points to this session's note
 		const pinChipGroup = queueBar.createDiv({ cls: "co-queue-bar-group co-queue-bar-shrinkable" });
 		const pinChip = pinChipGroup.createDiv({ cls: "co-pin-chip" });
-		pinChip.createSpan({ text: "📌" });
+		const pinIcon = pinChip.createSpan();
+		setIcon(pinIcon, "pin");
 		const pinLabel = pinChip.createSpan({ cls: "co-pin-label" });
 		pinLabel.textContent = this.sessionName ?? "session";
 
@@ -490,8 +493,10 @@ export class TerminalView extends ItemView {
 		const sendGroup = queueBar.createDiv({ cls: "co-queue-bar-send" });
 		this.sendBtn = sendGroup.createEl("button", {
 			cls: "btn",
-			text: "Send next ▶",
 		});
+		this.sendBtn.createSpan({ text: "Send next" });
+		const sendIcon = this.sendBtn.createSpan();
+		setIcon(sendIcon, "play");
 		this.sendBtn.dataset.variant = "primary";
 		this.sendBtn.dataset.size = "md";
 		this.sendBtn.addEventListener("click", () => {
@@ -592,8 +597,8 @@ export class TerminalView extends ItemView {
 
 		const addBtn = addRow.createEl("button", {
 			cls: "icon-btn",
-			text: "+",
 		});
+		setIcon(addBtn, "plus");
 		const doAdd = () => {
 			closeAc();
 			const text = input.value.trim();
@@ -1007,9 +1012,9 @@ export class TerminalView extends ItemView {
 		// Show oldest first (top) → newest last (bottom)
 		for (const item of this.sessionNote.history) {
 			const row = content.createDiv({ cls: "co-history-item" });
-			const icon = item.completed ? "✓" : "⟳";
 			const cls = item.completed ? "co-completed" : "co-in-progress";
-			row.createSpan({ cls: `co-history-icon ${cls}`, text: icon });
+			const iconEl = row.createSpan({ cls: `co-history-icon ${cls}` });
+			setIcon(iconEl, item.completed ? "check" : "loader");
 			const { stamp, body } = extractTimestamp(item.text);
 			if (stamp) {
 				row.createSpan({ cls: "co-timestamp", text: stamp });
@@ -1088,7 +1093,9 @@ export class TerminalView extends ItemView {
 			const banner = this.queueList.createDiv({ cls: "co-ask-banner" });
 			banner.createDiv({ cls: "co-ask-banner-dot" });
 			const textEl = banner.createDiv({ cls: "co-ask-banner-text" });
-			const strong = textEl.createEl("strong", { text: "⏸" });
+			const strong = textEl.createEl("strong");
+			const pauseIcon = strong.createSpan();
+			setIcon(pauseIcon, "pause");
 			strong.appendText(" Claude is waiting for your reply.");
 			textEl.appendText(" Use Quick Reply or type below.");
 		}
@@ -1125,8 +1132,8 @@ export class TerminalView extends ItemView {
 		if (idx > 0) {
 			const upBtn = actions.createEl("button", {
 				cls: "icon-btn co-move-btn",
-				text: "↑",
 			});
+			setIcon(upBtn, "arrow-up");
 			upBtn.addEventListener("click", () => {
 				if (!this.sessionNote) return;
 				const [item] = this.sessionNote.queue.splice(idx, 1);
@@ -1140,8 +1147,8 @@ export class TerminalView extends ItemView {
 		if (this.sessionNote && idx < this.sessionNote.queue.length - 1) {
 			const downBtn = actions.createEl("button", {
 				cls: "icon-btn co-move-btn",
-				text: "↓",
 			});
+			setIcon(downBtn, "arrow-down");
 			downBtn.addEventListener("click", () => {
 				if (!this.sessionNote) return;
 				const [item] = this.sessionNote.queue.splice(idx, 1);
@@ -1155,8 +1162,8 @@ export class TerminalView extends ItemView {
 
 		const editBtn = actions.createEl("button", {
 			cls: "icon-btn",
-			text: "✎",
 		});
+		setIcon(editBtn, "pencil");
 		editBtn.addEventListener("click", () => {
 			row.empty();
 			const tsMatch = text.match(/^(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] )/);
@@ -1179,8 +1186,8 @@ export class TerminalView extends ItemView {
 
 			const saveBtn = row.createEl("button", {
 				cls: "icon-btn",
-				text: "✓",
 			});
+			setIcon(saveBtn, "check");
 			saveBtn.dataset.tone = "success";
 			const cancel = () => {
 				this.renderQueue();
@@ -1212,8 +1219,8 @@ export class TerminalView extends ItemView {
 
 		const removeBtn = actions.createEl("button", {
 			cls: "icon-btn",
-			text: "✕",
 		});
+		setIcon(removeBtn, "x");
 		removeBtn.dataset.tone = "danger";
 		removeBtn.addEventListener("click", () => {
 			this.sessionNote?.queue.splice(idx, 1);
@@ -1224,7 +1231,10 @@ export class TerminalView extends ItemView {
 
 	private renderEmbedImg(parent: HTMLElement, ref: string): void {
 		const filename = ref.split("/").pop() ?? ref;
-		const chip = parent.createSpan({ cls: "co-embed-img", text: `🖼 ${filename}` });
+		const chip = parent.createSpan({ cls: "co-embed-img" });
+		const imgIcon = chip.createSpan();
+		setIcon(imgIcon, "image");
+		chip.appendText(` ${filename}`);
 		chip.addEventListener("click", (e) => {
 			e.stopPropagation();
 			void this.app.workspace.openLinkText(ref, "", false);
@@ -1348,7 +1358,8 @@ export class TerminalView extends ItemView {
 		const pill = parent.createDiv({ cls: "co-countdown" });
 		pill.createDiv({ cls: "co-countdown-dot" });
 		pill.createSpan({ cls: "co-countdown-label", text: `Auto-send in ${totalSeconds}s` });
-		const cancelBtn = pill.createEl("button", { cls: "icon-btn", text: "✕" });
+		const cancelBtn = pill.createEl("button", { cls: "icon-btn" });
+		setIcon(cancelBtn, "x");
 		cancelBtn.addEventListener("click", () => this.cancelCountdown());
 
 		parent.insertBefore(pill, this.sendBtn);
