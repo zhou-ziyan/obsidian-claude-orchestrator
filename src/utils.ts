@@ -225,6 +225,25 @@ export function projectFromSessionName(
 	return base in projects ? base : null;
 }
 
+export function sessionsMissingNotes(
+	sessionNames: string[],
+	projects: ProjectRegistry,
+	existingNotePaths: Set<string>,
+): { sessionName: string; notePath: string; dirPath: string }[] {
+	const result: { sessionName: string; notePath: string; dirPath: string }[] = [];
+	for (const name of sessionNames) {
+		const project = projectFromSessionName(name, projects);
+		if (!project) continue;
+		const config = projects[project];
+		if (!config) continue;
+		const notePath = sessionNotePath(config.vaultFolder, name);
+		if (!existingNotePaths.has(notePath)) {
+			result.push({ sessionName: name, notePath, dirPath: sessionDirPath(config.vaultFolder) });
+		}
+	}
+	return result;
+}
+
 /**
  * Group a list of tmux sessions by project.
  * Sessions whose name doesn't match a project pattern go into the

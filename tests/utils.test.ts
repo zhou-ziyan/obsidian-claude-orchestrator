@@ -76,6 +76,7 @@ import {
 	migrateThemeName,
 	collectNoteNamesFromFiles,
 	SessionLifecycle,
+	sessionsMissingNotes,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote, SlashCommandEntry } from "../src/utils.ts";
 
@@ -802,6 +803,61 @@ describe("projectFromSessionName", () => {
 
 	it("returns null for empty registry", () => {
 		assert.equal(projectFromSessionName("anything", {}), null);
+	});
+});
+
+// --- sessionsMissingNotes ---
+
+describe("sessionsMissingNotes", () => {
+	it("returns sessions without existing note files", () => {
+		const projects: ProjectRegistry = {
+			MyProject: { vaultFolder: "01_Projects/MyProject" },
+		};
+		const existing = new Set(["01_Projects/MyProject/sessions/MyProject-1.md"]);
+		const result = sessionsMissingNotes(
+			["MyProject-1", "MyProject-2"],
+			projects,
+			existing,
+		);
+		assert.equal(result.length, 1);
+		assert.equal(result[0]!.sessionName, "MyProject-2");
+		assert.equal(result[0]!.notePath, "01_Projects/MyProject/sessions/MyProject-2.md");
+	});
+
+	it("skips unmanaged sessions", () => {
+		const projects: ProjectRegistry = {
+			MyProject: { vaultFolder: "01_Projects/MyProject" },
+		};
+		const result = sessionsMissingNotes(
+			["random-session"],
+			projects,
+			new Set(),
+		);
+		assert.equal(result.length, 0);
+	});
+
+	it("returns empty when all notes exist", () => {
+		const projects: ProjectRegistry = {
+			MyProject: { vaultFolder: "01_Projects/MyProject" },
+		};
+		const existing = new Set([
+			"01_Projects/MyProject/sessions/MyProject-1.md",
+			"01_Projects/MyProject/sessions/MyProject-2.md",
+		]);
+		const result = sessionsMissingNotes(
+			["MyProject-1", "MyProject-2"],
+			projects,
+			existing,
+		);
+		assert.equal(result.length, 0);
+	});
+
+	it("includes dirPath for folder creation", () => {
+		const projects: ProjectRegistry = {
+			MyProject: { vaultFolder: "01_Projects/MyProject" },
+		};
+		const result = sessionsMissingNotes(["MyProject-1"], projects, new Set());
+		assert.equal(result[0]!.dirPath, "01_Projects/MyProject/sessions");
 	});
 });
 
