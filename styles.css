@@ -393,6 +393,7 @@
     background: var(--co-xterm-bg);
 }
 .claude-orchestrator-term-host > .xterm {
+    width: 100%;
     height: 100%;
 }
 

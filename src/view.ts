@@ -237,6 +237,9 @@ export class TerminalView extends ItemView {
 		container.dataset.theme = this.getSettings?.().theme ?? "obsidian";
 
 		this.registerSessionNoteEvents();
+		this.registerEvent(
+			this.app.workspace.on("layout-change", () => this.debouncedFit()),
+		);
 
 		const queueEnabled = !(this.getSettings?.().simpleMode ?? false);
 
