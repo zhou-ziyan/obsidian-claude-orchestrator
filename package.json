@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-claude-orchestrator",
-	"version": "0.0.97",
+	"version": "0.0.98",
 	"description": "Orchestrate multiple Claude Code sessions from inside Obsidian via per-project tmux sessions.",
 	"main": "main.js",
 	"type": "module",
@@ -16,7 +16,14 @@
 		"postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true"
 	},
 	"author": "Ziyan Zhou <mailofbanban@gmail.com>",
-	"keywords": ["obsidian", "plugin", "claude", "terminal", "tmux", "ai"],
+	"keywords": [
+		"obsidian",
+		"plugin",
+		"claude",
+		"terminal",
+		"tmux",
+		"ai"
+	],
 	"license": "GPL-3.0-only",
 	"repository": {
 		"type": "git",
