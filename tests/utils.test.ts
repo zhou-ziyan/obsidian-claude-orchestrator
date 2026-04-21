@@ -397,6 +397,20 @@ describe("normalizeViewState", () => {
 		assert.equal(result.project, "15_Claude_Orchestrator");
 		assert.equal(result.sessionName, "custom-name");
 	});
+
+	it("handles setViewState-style state with type/active alongside project/sessionName", () => {
+		// When createTerminalLeaf passes state via setViewState, the state object
+		// may also contain type/active keys — normalizeViewState should still extract
+		// project and sessionName correctly.
+		const result = normalizeViewState({
+			type: "claude-orchestrator-terminal",
+			active: true,
+			project: "15_Claude_Orchestrator",
+			sessionName: "15_Claude_Orchestrator-3",
+		});
+		assert.equal(result.project, "15_Claude_Orchestrator");
+		assert.equal(result.sessionName, "15_Claude_Orchestrator-3");
+	});
 });
 
 // --- parseTmuxSessionsForProject ---
@@ -3635,6 +3649,41 @@ describe("SessionLifecycle", () => {
 			assert.equal(target, "A-1");
 			assert.equal(lc.isStale(gen), true);
 			assert.equal(lc.captureTarget(), "B-1");
+		});
+
+		it("SM attach race: null-state init gen is stale after setProject provides correct session", () => {
+			// Simulates the race in createTerminalLeaf:
+			// 1. setViewState({type, active}) → setState with null → beginSwitch(null, null) → gen1
+			// 2. initializeTerminal fires void spawnShell() using gen1
+			// 3. setProject(project, correctName) → beginSwitch(project, name) → gen2
+			// spawnShell from step 2 should detect gen1 is stale and abort
+			const lc = new SessionLifecycle();
+
+			// Step 1: setState with null (setViewState without state)
+			const { gen: initGen } = lc.beginSwitch(null, null);
+			assert.equal(lc.sessionName, null);
+
+			// Step 3: setProject with correct values (runs before async spawnShell resolves)
+			const { gen: correctGen } = lc.beginSwitch("15_Claude_Orchestrator", "15_Claude_Orchestrator-2");
+			assert.equal(lc.sessionName, "15_Claude_Orchestrator-2");
+
+			// The initGen from step 1 should now be stale
+			assert.equal(lc.isStale(initGen), true);
+			assert.equal(lc.isStale(correctGen), false);
+		});
+
+		it("SM attach fix: passing state in setViewState gives correct gen from start", () => {
+			// With the fix: setViewState includes {project, sessionName} in state
+			// so setState gets the correct values immediately — no null init, no race
+			const lc = new SessionLifecycle();
+
+			// setState receives correct project/sessionName from setViewState state param
+			const { gen: initGen } = lc.beginSwitch("15_Claude_Orchestrator", "15_Claude_Orchestrator-2");
+			assert.equal(lc.sessionName, "15_Claude_Orchestrator-2");
+			assert.equal(lc.project, "15_Claude_Orchestrator");
+
+			// No second beginSwitch needed — single gen, no race
+			assert.equal(lc.isStale(initGen), false);
 		});
 	});
 });
