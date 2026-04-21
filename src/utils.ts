@@ -210,6 +210,7 @@ export interface SessionInfo {
 export interface SessionGroup {
 	project: string;
 	sessions: SessionInfo[];
+	hasEverHadSession?: boolean;
 }
 
 /**
@@ -257,6 +258,7 @@ export function groupSessionsByProject(
 	openSessionNames: Set<string>,
 	noteData: Map<string, { queueCount: number; lastActivity: string | null; preview: string | null; displayName: string | null; status: SessionStatus; queueMode: QueueMode }>,
 	projects: ProjectRegistry,
+	projectsWithNotes?: Set<string>,
 ): SessionGroup[] {
 	const projectMap = new Map<string, SessionInfo[]>();
 	const unmanaged: SessionInfo[] = [];
@@ -296,7 +298,8 @@ export function groupSessionsByProject(
 	for (const project of sortedProjects) {
 		const sessions = projectMap.get(project)!;
 		sessions.sort((a, b) => a.name.localeCompare(b.name));
-		groups.push({ project, sessions });
+		const hasEver = sessions.length > 0 || (projectsWithNotes?.has(project) ?? false);
+		groups.push({ project, sessions, hasEverHadSession: hasEver });
 	}
 
 	if (unmanaged.length > 0) {

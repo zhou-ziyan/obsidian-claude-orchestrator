@@ -969,6 +969,36 @@ describe("groupSessionsByProject", () => {
 		assert.equal(groups[1].sessions.length, 0);
 	});
 
+	it("hasEverHadSession false for new project with no sessions and no notes", () => {
+		const groups = groupSessionsByProject([], new Set(), new Map(), TEST_PROJECTS);
+		const orch = groups.find((g) => g.project === "15_Claude_Orchestrator")!;
+		assert.equal(orch.hasEverHadSession, false);
+	});
+
+	it("hasEverHadSession true when project has active sessions", () => {
+		const groups = groupSessionsByProject(
+			[{ name: "15_Claude_Orchestrator-1", activity: 100 }],
+			new Set(),
+			new Map(),
+			TEST_PROJECTS,
+		);
+		const orch = groups.find((g) => g.project === "15_Claude_Orchestrator")!;
+		assert.equal(orch.hasEverHadSession, true);
+	});
+
+	it("hasEverHadSession true when project has notes on disk but no active sessions", () => {
+		const groups = groupSessionsByProject(
+			[],
+			new Set(),
+			new Map(),
+			TEST_PROJECTS,
+			new Set(["15_Claude_Orchestrator"]),
+		);
+		const orch = groups.find((g) => g.project === "15_Claude_Orchestrator")!;
+		assert.equal(orch.hasEverHadSession, true);
+		assert.equal(orch.sessions.length, 0);
+	});
+
 	it("sorts projects alphabetically and sessions within each project", () => {
 		const sortProjects: ProjectRegistry = {
 			"10_A_Project": { vaultFolder: "01_Projects/10_A_Project" },
