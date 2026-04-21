@@ -60,8 +60,34 @@ Left-sidebar dashboard showing all tmux sessions grouped by project:
 | Toggle simple mode | Hide/show queue + history panels |
 | Open session manager | Open the session manager panel in left sidebar |
 
-## Prerequisites
+## Installation
 
+### Via BRAT (recommended for beta testing)
+
+1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) from the Community plugins directory
+2. In BRAT settings, click **Add Beta plugin** and enter: `zhou-ziyan/obsidian-claude-orchestrator`
+3. BRAT downloads `main.js`, `manifest.json`, and `styles.css` from the latest GitHub release
+
+### Post-install: native dependency
+
+The plugin uses [node-pty](https://github.com/nicholasday/node-pty) for terminal emulation. This native binary isn't included in the release — run the install script after BRAT installs the plugin:
+
+```bash
+bash "<vault>/.obsidian/plugins/claude-orchestrator/install.sh"
+```
+
+Or manually:
+
+```bash
+cd "<vault>/.obsidian/plugins/claude-orchestrator"
+npm install node-pty
+```
+
+Restart Obsidian after installation.
+
+### Prerequisites
+
+- **Node.js** >= 18 — required for the install script (`npm`)
 - **tmux** — the plugin uses tmux to manage persistent terminal sessions
   - macOS: `brew install tmux`
   - Linux (Debian/Ubuntu): `sudo apt install tmux`
