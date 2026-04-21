@@ -609,7 +609,7 @@ export class SessionManagerView extends ItemView {
 				const cdEl = card.createDiv({ cls: "co-sm-card-countdown" });
 				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
 				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: `Auto-send in ${countdown}s` });
-				const cancelBtn = cdEl.createEl("button", { cls: "co-sm-card-countdown-x" });
+				const cancelBtn = cdEl.createEl("button", { cls: "icon-btn" });
 				setIcon(cancelBtn, "x");
 				cancelBtn.title = "Cancel";
 				cancelBtn.addEventListener("click", (e) => {
@@ -657,7 +657,7 @@ export class SessionManagerView extends ItemView {
 				const cdEl = parent.createDiv({ cls: "co-sm-card-countdown" });
 				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
 				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: `Auto-send in ${remaining}s` });
-				const cancelBtn = cdEl.createEl("button", { cls: "co-sm-card-countdown-x" });
+				const cancelBtn = cdEl.createEl("button", { cls: "icon-btn" });
 				setIcon(cancelBtn, "x");
 				cancelBtn.title = "Cancel";
 				cancelBtn.addEventListener("click", (e) => {
