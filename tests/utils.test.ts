@@ -1774,6 +1774,25 @@ describe("createDefaultSessionNote queueMode", () => {
 		const parsed = parseSessionNote(content);
 		assert.equal(parsed.queueMode, "manual");
 	});
+
+	it("uses custom queueMode when provided", () => {
+		const content = createDefaultSessionNote("test-session", "auto");
+		assert.ok(content.includes("queueMode: auto"));
+		const parsed = parseSessionNote(content);
+		assert.equal(parsed.queueMode, "auto");
+	});
+
+	it("uses listen mode when provided", () => {
+		const content = createDefaultSessionNote("test-session", "listen");
+		const parsed = parseSessionNote(content);
+		assert.equal(parsed.queueMode, "listen");
+	});
+
+	it("defaults to manual when queueMode omitted", () => {
+		const content = createDefaultSessionNote("test-session");
+		const parsed = parseSessionNote(content);
+		assert.equal(parsed.queueMode, "manual");
+	});
 });
 
 // ---------------------------------------------------------------------------

@@ -2,7 +2,8 @@ import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFil
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
 import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, parseSessionNote, serializeSessionNote, ensureStopHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, loadSlashCommands, BUILTIN_SLASH_COMMANDS, migrateThemeName } from "./utils";
-import type { ProjectRegistry, SlashCommandEntry, ThemeName } from "./utils";
+import type { ProjectRegistry, QueueMode, SlashCommandEntry, ThemeName } from "./utils";
+import { QUEUE_MODES, queueModeLabel } from "./utils";
 import { StopHookWatcher } from "./stop-hook-watcher";
 import { findTerminalLeafBySession, findTerminalLeafByProject, collectOpenSessionNames } from "./workspace-helpers";
 import { readFileSync, writeFileSync } from "fs";
@@ -17,6 +18,7 @@ export interface OrchestratorSettings {
 	playSoundOnAsking: boolean;
 	theme: ThemeName;
 	autoSendCountdownSeconds: number;
+	defaultQueueMode: QueueMode;
 }
 
 const DEFAULT_SETTINGS: OrchestratorSettings = {
@@ -27,6 +29,7 @@ const DEFAULT_SETTINGS: OrchestratorSettings = {
 	playSoundOnAsking: true,
 	theme: "obsidian",
 	autoSendCountdownSeconds: 3,
+	defaultQueueMode: "manual",
 };
 
 export default class ClaudeOrchestratorPlugin extends Plugin {
@@ -581,6 +584,21 @@ class OrchestratorSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}),
 			);
+
+		new Setting(containerEl)
+			.setName("Default queue mode")
+			.setDesc("Queue mode for newly created sessions.")
+			.addDropdown((dropdown) => {
+				for (const m of QUEUE_MODES) {
+					dropdown.addOption(m, queueModeLabel(m));
+				}
+				dropdown
+					.setValue(this.plugin.settings.defaultQueueMode)
+					.onChange(async (value) => {
+						this.plugin.settings.defaultQueueMode = value as QueueMode;
+						await this.plugin.saveSettings();
+					});
+			});
 
 		new Setting(containerEl)
 			.setName("Theme")

@@ -422,12 +422,12 @@ export function renamedSessionNotePath(
 /**
  * Create default markdown content for a new session note.
  */
-export function createDefaultSessionNote(sessionName: string): string {
+export function createDefaultSessionNote(sessionName: string, queueMode: QueueMode = "manual"): string {
 	return [
 		"---",
 		`session: ${sessionName}`,
 		"status: idle",
-		"queueMode: manual",
+		`queueMode: ${queueMode}`,
 		"---",
 		"",
 		"## Notes",
