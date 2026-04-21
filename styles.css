@@ -1322,9 +1322,11 @@
     font-weight: 600;
     cursor: pointer;
     line-height: 1.2;
+    box-sizing: border-box;
 }
 .co-sm-card-send:hover { filter: brightness(1.1); }
-.co-sm-card-send-icon { font-size: 9px; }
+.co-sm-card-send-icon { display: inline-flex; }
+.co-sm-card-send-icon svg { width: 9px; height: 9px; }
 
 /* Per-card auto-send countdown (Auto + ticking) */
 .co-sm-card-countdown {
@@ -1341,6 +1343,7 @@
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     line-height: 1;
+    box-sizing: border-box;
 }
 .co-sm-card-countdown-dot {
     width: 6px;
@@ -1354,13 +1357,15 @@
     border: 0;
     background: transparent;
     color: var(--s-danger);
-    font: inherit;
-    font-size: 11px;
     cursor: pointer;
-    padding: 0 2px;
+    padding: 2px;
     border-radius: 2px;
     line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
+.co-sm-card-countdown-x svg { width: 12px; height: 12px; }
 .co-sm-card-countdown-x:hover {
     background: color-mix(in oklab, var(--s-danger) 25%, transparent);
     color: #fff;
