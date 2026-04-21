@@ -33,11 +33,13 @@ export default tseslint.config(
 			"obsidianmd/no-static-styles-assignment": "off",
 			// Our UI strings are short labels — sentence case not always applicable
 			"obsidianmd/ui/sentence-case": "off",
+			"no-console": ["error", { allow: ["warn", "error", "debug"] }],
 		},
 	},
 	globalIgnores([
 		"node_modules",
 		"dist",
+		"design-reference",
 		"esbuild.config.mjs",
 		"eslint.config.js",
 		"version-bump.mjs",

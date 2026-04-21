@@ -1152,7 +1152,7 @@ export class SessionManagerView extends ItemView {
 							const archivePath = archiveSessionNotePath(config.vaultFolder, sessionName);
 							await this.app.vault.rename(file, archivePath).catch(() => {});
 						} else {
-							await this.app.vault.delete(file).catch(() => {});
+							await this.app.fileManager.trashFile(file).catch(() => {});
 						}
 					}
 				}
