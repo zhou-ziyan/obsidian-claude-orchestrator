@@ -285,8 +285,18 @@ export class SessionManagerView extends ItemView {
 			}
 		}
 
-		// 5. Group
-		this.groups = groupSessionsByProject(allSessions, openNames, noteData, projects);
+		// 5. Check which projects have ever had sessions (note files on disk)
+		const projectsWithNotes = new Set<string>();
+		for (const [key, config] of Object.entries(projects)) {
+			const dir = sessionDirPath(config.vaultFolder);
+			const folder = this.app.vault.getAbstractFileByPath(dir);
+			if (folder instanceof TFolder && folder.children.some((c) => c instanceof TFile && c.extension === "md")) {
+				projectsWithNotes.add(key);
+			}
+		}
+
+		// 6. Group
+		this.groups = groupSessionsByProject(allSessions, openNames, noteData, projects, projectsWithNotes);
 
 		// 6. Render
 		this.render();
@@ -310,7 +320,7 @@ export class SessionManagerView extends ItemView {
 		const active: SessionGroup[] = [];
 		const inactive: SessionGroup[] = [];
 		for (const group of this.groups) {
-			if (group.project === "Unmanaged" || group.sessions.length > 0) {
+			if (group.project === "Unmanaged" || group.sessions.length > 0 || !group.hasEverHadSession) {
 				active.push(group);
 			} else {
 				inactive.push(group);
