@@ -447,9 +447,11 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			const lastTerminal = terminals[terminals.length - 1]!;
 			leaf = workspace.createLeafBySplit(lastTerminal, "vertical");
 		} else {
-			// No terminals at all → split the main editor to the right.
+			// No terminals at all → reuse empty tab or split the editor.
 			const mainLeaf = workspace.getMostRecentLeaf(workspace.rootSplit);
-			if (mainLeaf) {
+			if (mainLeaf && mainLeaf.view.getViewType() === "empty") {
+				leaf = mainLeaf;
+			} else if (mainLeaf) {
 				leaf = workspace.createLeafBySplit(mainLeaf, "vertical");
 			} else {
 				leaf = workspace.getLeaf("split");
