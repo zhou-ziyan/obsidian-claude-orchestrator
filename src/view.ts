@@ -834,7 +834,8 @@ export class TerminalView extends ItemView {
 		let args: string[];
 		if (this.sessionName) {
 			file = findTmuxBinary();
-			args = ["new-session", "-A", "-s", this.sessionName];
+			args = ["new-session", "-A", "-s", this.sessionName,
+				";", "set-option", "status", "off"];
 		} else {
 			file = shell;
 			args = [];
