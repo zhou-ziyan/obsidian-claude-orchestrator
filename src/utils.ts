@@ -357,6 +357,12 @@ export function autoSendAction(
 
 export const AUTO_SEND_COUNTDOWN_MS = 3000;
 
+export function resolveClaudeIdle(prevIdle: boolean, noteStatus: string, externalModify: boolean): boolean {
+	const noteIdle = noteStatus === "idle";
+	if (externalModify && !prevIdle && noteIdle) return false;
+	return noteIdle;
+}
+
 function isQueueMode(s: string): s is QueueMode {
 	return s === "manual" || s === "listen" || s === "auto";
 }
