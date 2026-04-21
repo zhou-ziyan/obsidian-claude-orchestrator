@@ -16,6 +16,7 @@ export interface OrchestratorSettings {
 	sessionOrder: Record<string, string[]>;
 	playSoundOnAsking: boolean;
 	theme: ThemeName;
+	autoSendCountdownSeconds: number;
 }
 
 const DEFAULT_SETTINGS: OrchestratorSettings = {
@@ -25,6 +26,7 @@ const DEFAULT_SETTINGS: OrchestratorSettings = {
 	sessionOrder: {},
 	playSoundOnAsking: true,
 	theme: "obsidian",
+	autoSendCountdownSeconds: 3,
 };
 
 export default class ClaudeOrchestratorPlugin extends Plugin {
@@ -563,6 +565,19 @@ class OrchestratorSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.playSoundOnAsking)
 					.onChange(async (value) => {
 						this.plugin.settings.playSoundOnAsking = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Auto-send countdown (seconds)")
+			.setDesc("How many seconds to count down before auto-sending the next queue item. Range: 1–30.")
+			.addText((text) =>
+				text
+					.setValue(String(this.plugin.settings.autoSendCountdownSeconds))
+					.onChange(async (value) => {
+						const n = Math.max(1, Math.min(30, Math.round(Number(value) || 3)));
+						this.plugin.settings.autoSendCountdownSeconds = n;
 						await this.plugin.saveSettings();
 					}),
 			);

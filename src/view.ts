@@ -105,7 +105,7 @@ export class TerminalView extends ItemView {
 	private xtermReady = false;
 	private stateSeenPreOpen = false;
 	private host: HTMLElement | null = null;
-	private getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean; theme: ThemeName };
+	private getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean; theme: ThemeName; autoSendCountdownSeconds: number };
 	private historyPanel: HTMLElement | null = null;
 	private queuePanel: HTMLElement | null = null;
 	private queueList: HTMLElement | null = null;
@@ -151,7 +151,7 @@ export class TerminalView extends ItemView {
 	constructor(
 		leaf: WorkspaceLeaf,
 		pluginDir: string,
-		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean; theme: ThemeName },
+		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean; theme: ThemeName; autoSendCountdownSeconds: number },
 	) {
 		super(leaf);
 		this.pluginDir = pluginDir;
@@ -1338,16 +1338,16 @@ export class TerminalView extends ItemView {
 		this.cancelCountdown();
 		if (!this.sendBtn?.parentElement) return;
 
-		const totalSeconds = Math.round(AUTO_SEND_COUNTDOWN_MS / 1000);
+		const totalSeconds = this.getSettings?.().autoSendCountdownSeconds ?? Math.round(AUTO_SEND_COUNTDOWN_MS / 1000);
 		this.countdownRemaining = totalSeconds;
 
 		const parent = this.sendBtn.parentElement;
 		const pill = parent.createDiv({ cls: "co-countdown" });
+		pill.style.cursor = "pointer";
+		pill.title = "Click to cancel";
+		pill.addEventListener("click", () => this.cancelCountdown());
 		pill.createDiv({ cls: "co-countdown-dot" });
 		pill.createSpan({ cls: "co-countdown-label", text: countdownText(totalSeconds) });
-		const cancelBtn = pill.createEl("button", { cls: "icon-btn" });
-		setIcon(cancelBtn, "x");
-		cancelBtn.addEventListener("click", () => this.cancelCountdown());
 
 		parent.insertBefore(pill, this.sendBtn);
 		this.sendBtn.style.display = "none";
