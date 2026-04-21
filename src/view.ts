@@ -124,8 +124,9 @@ export class TerminalView extends ItemView {
 		/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment -- xterm internal API (same pattern as FitAddon) */
 		const dims = (this.term as any)._core?._renderService?.dimensions;
 		if (!dims || dims.css.cell.width === 0 || dims.css.cell.height === 0) return;
-		const cols = Math.max(2, Math.floor(this.host.clientWidth / dims.css.cell.width));
-		const rows = Math.max(1, Math.floor(this.host.clientHeight / dims.css.cell.height));
+		const rect = this.host.getBoundingClientRect();
+		const cols = Math.max(2, Math.floor(rect.width / dims.css.cell.width));
+		const rows = Math.max(1, Math.floor(rect.height / dims.css.cell.height));
 		/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
 		if (this.term.cols !== cols || this.term.rows !== rows) {
 			this.term.resize(cols, rows);
