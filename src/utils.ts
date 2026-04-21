@@ -674,10 +674,21 @@ export function copyHistoryItemToQueue(text: string, queue: string[]): number {
 
 export const TMUX_SEARCH_PATHS = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"];
 
-export const QUICK_REPLY_KEYS = ["1", "2", "Y"] as const;
+export const QUICK_REPLY_KEYS = ["1", "2", "Y", "{C-c}"] as const;
 
 export function parseQuickReplyKeys(input: string): string[] {
 	return input.split(",").map((k) => k.trim()).filter((k) => k.length > 0);
+}
+
+function isTmuxKeySequence(key: string): boolean {
+	return key.startsWith("{") && key.endsWith("}") && key.length > 2;
+}
+
+export function quickReplyLabel(key: string): string {
+	if (!isTmuxKeySequence(key)) return key;
+	const name = key.slice(1, -1);
+	if (name.startsWith("C-")) return "^" + name.slice(2).toUpperCase();
+	return name;
 }
 
 export function cancelCopyModeArgs(sessionName: string): string[] {
@@ -688,6 +699,13 @@ export function buildQuickReplyTmuxArgs(
 	sessionName: string,
 	key: string,
 ): { textArgs: string[]; enterArgs: string[] } {
+	if (isTmuxKeySequence(key)) {
+		const tmuxKey = key.slice(1, -1);
+		return {
+			textArgs: ["send-keys", "-t", sessionName, tmuxKey],
+			enterArgs: [],
+		};
+	}
 	return {
 		textArgs: ["send-keys", "-l", "-t", sessionName, key],
 		enterArgs: ["send-keys", "-t", sessionName, "Enter"],

@@ -546,7 +546,7 @@ class OrchestratorSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Quick reply keys")
-			.setDesc("Comma-separated list of quick reply buttons shown in the queue header.")
+			.setDesc("Comma-separated list. Plain text sends literally. {C-c} sends Ctrl+C, {C-d} sends Ctrl+D.")
 			.addText((text) =>
 				text
 					.setValue(this.plugin.settings.quickReplyKeys.join(", "))

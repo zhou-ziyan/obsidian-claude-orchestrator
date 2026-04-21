@@ -1613,12 +1613,12 @@ describe("restorableSessionNames", () => {
 
 describe("QUICK_REPLY_KEYS", () => {
 	it("contains expected default keys", () => {
-		assert.deepEqual([...QUICK_REPLY_KEYS], ["1", "2", "Y"]);
+		assert.deepEqual([...QUICK_REPLY_KEYS], ["1", "2", "Y", "{C-c}"]);
 	});
 
-	it("all keys are single characters", () => {
+	it("all keys are non-empty strings", () => {
 		for (const k of QUICK_REPLY_KEYS) {
-			assert.equal(k.length, 1, `key "${k}" should be a single character`);
+			assert.ok(k.length > 0, `key "${k}" should be non-empty`);
 		}
 	});
 });

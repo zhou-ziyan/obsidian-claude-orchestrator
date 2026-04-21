@@ -15,6 +15,7 @@ import {
 	SessionNote,
 	QUICK_REPLY_KEYS,
 	buildQuickReplyTmuxArgs,
+	quickReplyLabel,
 	cancelCopyModeArgs,
 	queueModeLabel,
 	fetchPtyUsage,
@@ -482,7 +483,7 @@ export class TerminalView extends ItemView {
 		for (const key of keys) {
 			const btn = quickReplyGroup.createEl("button", {
 				cls: "btn",
-				text: key,
+				text: quickReplyLabel(key),
 			});
 			btn.dataset.size = "sm";
 			btn.dataset.variant = "secondary";
@@ -1293,8 +1294,10 @@ export class TerminalView extends ItemView {
 		await execTmux(cancelCopyModeArgs(target)).catch(() => {});
 		try {
 			await execTmux(textArgs);
-			await new Promise((r) => setTimeout(r, 150));
-			await execTmux(enterArgs);
+			if (enterArgs.length > 0) {
+				await new Promise((r) => setTimeout(r, 150));
+				await execTmux(enterArgs);
+			}
 		} catch (err) {
 			new Notice(`Quick reply failed: ${(err as Error).message}`);
 		}
