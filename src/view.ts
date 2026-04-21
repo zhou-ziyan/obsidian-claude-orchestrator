@@ -260,6 +260,7 @@ export class TerminalView extends ItemView {
 		this.registerSessionNoteEvents();
 		this.registerEvent(
 			this.app.workspace.on("layout-change", () => {
+				this.fitTerminal();
 				this.debouncedFit();
 				setTimeout(() => this.fitAndResize(), 300);
 			}),
@@ -340,6 +341,7 @@ export class TerminalView extends ItemView {
 			if (content) {
 				content.style.maxHeight = `${newHeight}px`;
 			}
+			this.fitTerminal();
 			this.debouncedFit();
 		};
 
@@ -396,6 +398,7 @@ export class TerminalView extends ItemView {
 			if (this.queuePanel) {
 				this.queuePanel.style.height = `${newHeight}px`;
 			}
+			this.fitTerminal();
 			this.debouncedFit();
 		};
 
@@ -740,7 +743,10 @@ export class TerminalView extends ItemView {
 			this.ptyProcess?.write(data);
 		});
 
-		this.resizeObserver = new ResizeObserver(() => this.debouncedFit());
+		this.resizeObserver = new ResizeObserver(() => {
+			this.fitTerminal();
+			this.debouncedFit();
+		});
 		this.resizeObserver.observe(this.host);
 
 		this.xtermReady = true;
