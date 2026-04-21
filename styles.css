@@ -1536,6 +1536,14 @@
 .co-sm-form-input:disabled {
     opacity: 0.5;
 }
+.co-sm-form-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--co-text-muted);
+    cursor: pointer;
+}
 .co-sm-form-error {
     font-size: 11px;
     color: var(--s-danger);

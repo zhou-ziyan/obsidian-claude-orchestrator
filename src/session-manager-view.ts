@@ -321,7 +321,8 @@ export class SessionManagerView extends ItemView {
 		const active: SessionGroup[] = [];
 		const inactive: SessionGroup[] = [];
 		for (const group of this.groups) {
-			if (group.project === "Unmanaged" || group.sessions.length > 0 || !group.hasEverHadSession) {
+			const config = this.plugin.settings.projects[group.project];
+			if (group.project === "Unmanaged" || !config?.inactive) {
 				active.push(group);
 			} else {
 				inactive.push(group);
@@ -1035,6 +1036,19 @@ export class SessionManagerView extends ItemView {
 			}
 		})());
 
+		let inactiveChecked = config?.inactive ?? false;
+		if (isEdit) {
+			const inactiveRow = form.createDiv({ cls: "co-sm-form-row" });
+			inactiveRow.createSpan({ cls: "co-sm-form-label", text: "Status" });
+			const inactiveLabel = inactiveRow.createEl("label", { cls: "co-sm-form-toggle" });
+			const inactiveCheckbox = inactiveLabel.createEl("input", { type: "checkbox" });
+			inactiveCheckbox.checked = inactiveChecked;
+			inactiveLabel.createSpan({ text: "Inactive" });
+			inactiveCheckbox.addEventListener("change", () => {
+				inactiveChecked = inactiveCheckbox.checked;
+			});
+		}
+
 		const errorEl = form.createDiv({ cls: "co-sm-form-error" });
 		errorEl.style.display = "none";
 
@@ -1092,7 +1106,7 @@ export class SessionManagerView extends ItemView {
 				}
 			}
 
-			const newConfig: ProjectConfig = { vaultFolder, workingDirectory };
+			const newConfig: ProjectConfig = { vaultFolder, workingDirectory, inactive: inactiveChecked || undefined };
 
 			if (isEdit) {
 				this.plugin.settings.projects = updateProjectConfig(this.plugin.settings.projects, existingKey, newConfig);
