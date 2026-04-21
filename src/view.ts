@@ -24,6 +24,7 @@ import {
 	parseQueueItemSegments,
 	autoSendAction,
 	AUTO_SEND_COUNTDOWN_MS,
+	resolveClaudeIdle,
 	execTmux,
 	filterSlashCommands,
 	stripTimestamp,
@@ -966,7 +967,7 @@ export class TerminalView extends ItemView {
 			this.sessionNote.session = this.sessionName;
 			void this.saveSessionNote();
 		}
-		this.claudeIdle = this.sessionNote.status === "idle";
+		this.claudeIdle = resolveClaudeIdle(this.claudeIdle, this.sessionNote.status, externalModify);
 		this.loadedAt = Date.now();
 		this.sessionNoteLoaded = true;
 		this.renderHistory();

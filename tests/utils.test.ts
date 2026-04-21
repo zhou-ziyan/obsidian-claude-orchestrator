@@ -57,6 +57,7 @@ import {
 	extractLastAssistantText,
 	autoSendAction,
 	AUTO_SEND_COUNTDOWN_MS,
+	resolveClaudeIdle,
 	ensureStopHookConfig,
 	parseQuickReplyKeys,
 	SLASH_COMMANDS,
@@ -3823,5 +3824,34 @@ describe("unregisterConfirmText", () => {
 		const text = unregisterConfirmText(2);
 		assert.ok(text.includes("2"));
 		assert.ok(text.includes("sessions"));
+	});
+});
+
+// ---------------------------------------------------------------------------
+// resolveClaudeIdle
+// ---------------------------------------------------------------------------
+
+describe("resolveClaudeIdle", () => {
+	it("external modify: does not promote idle when prev was not idle", () => {
+		assert.equal(resolveClaudeIdle(false, "idle", true), false);
+	});
+
+	it("external modify: keeps idle when prev was idle", () => {
+		assert.equal(resolveClaudeIdle(true, "idle", true), true);
+	});
+
+	it("external modify: respects non-idle note status", () => {
+		assert.equal(resolveClaudeIdle(true, "running", true), false);
+		assert.equal(resolveClaudeIdle(false, "running", true), false);
+	});
+
+	it("non-external: uses note status directly", () => {
+		assert.equal(resolveClaudeIdle(false, "idle", false), true);
+		assert.equal(resolveClaudeIdle(true, "running", false), false);
+	});
+
+	it("non-external: idle note status sets idle regardless of prev", () => {
+		assert.equal(resolveClaudeIdle(false, "idle", false), true);
+		assert.equal(resolveClaudeIdle(true, "idle", false), true);
 	});
 });
