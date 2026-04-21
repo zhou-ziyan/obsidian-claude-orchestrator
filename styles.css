@@ -1466,9 +1466,15 @@
     white-space: nowrap;
     min-width: 0;
 }
-.co-sm-settings-ok {
+.co-sm-settings-path-link {
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: var(--co-border-strong);
+    text-underline-offset: 2px;
+}
+.co-sm-settings-path-link:hover {
     color: var(--accent);
-    flex-shrink: 0;
+    text-decoration-color: var(--accent);
 }
 .co-sm-settings-warn {
     color: #e8a838;

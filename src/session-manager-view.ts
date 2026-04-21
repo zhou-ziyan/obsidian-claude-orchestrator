@@ -534,11 +534,14 @@ export class SessionManagerView extends ItemView {
 				const expectedPath = sessionNotePath(config.vaultFolder, session.name);
 
 				noteRow.createSpan({ cls: "co-sm-settings-label", text: "Session note:" });
-				noteRow.createSpan({ cls: "co-sm-settings-path", text: expectedPath });
+				const pathSpan = noteRow.createSpan({ cls: "co-sm-settings-path", text: expectedPath });
 
 				if (session.hasNote) {
-					const okSpan = noteRow.createSpan({ cls: "co-sm-settings-ok" });
-					setIcon(okSpan, "check");
+					pathSpan.classList.add("co-sm-settings-path-link");
+					pathSpan.addEventListener("click", (e) => {
+						e.stopPropagation();
+						void this.app.workspace.openLinkText(expectedPath, "");
+					});
 				} else {
 					noteRow.createSpan({ cls: "co-sm-settings-warn", text: "⚠ not found" });
 					const relinkBtn = settingsPanel.createEl("button", {
