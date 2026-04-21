@@ -1054,6 +1054,8 @@
     height: 100%;
     overflow: hidden;
     background: var(--co-bg);
+    container-type: inline-size;
+    container-name: sm;
 }
 
 .co-sm-header {
@@ -1237,6 +1239,8 @@
     padding-left: 15px;
     font-size: 11px;
     color: var(--co-text-muted);
+    overflow: hidden;
+    white-space: nowrap;
 }
 .co-sm-card-mode {
     font-weight: 600;
@@ -1577,6 +1581,21 @@
 }
 .co-sm-inactive-header:hover {
     color: var(--co-text-heading);
+}
+
+/* Narrow width responsive: hide secondary info when SM pane is compressed */
+@container sm (max-width: 220px) {
+    .co-sm-card-time { display: none; }
+    .co-sm-card-note { display: none; }
+    .co-sm-card-meta { gap: 4px; }
+}
+@container sm (max-width: 160px) {
+    .co-sm-card-queue-badge { display: none; }
+    .co-sm-card-dot-sep { display: none; }
+    .co-sm-group-count { display: none; }
+}
+@container sm (max-width: 120px) {
+    .co-sm-card-meta { display: none; }
 }
 
 /* PTY usage indicator */
