@@ -82,8 +82,23 @@ import {
 	archiveSessionNotePath,
 	renamedSessionNotePath,
 	unregisterConfirmText,
+	extractTimestamp,
+	findLastActivityTimestamp,
+	sessionDisplayLabel,
+	splitActiveInactive,
+	computeSessionCwd,
+	ptyBarPercent,
+	countdownText,
+	deriveStatusFromStop,
+	markLastHistoryDone,
+	summarizeSessionNote,
+	mergeWithBuiltinCommands,
+	countPtyEntries,
+	ptyMaxWithDefault,
+	notifyQueueMessage,
+	prepareQueueTaskText,
 } from "../src/utils.ts";
-import type { ProjectRegistry, SessionNote, SlashCommandEntry } from "../src/utils.ts";
+import type { ProjectRegistry, SessionNote, SessionGroup, HistoryItem, SlashCommandEntry } from "../src/utils.ts";
 
 const TEST_PROJECTS: ProjectRegistry = {
 	"15_Claude_Orchestrator": { vaultFolder: "01_Projects/15_Claude_Orchestrator" },
@@ -3853,5 +3868,639 @@ describe("resolveClaudeIdle", () => {
 	it("non-external: idle note status sets idle regardless of prev", () => {
 		assert.equal(resolveClaudeIdle(false, "idle", false), true);
 		assert.equal(resolveClaudeIdle(true, "idle", false), true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// extractTimestamp (extracted from view.ts)
+// ---------------------------------------------------------------------------
+
+describe("extractTimestamp", () => {
+	it("extracts HH:MM stamp and body from timestamped text", () => {
+		const result = extractTimestamp("[2026-04-20 14:30] do the thing");
+		assert.equal(result.stamp, "14:30");
+		assert.equal(result.body, "do the thing");
+	});
+
+	it("returns null stamp for text without timestamp prefix", () => {
+		const result = extractTimestamp("plain text");
+		assert.equal(result.stamp, null);
+		assert.equal(result.body, "plain text");
+	});
+
+	it("returns null stamp for empty string", () => {
+		const result = extractTimestamp("");
+		assert.equal(result.stamp, null);
+		assert.equal(result.body, "");
+	});
+
+	it("handles timestamp-only text (empty body after strip)", () => {
+		const result = extractTimestamp("[2026-01-01 00:00] ");
+		assert.equal(result.stamp, "00:00");
+		assert.equal(result.body, "");
+	});
+
+	it("does not extract mid-string timestamps", () => {
+		const result = extractTimestamp("prefix [2026-04-20 14:30] text");
+		assert.equal(result.stamp, null);
+		assert.equal(result.body, "prefix [2026-04-20 14:30] text");
+	});
+
+	it("preserves multiline body", () => {
+		const result = extractTimestamp("[2026-04-20 10:00] line1\nline2");
+		assert.equal(result.stamp, "10:00");
+		assert.equal(result.body, "line1\nline2");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// findLastActivityTimestamp (extracted from session-manager-view.ts)
+// ---------------------------------------------------------------------------
+
+describe("findLastActivityTimestamp", () => {
+	it("finds timestamp from last queue item", () => {
+		const result = findLastActivityTimestamp(
+			["[2026-04-20 10:00] old task"],
+			["[2026-04-20 14:30] new task"],
+		);
+		assert.equal(result, "2026-04-20 14:30");
+	});
+
+	it("finds timestamp from history when queue is empty", () => {
+		const result = findLastActivityTimestamp(
+			["[2026-04-20 12:00] task done"],
+			[],
+		);
+		assert.equal(result, "2026-04-20 12:00");
+	});
+
+	it("returns null when no timestamps present", () => {
+		const result = findLastActivityTimestamp(["plain text"], ["also plain"]);
+		assert.equal(result, null);
+	});
+
+	it("returns null for empty arrays", () => {
+		assert.equal(findLastActivityTimestamp([], []), null);
+	});
+
+	it("searches backward and finds the last item's timestamp", () => {
+		const result = findLastActivityTimestamp(
+			["[2026-04-20 09:00] first", "[2026-04-20 10:00] second"],
+			["[2026-04-20 11:00] third", "[2026-04-20 12:00] fourth"],
+		);
+		assert.equal(result, "2026-04-20 12:00");
+	});
+
+	it("skips items without timestamps at the end", () => {
+		const result = findLastActivityTimestamp(
+			["[2026-04-20 10:00] task"],
+			["no timestamp here"],
+		);
+		assert.equal(result, "2026-04-20 10:00");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// sessionDisplayLabel (extracted from session-manager-view.ts)
+// ---------------------------------------------------------------------------
+
+describe("sessionDisplayLabel", () => {
+	it("returns display name when provided", () => {
+		assert.equal(sessionDisplayLabel("proj-1", "My Session"), "My Session");
+	});
+
+	it("formats numbered suffix as # notation", () => {
+		assert.equal(sessionDisplayLabel("15_Claude_Orchestrator-2"), "15_Claude_Orchestrator #2");
+	});
+
+	it("returns name unchanged when no numeric suffix", () => {
+		assert.equal(sessionDisplayLabel("project-name"), "project-name");
+	});
+
+	it("ignores null display name", () => {
+		assert.equal(sessionDisplayLabel("proj-3", null), "proj #3");
+	});
+
+	it("ignores empty string display name", () => {
+		assert.equal(sessionDisplayLabel("proj-3", ""), "proj #3");
+	});
+
+	it("handles multi-digit suffix", () => {
+		assert.equal(sessionDisplayLabel("proj-123"), "proj #123");
+	});
+
+	it("only replaces trailing numeric suffix", () => {
+		assert.equal(sessionDisplayLabel("proj-2-abc"), "proj-2-abc");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// splitActiveInactive (extracted from session-manager-view.ts)
+// ---------------------------------------------------------------------------
+
+describe("splitActiveInactive", () => {
+	const mkGroup = (project: string): SessionGroup => ({
+		project,
+		sessions: [],
+	});
+
+	it("puts active projects in active list", () => {
+		const groups = [mkGroup("A"), mkGroup("B")];
+		const projects: ProjectRegistry = {
+			A: { vaultFolder: "a" },
+			B: { vaultFolder: "b" },
+		};
+		const result = splitActiveInactive(groups, projects);
+		assert.equal(result.active.length, 2);
+		assert.equal(result.inactive.length, 0);
+	});
+
+	it("puts inactive projects in inactive list", () => {
+		const groups = [mkGroup("A"), mkGroup("B")];
+		const projects: ProjectRegistry = {
+			A: { vaultFolder: "a", inactive: true },
+			B: { vaultFolder: "b" },
+		};
+		const result = splitActiveInactive(groups, projects);
+		assert.equal(result.active.length, 1);
+		assert.equal(result.active[0]!.project, "B");
+		assert.equal(result.inactive.length, 1);
+		assert.equal(result.inactive[0]!.project, "A");
+	});
+
+	it("keeps Unmanaged group in active even if config missing", () => {
+		const groups = [mkGroup("Unmanaged")];
+		const result = splitActiveInactive(groups, {});
+		assert.equal(result.active.length, 1);
+		assert.equal(result.inactive.length, 0);
+	});
+
+	it("returns empty arrays for empty input", () => {
+		const result = splitActiveInactive([], {});
+		assert.equal(result.active.length, 0);
+		assert.equal(result.inactive.length, 0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// computeSessionCwd (extracted from view.ts)
+// ---------------------------------------------------------------------------
+
+describe("computeSessionCwd", () => {
+	it("uses workingDirectory when provided", () => {
+		assert.equal(
+			computeSessionCwd("/code/my-project", "01_Projects/Foo", "/vault", "/home/user"),
+			"/code/my-project",
+		);
+	});
+
+	it("joins basePath and vaultFolder when no workingDirectory", () => {
+		assert.equal(
+			computeSessionCwd(undefined, "01_Projects/Foo", "/vault", "/home/user"),
+			"/vault/01_Projects/Foo",
+		);
+	});
+
+	it("uses basePath alone when vaultFolder is empty", () => {
+		assert.equal(
+			computeSessionCwd(undefined, "", "/vault", "/home/user"),
+			"/vault",
+		);
+	});
+
+	it("uses basePath alone when vaultFolder is undefined", () => {
+		assert.equal(
+			computeSessionCwd(undefined, undefined, "/vault", "/home/user"),
+			"/vault",
+		);
+	});
+
+	it("falls back to homedir when basePath is null", () => {
+		assert.equal(
+			computeSessionCwd(undefined, "some/folder", null, "/home/user"),
+			"/home/user",
+		);
+	});
+
+	it("falls back to homedir when everything is undefined/null", () => {
+		assert.equal(
+			computeSessionCwd(undefined, undefined, null, "/home/user"),
+			"/home/user",
+		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// ptyBarPercent (extracted from session-manager-view.ts)
+// ---------------------------------------------------------------------------
+
+describe("ptyBarPercent", () => {
+	it("calculates percentage correctly", () => {
+		assert.equal(ptyBarPercent(50, 100), 50);
+	});
+
+	it("rounds to nearest integer", () => {
+		assert.equal(ptyBarPercent(1, 3), 33);
+		assert.equal(ptyBarPercent(2, 3), 67);
+	});
+
+	it("caps at 100", () => {
+		assert.equal(ptyBarPercent(150, 100), 100);
+	});
+
+	it("returns 0 when max is 0", () => {
+		assert.equal(ptyBarPercent(10, 0), 0);
+	});
+
+	it("returns 0 when max is negative", () => {
+		assert.equal(ptyBarPercent(5, -1), 0);
+	});
+
+	it("returns 0 when used is 0", () => {
+		assert.equal(ptyBarPercent(0, 100), 0);
+	});
+
+	it("returns 100 when used equals max", () => {
+		assert.equal(ptyBarPercent(511, 511), 100);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// countdownText (shared between view.ts and session-manager-view.ts)
+// ---------------------------------------------------------------------------
+
+describe("countdownText", () => {
+	it("formats countdown seconds", () => {
+		assert.equal(countdownText(3), "Auto-send in 3s");
+	});
+
+	it("handles 0 seconds", () => {
+		assert.equal(countdownText(0), "Auto-send in 0s");
+	});
+
+	it("handles large values", () => {
+		assert.equal(countdownText(60), "Auto-send in 60s");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// deriveStatusFromStop (extracted from view.ts onStopSignal)
+// ---------------------------------------------------------------------------
+
+describe("deriveStatusFromStop", () => {
+	it("returns waiting_for_user and not idle when asking", () => {
+		const result = deriveStatusFromStop("asking");
+		assert.equal(result.claudeIdle, false);
+		assert.equal(result.status, "waiting_for_user");
+	});
+
+	it("returns idle when done", () => {
+		const result = deriveStatusFromStop("done");
+		assert.equal(result.claudeIdle, true);
+		assert.equal(result.status, "idle");
+	});
+
+	it("returns idle when null (initial/unknown)", () => {
+		const result = deriveStatusFromStop(null);
+		assert.equal(result.claudeIdle, true);
+		assert.equal(result.status, "idle");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// markLastHistoryDone (extracted from view.ts onStopSignal)
+// ---------------------------------------------------------------------------
+
+describe("markLastHistoryDone", () => {
+	it("marks last incomplete item as completed on done", () => {
+		const history: HistoryItem[] = [
+			{ text: "task 1", completed: true },
+			{ text: "task 2", completed: false },
+		];
+		const changed = markLastHistoryDone(history, "done");
+		assert.equal(changed, true);
+		assert.equal(history[1]!.completed, true);
+	});
+
+	it("returns false when stopReason is asking", () => {
+		const history: HistoryItem[] = [
+			{ text: "task", completed: false },
+		];
+		const changed = markLastHistoryDone(history, "asking");
+		assert.equal(changed, false);
+		assert.equal(history[0]!.completed, false);
+	});
+
+	it("returns false when stopReason is null", () => {
+		const history: HistoryItem[] = [
+			{ text: "task", completed: false },
+		];
+		assert.equal(markLastHistoryDone(history, null), false);
+	});
+
+	it("returns false when history is empty", () => {
+		assert.equal(markLastHistoryDone([], "done"), false);
+	});
+
+	it("returns false when last item is already completed", () => {
+		const history: HistoryItem[] = [
+			{ text: "task", completed: true },
+		];
+		assert.equal(markLastHistoryDone(history, "done"), false);
+	});
+
+	it("only marks the last item, not earlier ones", () => {
+		const history: HistoryItem[] = [
+			{ text: "task 1", completed: false },
+			{ text: "task 2", completed: false },
+		];
+		markLastHistoryDone(history, "done");
+		assert.equal(history[0]!.completed, false);
+		assert.equal(history[1]!.completed, true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// summarizeSessionNote (extracted from session-manager-view.ts refresh)
+// ---------------------------------------------------------------------------
+
+describe("summarizeSessionNote", () => {
+	it("returns queue count, last activity, preview, and metadata", () => {
+		const note: SessionNote = {
+			session: "test",
+			status: "running",
+			queueMode: "auto",
+			displayName: "My Session",
+			summary: "",
+			notes: "",
+			history: [{ text: "[2026-04-20 10:00] done task", completed: true }],
+			queue: ["[2026-04-20 14:30] next task"],
+		};
+		const result = summarizeSessionNote(note);
+		assert.equal(result.queueCount, 1);
+		assert.equal(result.lastActivity, "2026-04-20 14:30");
+		assert.equal(result.displayName, "My Session");
+		assert.equal(result.status, "running");
+		assert.equal(result.queueMode, "auto");
+		assert.ok(result.preview !== null);
+	});
+
+	it("returns null lastActivity when no timestamps", () => {
+		const note: SessionNote = {
+			session: "test",
+			status: "idle",
+			queueMode: "manual",
+			displayName: "",
+			summary: "",
+			notes: "",
+			history: [],
+			queue: [],
+		};
+		const result = summarizeSessionNote(note);
+		assert.equal(result.queueCount, 0);
+		assert.equal(result.lastActivity, null);
+		assert.equal(result.preview, null);
+		assert.equal(result.displayName, null);
+	});
+
+	it("returns null displayName for empty string", () => {
+		const note: SessionNote = {
+			session: "test",
+			status: "idle",
+			queueMode: "manual",
+			displayName: "",
+			summary: "",
+			notes: "",
+			history: [],
+			queue: ["[2026-04-20 10:00] something"],
+		};
+		assert.equal(summarizeSessionNote(note).displayName, null);
+	});
+
+	it("uses summary as preview when available", () => {
+		const note: SessionNote = {
+			session: "test",
+			status: "idle",
+			queueMode: "manual",
+			displayName: "",
+			summary: "My custom summary",
+			notes: "",
+			history: [],
+			queue: [],
+		};
+		assert.equal(summarizeSessionNote(note).preview, "My custom summary");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseSessionNote — unknown heading coverage
+// ---------------------------------------------------------------------------
+
+describe("parseSessionNote unknown headings", () => {
+	it("stops current section on unknown ## heading", () => {
+		const md = [
+			"---",
+			"session: test",
+			"status: idle",
+			"queueMode: manual",
+			"---",
+			"",
+			"## Notes",
+			"some notes",
+			"",
+			"## Custom Section",
+			"this should not appear in notes",
+			"",
+			"## History",
+			"- [x] [2026-04-20 10:00] done task",
+			"",
+			"## Queue",
+			"- [2026-04-20 11:00] queued task",
+			"",
+		].join("\n");
+		const note = parseSessionNote(md, "test");
+		assert.equal(note.notes, "some notes");
+		assert.equal(note.history.length, 1);
+		assert.equal(note.queue.length, 1);
+	});
+
+	it("handles unknown heading between history and queue", () => {
+		const md = [
+			"---",
+			"session: test",
+			"status: idle",
+			"---",
+			"",
+			"## Notes",
+			"",
+			"## History",
+			"- [x] task 1",
+			"",
+			"## Metadata",
+			"key: value",
+			"",
+			"## Queue",
+			"- next item",
+			"",
+		].join("\n");
+		const note = parseSessionNote(md, "test");
+		assert.equal(note.history.length, 1);
+		assert.equal(note.queue.length, 1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// loadSlashCommands (filesystem-based, tested with temp directories)
+// ---------------------------------------------------------------------------
+
+describe("mergeWithBuiltinCommands", () => {
+	it("returns sorted builtins when given empty skills array", () => {
+		const result = mergeWithBuiltinCommands([]);
+		assert.ok(result.length > 0);
+		const names = result.map((e) => e.command);
+		assert.ok(names.includes("/help"));
+		const sorted = [...names].sort();
+		assert.deepEqual(names, sorted);
+	});
+
+	it("adds custom skills alongside builtins", () => {
+		const skills: SlashCommandEntry[] = [
+			{ command: "/my-custom", description: "Custom skill" },
+		];
+		const result = mergeWithBuiltinCommands(skills);
+		assert.ok(result.find((e) => e.command === "/my-custom"));
+		assert.ok(result.find((e) => e.command === "/help"));
+	});
+
+	it("prefers builtin over custom skill with same name", () => {
+		const skills: SlashCommandEntry[] = [
+			{ command: "/help", description: "Custom help override" },
+		];
+		const result = mergeWithBuiltinCommands(skills);
+		const help = result.find((e) => e.command === "/help");
+		assert.ok(help);
+		assert.notEqual(help?.description, "Custom help override");
+	});
+
+	it("returns sorted results", () => {
+		const skills: SlashCommandEntry[] = [
+			{ command: "/zzz-last", description: "Z" },
+			{ command: "/aaa-first", description: "A" },
+		];
+		const result = mergeWithBuiltinCommands(skills);
+		const names = result.map((e) => e.command);
+		const sorted = [...names].sort();
+		assert.deepEqual(names, sorted);
+	});
+
+	it("deduplicates custom skills (first wins)", () => {
+		const skills: SlashCommandEntry[] = [
+			{ command: "/dup", description: "First" },
+			{ command: "/dup", description: "Second" },
+		];
+		const result = mergeWithBuiltinCommands(skills);
+		const dups = result.filter((e) => e.command === "/dup");
+		assert.equal(dups.length, 1);
+		assert.equal(dups[0]!.description, "First");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// countPtyEntries (extracted from getPtyUsage)
+// ---------------------------------------------------------------------------
+
+describe("countPtyEntries", () => {
+	it("counts entries starting with ttys", () => {
+		assert.equal(countPtyEntries(["ttys000", "ttys001", "tty", "null"]), 2);
+	});
+
+	it("returns 0 for empty array", () => {
+		assert.equal(countPtyEntries([]), 0);
+	});
+
+	it("returns 0 when no ttys entries", () => {
+		assert.equal(countPtyEntries(["null", "console", "tty"]), 0);
+	});
+
+	it("handles large number of entries", () => {
+		const entries = Array.from({ length: 100 }, (_, i) => `ttys${String(i).padStart(3, "0")}`);
+		assert.equal(countPtyEntries(entries), 100);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// ptyMaxWithDefault (extracted from fetchPtyUsage)
+// ---------------------------------------------------------------------------
+
+describe("ptyMaxWithDefault", () => {
+	it("returns parsed max when positive", () => {
+		assert.equal(ptyMaxWithDefault(511), 511);
+	});
+
+	it("returns PTY_DEFAULT_MAX when parsed is 0", () => {
+		assert.equal(ptyMaxWithDefault(0), PTY_DEFAULT_MAX);
+	});
+
+	it("returns PTY_DEFAULT_MAX when parsed is negative", () => {
+		assert.equal(ptyMaxWithDefault(-1), PTY_DEFAULT_MAX);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// notifyQueueMessage (extracted from view.ts)
+// ---------------------------------------------------------------------------
+
+describe("notifyQueueMessage", () => {
+	it("formats finished message with count", () => {
+		assert.equal(
+			notifyQueueMessage("Claude finished", 3),
+			"Claude finished — 3 item(s) in queue",
+		);
+	});
+
+	it("formats idle message with count", () => {
+		assert.equal(
+			notifyQueueMessage("Claude idle", 1),
+			"Claude idle — 1 item(s) in queue",
+		);
+	});
+
+	it("handles zero items", () => {
+		assert.equal(
+			notifyQueueMessage("Claude finished", 0),
+			"Claude finished — 0 item(s) in queue",
+		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// prepareQueueTaskText (extracted from view.ts sendNext)
+// ---------------------------------------------------------------------------
+
+describe("prepareQueueTaskText", () => {
+	it("strips timestamp and preserves text", () => {
+		assert.equal(
+			prepareQueueTaskText("[2026-04-20 14:30] do the thing"),
+			"do the thing",
+		);
+	});
+
+	it("escapes leading bang after timestamp strip", () => {
+		assert.equal(
+			prepareQueueTaskText("[2026-04-20 14:30] ![[image.png]]"),
+			" ![[image.png]]",
+		);
+	});
+
+	it("handles text without timestamp", () => {
+		assert.equal(prepareQueueTaskText("plain text"), "plain text");
+	});
+
+	it("handles text with leading bang and no timestamp", () => {
+		assert.equal(prepareQueueTaskText("!bang"), " !bang");
+	});
+
+	it("returns empty string for timestamp-only text", () => {
+		assert.equal(prepareQueueTaskText("[2026-04-20 14:30] "), "");
 	});
 });
