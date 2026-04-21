@@ -1008,10 +1008,7 @@ export class TerminalView extends ItemView {
 
 		// Show oldest first (top) → newest last (bottom)
 		for (const item of this.sessionNote.history) {
-			const row = content.createDiv({ cls: "co-history-item" });
-			const cls = item.completed ? "co-completed" : "co-in-progress";
-			const iconEl = row.createSpan({ cls: `co-history-icon ${cls}` });
-			setIcon(iconEl, item.completed ? "check" : "loader");
+			const row = content.createDiv({ cls: `co-history-item${item.completed ? " co-completed" : ""}` });
 			const { stamp, body } = extractTimestamp(item.text);
 			if (stamp) {
 				row.createSpan({ cls: "co-timestamp", text: stamp });

@@ -463,7 +463,7 @@
 .co-history-item {
     display: flex;
     align-items: flex-start;
-    gap: 8px;
+    gap: 6px;
     padding: 2px 12px;
     font-size: 11px;
     color: var(--co-text-body);
@@ -473,20 +473,9 @@
     background: var(--co-bg-hover);
 }
 
-.co-history-icon {
-    width: 12px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    padding-top: 1px;
+.co-history-item.co-completed {
+    opacity: 0.55;
 }
-.co-history-icon svg {
-    width: 10px;
-    height: 10px;
-}
-.co-history-icon.co-completed { color: var(--s-done); }
-.co-history-icon.co-in-progress { color: var(--s-running); }
 
 .co-resize-handle {
     flex-shrink: 0;
