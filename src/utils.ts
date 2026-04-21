@@ -1354,3 +1354,9 @@ export class SessionLifecycle {
 		}
 	}
 }
+
+export function unregisterConfirmText(sessionCount: number): string {
+	if (sessionCount <= 0) return "Confirm unregister?";
+	const label = sessionCount === 1 ? "1 active session" : `${sessionCount} active sessions`;
+	return `${label} will move to Unmanaged. Confirm unregister?`;
+}

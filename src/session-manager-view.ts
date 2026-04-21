@@ -30,6 +30,7 @@ import {
 	sessionsMissingNotes,
 	createDefaultSessionNote,
 	archiveSessionNotePath,
+	unregisterConfirmText,
 } from "./utils";
 import { findTerminalLeafBySession, collectOpenSessionNames } from "./workspace-helpers";
 import type { ProjectConfig, PtyLevel } from "./utils";
@@ -1047,7 +1048,9 @@ export class SessionManagerView extends ItemView {
 			rmBtn.addEventListener("click", () => {
 				if (!rmConfirmPending) {
 					rmConfirmPending = true;
-					rmBtn.textContent = "Confirm unregister?";
+					const group = this.groups.find(g => g.project === existingKey);
+					const count = group?.sessions.length ?? 0;
+					rmBtn.textContent = unregisterConfirmText(count);
 					setTimeout(() => {
 						if (rmConfirmPending) {
 							rmConfirmPending = false;
