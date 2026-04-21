@@ -80,6 +80,7 @@ import {
 	sessionsMissingNotes,
 	archiveSessionNotePath,
 	renamedSessionNotePath,
+	unregisterConfirmText,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote, SlashCommandEntry } from "../src/utils.ts";
 
@@ -3728,5 +3729,31 @@ describe("buildQuickReplyTmuxArgs key sequences", () => {
 		const result = buildQuickReplyTmuxArgs("session", "Y");
 		assert.ok(result.textArgs.includes("-l"));
 		assert.deepEqual(result.enterArgs, ["send-keys", "-t", "session", "Enter"]);
+	});
+});
+
+describe("unregisterConfirmText", () => {
+	it("mentions session count when sessions exist", () => {
+		const text = unregisterConfirmText(3);
+		assert.ok(text.includes("3"));
+		assert.ok(text.toLowerCase().includes("unmanaged"));
+	});
+
+	it("returns simple confirmation when no sessions", () => {
+		const text = unregisterConfirmText(0);
+		assert.ok(!text.includes("0"));
+		assert.ok(text.toLowerCase().includes("unregister"));
+	});
+
+	it("uses singular for 1 session", () => {
+		const text = unregisterConfirmText(1);
+		assert.ok(text.includes("1"));
+		assert.ok(!text.includes("sessions"));
+	});
+
+	it("uses plural for multiple sessions", () => {
+		const text = unregisterConfirmText(2);
+		assert.ok(text.includes("2"));
+		assert.ok(text.includes("sessions"));
 	});
 });
