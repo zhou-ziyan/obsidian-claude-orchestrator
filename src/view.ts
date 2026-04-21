@@ -294,7 +294,7 @@ export class TerminalView extends ItemView {
 				if (this.savingSessionNote) return;
 				if (!this.sessionNoteLoaded) return;
 				if (isMySessionNote(file.path)) {
-					void this.loadSessionNote();
+					void this.loadSessionNote(undefined, true);
 				}
 			}),
 		);
@@ -943,7 +943,7 @@ export class TerminalView extends ItemView {
 	private sessionNoteLoaded = false;
 	private savingSessionNote = false;
 
-	private async loadSessionNote(gen?: number): Promise<void> {
+	private async loadSessionNote(gen?: number, externalModify = false): Promise<void> {
 		if (!this.project || !this.sessionName) return;
 		const myGen = gen ?? this.lifecycle.gen;
 		this.sessionNoteLoaded = false;
@@ -975,8 +975,8 @@ export class TerminalView extends ItemView {
 		/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Obsidian internal API */
 		(this.leaf as any).updateHeader?.();
 		/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
-		this.checkAutoSend();
-		if (this.claudeIdle && this.sessionNote.queue.length > 0) {
+		this.checkAutoSend(externalModify);
+		if (this.claudeIdle && this.sessionNote.queue.length > 0 && !externalModify) {
 			setTimeout(() => this.checkAutoSend(), 5500);
 		}
 	}
@@ -1411,11 +1411,11 @@ export class TerminalView extends ItemView {
 		this.app.workspace.trigger("claude-orchestrator:countdown-tick");
 	}
 
-	private checkAutoSend(): void {
+	private checkAutoSend(force = false): void {
 		if (!this.claudeIdle) return;
 		if (!this.sessionNote) return;
 		if (this.countdownRemaining > 0) return;
-		if (Date.now() - this.loadedAt < 5000) return;
+		if (!force && Date.now() - this.loadedAt < 5000) return;
 
 		const action = autoSendAction(
 			this.sessionNote.queueMode,
