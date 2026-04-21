@@ -30,6 +30,7 @@ import {
 	sessionDirPath,
 	QUICK_REPLY_KEYS,
 	buildQuickReplyTmuxArgs,
+	quickReplyLabel,
 	cancelCopyModeArgs,
 	nextQueueMode,
 	queueModeLabel,
@@ -3685,5 +3686,47 @@ describe("pinnedNote removal", () => {
 		const note = parseSessionNote(md, "test-rt");
 		const serialized = serializeSessionNote(note);
 		assert.ok(!serialized.includes("pinnedNote:"), "re-serialized note should drop pinnedNote");
+	});
+});
+
+// --- quickReplyLabel ---
+
+describe("quickReplyLabel", () => {
+	it("returns plain text keys unchanged", () => {
+		assert.equal(quickReplyLabel("Y"), "Y");
+		assert.equal(quickReplyLabel("1"), "1");
+	});
+
+	it("converts {C-c} to ^C", () => {
+		assert.equal(quickReplyLabel("{C-c}"), "^C");
+	});
+
+	it("converts {C-d} to ^D", () => {
+		assert.equal(quickReplyLabel("{C-d}"), "^D");
+	});
+
+	it("returns tmux key name for non-Ctrl sequences", () => {
+		assert.equal(quickReplyLabel("{Escape}"), "Escape");
+	});
+});
+
+// --- buildQuickReplyTmuxArgs with key sequences ---
+
+describe("buildQuickReplyTmuxArgs key sequences", () => {
+	it("uses send-keys without -l for {C-c}", () => {
+		const result = buildQuickReplyTmuxArgs("session", "{C-c}");
+		assert.deepEqual(result.textArgs, ["send-keys", "-t", "session", "C-c"]);
+		assert.ok(!result.textArgs.includes("-l"));
+	});
+
+	it("does not send Enter for key sequences", () => {
+		const result = buildQuickReplyTmuxArgs("session", "{C-c}");
+		assert.deepEqual(result.enterArgs, []);
+	});
+
+	it("still uses -l and Enter for plain text", () => {
+		const result = buildQuickReplyTmuxArgs("session", "Y");
+		assert.ok(result.textArgs.includes("-l"));
+		assert.deepEqual(result.enterArgs, ["send-keys", "-t", "session", "Enter"]);
 	});
 });
