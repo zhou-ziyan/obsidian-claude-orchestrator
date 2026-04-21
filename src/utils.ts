@@ -857,6 +857,10 @@ export function ptyLevel(used: number, max: number): PtyLevel {
 	return "ok";
 }
 
+export function countPtyEntries(devEntries: string[]): number {
+	return devEntries.filter((name) => name.startsWith("ttys")).length;
+}
+
 export function getPtyUsage(): Promise<{ used: number; max: number }> {
 	// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- child_process from require
 	const { execFile } = require("child_process");
@@ -870,13 +874,10 @@ export function getPtyUsage(): Promise<{ used: number; max: number }> {
 			["-n", "kern.tty.ptmx_max"],
 			(err: Error | null, stdout: string) => {
 				const max = err ? 0 : parsePtyMax(stdout);
-				// Count /dev/ttys* entries for used PTYs
 				try {
 					// eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- untyped fs
-					const entries = (fs.readdirSync("/dev") as string[]).filter(
-						(name: string) => name.startsWith("ttys"),
-					);
-					resolve({ used: entries.length, max });
+					const entries = fs.readdirSync("/dev") as string[];
+					resolve({ used: countPtyEntries(entries), max });
 				} catch {
 					resolve({ used: 0, max });
 				}
@@ -932,13 +933,14 @@ export function fetchPtyUsage(): Promise<PtyUsage> {
 	return Promise.all([
 		run("sysctl -n kern.tty.ptmx_max"),
 		run("ls /dev/ttys* 2>/dev/null | wc -l"),
-	]).then(([maxOut, usedOut]) => {
-		const max = parsePtyMax(maxOut);
-		return {
-			used: parsePtyUsed(usedOut),
-			max: max > 0 ? max : PTY_DEFAULT_MAX,
-		};
-	});
+	]).then(([maxOut, usedOut]) => ({
+		used: parsePtyUsed(usedOut),
+		max: ptyMaxWithDefault(parsePtyMax(maxOut)),
+	}));
+}
+
+export function ptyMaxWithDefault(parsedMax: number): number {
+	return parsedMax > 0 ? parsedMax : PTY_DEFAULT_MAX;
 }
 
 // --- Idle session detection ---
@@ -1161,6 +1163,10 @@ export function loadSlashCommands(skillDirs: string[]): SlashCommandEntry[] {
 		}
 	}
 
+	return mergeWithBuiltinCommands(skills);
+}
+
+export function mergeWithBuiltinCommands(skills: SlashCommandEntry[]): SlashCommandEntry[] {
 	const merged = new Map<string, SlashCommandEntry>();
 	for (const entry of BUILTIN_SLASH_COMMANDS) {
 		merged.set(entry.command, entry);
@@ -1170,7 +1176,6 @@ export function loadSlashCommands(skillDirs: string[]): SlashCommandEntry[] {
 			merged.set(entry.command, entry);
 		}
 	}
-
 	return [...merged.values()].sort((a, b) => a.command.localeCompare(b.command));
 }
 
@@ -1360,4 +1365,128 @@ export function unregisterConfirmText(sessionCount: number): string {
 	if (sessionCount <= 0) return "Confirm unregister?";
 	const label = sessionCount === 1 ? "1 active session" : `${sessionCount} active sessions`;
 	return `${label} will move to Unmanaged. Confirm unregister?`;
+}
+
+// --- Extracted view helpers (pure functions from view.ts / session-manager-view.ts) ---
+
+const ITEM_TS_RE = /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\] /;
+
+export function extractTimestamp(text: string): { stamp: string | null; body: string } {
+	const m = text.match(ITEM_TS_RE);
+	if (m && m[1]) {
+		const timeOnly = m[1].split(" ")[1] ?? m[1];
+		return { stamp: timeOnly, body: text.slice(m[0]?.length ?? 0) };
+	}
+	return { stamp: null, body: text };
+}
+
+const ACTIVITY_TS_RE = /\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]/;
+
+export function findLastActivityTimestamp(
+	historyTexts: string[],
+	queueTexts: string[],
+): string | null {
+	const allItems = [...historyTexts, ...queueTexts];
+	for (let i = allItems.length - 1; i >= 0; i--) {
+		const m = allItems[i]?.match(ACTIVITY_TS_RE);
+		if (m?.[1]) return m[1];
+	}
+	return null;
+}
+
+export function sessionDisplayLabel(
+	sessionName: string,
+	displayName?: string | null,
+): string {
+	if (displayName) return displayName;
+	return sessionName.replace(/-(\d+)$/, " #$1");
+}
+
+export function splitActiveInactive(
+	groups: SessionGroup[],
+	projects: ProjectRegistry,
+): { active: SessionGroup[]; inactive: SessionGroup[] } {
+	const active: SessionGroup[] = [];
+	const inactive: SessionGroup[] = [];
+	for (const group of groups) {
+		const config = projects[group.project];
+		if (group.project === "Unmanaged" || !config?.inactive) {
+			active.push(group);
+		} else {
+			inactive.push(group);
+		}
+	}
+	return { active, inactive };
+}
+
+export function computeSessionCwd(
+	workingDirectory: string | undefined,
+	vaultFolder: string | undefined,
+	basePath: string | null,
+	homedir: string,
+): string {
+	if (workingDirectory) return workingDirectory;
+	if (basePath !== null) {
+		return vaultFolder ? `${basePath}/${vaultFolder}` : basePath;
+	}
+	return homedir;
+}
+
+export function ptyBarPercent(used: number, max: number): number {
+	if (max <= 0) return 0;
+	return Math.min(100, Math.round((used / max) * 100));
+}
+
+export function countdownText(remaining: number): string {
+	return `Auto-send in ${remaining}s`;
+}
+
+export function deriveStatusFromStop(
+	stopReason: StopReason | null,
+): { claudeIdle: boolean; status: SessionStatus } {
+	const claudeIdle = stopReason !== "asking";
+	const status: SessionStatus = stopReason === "asking" ? "waiting_for_user" : "idle";
+	return { claudeIdle, status };
+}
+
+export function markLastHistoryDone(
+	history: HistoryItem[],
+	stopReason: StopReason | null,
+): boolean {
+	if (stopReason !== "done") return false;
+	const last = history[history.length - 1];
+	if (last && !last.completed) {
+		last.completed = true;
+		return true;
+	}
+	return false;
+}
+
+export function summarizeSessionNote(note: SessionNote): {
+	queueCount: number;
+	lastActivity: string | null;
+	preview: string | null;
+	displayName: string | null;
+	status: SessionStatus;
+	queueMode: QueueMode;
+} {
+	return {
+		queueCount: note.queue.length,
+		lastActivity: findLastActivityTimestamp(
+			note.history.map((h) => h.text),
+			note.queue,
+		),
+		preview: extractSessionPreview(note),
+		displayName: note.displayName || null,
+		status: note.status,
+		queueMode: note.queueMode,
+	};
+}
+
+export function notifyQueueMessage(prefix: string, queueLength: number): string {
+	return `${prefix} — ${queueLength} item(s) in queue`;
+}
+
+export function prepareQueueTaskText(rawTask: string): string {
+	return escapeLeadingBang(stripTimestamp(rawTask));
 }

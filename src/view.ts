@@ -38,6 +38,13 @@ import {
 	terminalTheme,
 	QUEUE_MODES,
 	SessionLifecycle,
+	extractTimestamp,
+	computeSessionCwd,
+	countdownText,
+	deriveStatusFromStop,
+	markLastHistoryDone,
+	notifyQueueMessage,
+	prepareQueueTaskText,
 } from "./utils";
 import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry, ThemeName } from "./utils";
 import { Terminal } from "@xterm/xterm";
@@ -80,17 +87,7 @@ function loadNodePty(pluginDir: string): typeof import("node-pty") {
 	return require(path.join(ptyRoot, "lib", "index.js"));
 }
 
-const TS_RE = /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\] /;
-
-function extractTimestamp(text: string): { stamp: string | null; body: string } {
-	const m = text.match(TS_RE);
-	if (m && m[1]) {
-		// Show only HH:MM, not the full date
-		const timeOnly = m[1].split(" ")[1] ?? m[1];
-		return { stamp: timeOnly, body: text.slice(m[0]?.length ?? 0) };
-	}
-	return { stamp: null, body: text };
-}
+// extractTimestamp imported from utils
 
 export class TerminalView extends ItemView {
 	private term: Terminal | null = null;
@@ -758,19 +755,10 @@ export class TerminalView extends ItemView {
 	}
 
 	private computeCwd(): string {
-		if (this.project) {
-			const config = this.getSettings?.().projects[this.project];
-			if (config?.workingDirectory) {
-				return config.workingDirectory;
-			}
-			const adapter = this.app.vault.adapter;
-			if (adapter instanceof FileSystemAdapter && config) {
-				return config.vaultFolder
-					? path.join(adapter.getBasePath(), config.vaultFolder)
-					: adapter.getBasePath();
-			}
-		}
-		return os.homedir();
+		const config = this.project ? this.getSettings?.().projects[this.project] : undefined;
+		const adapter = this.app.vault.adapter;
+		const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : null;
+		return computeSessionCwd(config?.workingDirectory, config?.vaultFolder, basePath, os.homedir());
 	}
 
 	private disposePty(): void {
@@ -1262,10 +1250,7 @@ export class TerminalView extends ItemView {
 		this.renderQueue();
 		await this.saveSessionNote();
 
-		// Strip timestamp prefix before injecting (e.g. "[2026-04-15 23:15] actual text")
-		const taskText = escapeLeadingBang(
-			task.replace(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] /, ""),
-		);
+		const taskText = prepareQueueTaskText(task);
 
 		const target = this.sessionName;
 
@@ -1313,8 +1298,9 @@ export class TerminalView extends ItemView {
 	onStopSignal(stopReason: StopReason | null): void {
 		if (!this.sessionNote) return;
 
-		this.claudeIdle = stopReason !== "asking";
-		this.sessionNote.status = stopReason === "asking" ? "waiting_for_user" : "idle";
+		const derived = deriveStatusFromStop(stopReason);
+		this.claudeIdle = derived.claudeIdle;
+		this.sessionNote.status = derived.status;
 
 		if (this.host) {
 			if (stopReason === "asking") {
@@ -1324,12 +1310,7 @@ export class TerminalView extends ItemView {
 			}
 		}
 
-		if (stopReason === "done") {
-			const last = this.sessionNote.history[this.sessionNote.history.length - 1];
-			if (last && !last.completed) {
-				last.completed = true;
-			}
-		}
+		markLastHistoryDone(this.sessionNote.history, stopReason);
 
 		this.renderHistory();
 		this.renderQueue();
@@ -1344,7 +1325,7 @@ export class TerminalView extends ItemView {
 		if (action === "send") {
 			this.startCountdown();
 		} else if (action === "notify") {
-			this.notifyUser(`Claude finished — ${this.sessionNote.queue.length} item(s) in queue`);
+			this.notifyUser(notifyQueueMessage("Claude finished", this.sessionNote.queue.length));
 		}
 
 		if (stopReason === "asking" && this.getSettings?.().playSoundOnAsking) {
@@ -1362,7 +1343,7 @@ export class TerminalView extends ItemView {
 		const parent = this.sendBtn.parentElement;
 		const pill = parent.createDiv({ cls: "co-countdown" });
 		pill.createDiv({ cls: "co-countdown-dot" });
-		pill.createSpan({ cls: "co-countdown-label", text: `Auto-send in ${totalSeconds}s` });
+		pill.createSpan({ cls: "co-countdown-label", text: countdownText(totalSeconds) });
 		const cancelBtn = pill.createEl("button", { cls: "icon-btn" });
 		setIcon(cancelBtn, "x");
 		cancelBtn.addEventListener("click", () => this.cancelCountdown());
@@ -1426,7 +1407,7 @@ export class TerminalView extends ItemView {
 		if (action === "send") {
 			this.startCountdown();
 		} else if (action === "notify") {
-			this.notifyUser(`Claude idle — ${this.sessionNote.queue.length} item(s) in queue`);
+			this.notifyUser(notifyQueueMessage("Claude idle", this.sessionNote.queue.length));
 		}
 	}
 
@@ -1445,7 +1426,7 @@ export class TerminalView extends ItemView {
 
 	private updateCountdownLabel(): void {
 		const label = this.countdownEl?.querySelector(".co-countdown-label");
-		if (label) label.textContent = `Auto-send in ${this.countdownRemaining}s`;
+		if (label) label.textContent = countdownText(this.countdownRemaining);
 		this.app.workspace.trigger("claude-orchestrator:countdown-tick");
 	}
 

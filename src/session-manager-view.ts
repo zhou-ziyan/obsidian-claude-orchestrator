@@ -20,7 +20,6 @@ import {
 	getPtyUsage,
 	ptyLevel,
 	isSessionIdle,
-	extractSessionPreview,
 	execTmux,
 	queueModeLabel,
 	applySortOrder,
@@ -31,6 +30,11 @@ import {
 	createDefaultSessionNote,
 	archiveSessionNotePath,
 	unregisterConfirmText,
+	sessionDisplayLabel,
+	splitActiveInactive,
+	ptyBarPercent,
+	countdownText,
+	summarizeSessionNote,
 } from "./utils";
 import { findTerminalLeafBySession, collectOpenSessionNames } from "./workspace-helpers";
 import type { ProjectConfig, PtyLevel } from "./utils";
@@ -92,9 +96,6 @@ class SessionNoteModal extends FuzzySuggestModal<TFile> {
 }
 
 const POLL_INTERVAL_MS = 30_000;
-
-// Timestamp pattern used in queue/history items: [YYYY-MM-DD HH:MM]
-const TIMESTAMP_RE = /\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]/;
 
 export class SessionManagerView extends ItemView {
 	private plugin: ClaudeOrchestratorPlugin;
@@ -260,27 +261,7 @@ export class SessionManagerView extends ItemView {
 			try {
 				const content = await this.app.vault.read(file);
 				const note = parseSessionNote(content, s.name);
-				// Extract last activity from most recent history/queue timestamp
-				let lastActivity: string | null = null;
-				const allItems = [
-					...note.history.map((h) => h.text),
-					...note.queue,
-				];
-				for (let i = allItems.length - 1; i >= 0; i--) {
-					const m = allItems[i]?.match(TIMESTAMP_RE);
-					if (m?.[1]) {
-						lastActivity = m[1];
-						break;
-					}
-				}
-				noteData.set(s.name, {
-					queueCount: note.queue.length,
-					lastActivity,
-					preview: extractSessionPreview(note),
-					displayName: note.displayName || null,
-					status: note.status,
-					queueMode: note.queueMode,
-				});
+				noteData.set(s.name, summarizeSessionNote(note));
 			} catch {
 				// Note read failed — skip
 			}
@@ -318,16 +299,7 @@ export class SessionManagerView extends ItemView {
 			return;
 		}
 
-		const active: SessionGroup[] = [];
-		const inactive: SessionGroup[] = [];
-		for (const group of this.groups) {
-			const config = this.plugin.settings.projects[group.project];
-			if (group.project === "Unmanaged" || !config?.inactive) {
-				active.push(group);
-			} else {
-				inactive.push(group);
-			}
-		}
+		const { active, inactive } = splitActiveInactive(this.groups, this.plugin.settings.projects);
 
 		for (const group of active) {
 			this.renderGroup(group);
@@ -364,7 +336,7 @@ export class SessionManagerView extends ItemView {
 		if (max <= 0) return;
 
 		const level: PtyLevel = ptyLevel(used, max);
-		const pct = Math.min(100, Math.round((used / max) * 100));
+		const pct = ptyBarPercent(used, max);
 
 		const label = this.ptyEl.createSpan({ cls: `co-sm-pty-label co-pty-${level}` });
 		label.textContent = `PTY ${used} / ${max}`;
@@ -489,7 +461,7 @@ export class SessionManagerView extends ItemView {
 		const statusDot = topRow.createDiv({ cls: statusCls });
 		statusDot.dataset.s = dataStatus;
 		const nameRow = topRow.createDiv({ cls: "co-sm-card-name" });
-		const displayLabel = session.displayName || session.name.replace(/-(\d+)$/, " #$1");
+		const displayLabel = sessionDisplayLabel(session.name, session.displayName);
 		const nameSpan = nameRow.createSpan({ text: displayLabel });
 		nameSpan.addEventListener("dblclick", (e) => {
 			e.stopPropagation();
@@ -608,7 +580,7 @@ export class SessionManagerView extends ItemView {
 			if (countdown > 0) {
 				const cdEl = card.createDiv({ cls: "co-sm-card-countdown" });
 				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
-				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: `Auto-send in ${countdown}s` });
+				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: countdownText(countdown) });
 				const cancelBtn = cdEl.createEl("button", { cls: "icon-btn" });
 				setIcon(cancelBtn, "x");
 				cancelBtn.title = "Cancel";
@@ -651,12 +623,12 @@ export class SessionManagerView extends ItemView {
 			const isCd = el.classList.contains("co-sm-card-countdown");
 			if (remaining > 0 && isCd) {
 				const label = el.querySelector(".co-sm-card-countdown-text");
-				if (label) label.textContent = `Auto-send in ${remaining}s`;
+				if (label) label.textContent = countdownText(remaining);
 			} else if (remaining > 0 && !isCd) {
 				el.remove();
 				const cdEl = parent.createDiv({ cls: "co-sm-card-countdown" });
 				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
-				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: `Auto-send in ${remaining}s` });
+				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: countdownText(remaining) });
 				const cancelBtn = cdEl.createEl("button", { cls: "icon-btn" });
 				setIcon(cancelBtn, "x");
 				cancelBtn.title = "Cancel";
@@ -772,7 +744,7 @@ export class SessionManagerView extends ItemView {
 		const input = document.createElement("input");
 		input.type = "text";
 		input.value = current;
-		input.placeholder = session.name.replace(/-(\d+)$/, " #$1");
+		input.placeholder = sessionDisplayLabel(session.name);
 		input.classList.add("co-sm-card-rename");
 		nameSpan.replaceWith(input);
 		input.focus();
