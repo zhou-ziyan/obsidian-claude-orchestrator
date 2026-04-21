@@ -579,15 +579,14 @@ export class SessionManagerView extends ItemView {
 
 			if (countdown > 0) {
 				const cdEl = card.createDiv({ cls: "co-sm-card-countdown" });
-				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
-				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: countdownText(countdown) });
-				const cancelBtn = cdEl.createEl("button", { cls: "icon-btn" });
-				setIcon(cancelBtn, "x");
-				cancelBtn.title = "Cancel";
-				cancelBtn.addEventListener("click", (e) => {
+				cdEl.style.cursor = "pointer";
+				cdEl.title = "Click to cancel";
+				cdEl.addEventListener("click", (e) => {
 					e.stopPropagation();
 					match?.view.cancelCountdown();
 				});
+				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
+				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: countdownText(countdown) });
 				this.sendBtns.set(session.name, cdEl);
 			} else {
 				const sendBtn = card.createEl("button", { cls: "co-sm-card-send" });
@@ -627,15 +626,14 @@ export class SessionManagerView extends ItemView {
 			} else if (remaining > 0 && !isCd) {
 				el.remove();
 				const cdEl = parent.createDiv({ cls: "co-sm-card-countdown" });
-				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
-				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: countdownText(remaining) });
-				const cancelBtn = cdEl.createEl("button", { cls: "icon-btn" });
-				setIcon(cancelBtn, "x");
-				cancelBtn.title = "Cancel";
-				cancelBtn.addEventListener("click", (e) => {
+				cdEl.style.cursor = "pointer";
+				cdEl.title = "Click to cancel";
+				cdEl.addEventListener("click", (e) => {
 					e.stopPropagation();
 					match?.view.cancelCountdown();
 				});
+				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
+				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: countdownText(remaining) });
 				this.sendBtns.set(sessionName, cdEl);
 			} else if (remaining <= 0 && isCd) {
 				el.remove();
