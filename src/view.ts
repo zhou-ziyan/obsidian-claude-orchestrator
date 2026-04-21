@@ -105,7 +105,7 @@ export class TerminalView extends ItemView {
 	private xtermReady = false;
 	private stateSeenPreOpen = false;
 	private host: HTMLElement | null = null;
-	private getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean; theme: ThemeName };
+	private getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean; theme: ThemeName; defaultQueueMode: QueueMode };
 	private historyPanel: HTMLElement | null = null;
 	private queuePanel: HTMLElement | null = null;
 	private queueList: HTMLElement | null = null;
@@ -151,7 +151,7 @@ export class TerminalView extends ItemView {
 	constructor(
 		leaf: WorkspaceLeaf,
 		pluginDir: string,
-		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean; theme: ThemeName },
+		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean; theme: ThemeName; defaultQueueMode: QueueMode },
 	) {
 		super(leaf);
 		this.pluginDir = pluginDir;
@@ -924,7 +924,7 @@ export class TerminalView extends ItemView {
 			}
 			await this.app.vault.create(
 				notePath,
-				createDefaultSessionNote(this.sessionName),
+				createDefaultSessionNote(this.sessionName, this.getSettings?.().defaultQueueMode),
 			);
 		}
 	}

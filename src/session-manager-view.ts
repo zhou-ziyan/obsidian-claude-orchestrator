@@ -237,7 +237,7 @@ export class SessionManagerView extends ItemView {
 				if (!this.app.vault.getAbstractFileByPath(m.dirPath)) {
 					await this.app.vault.createFolder(m.dirPath);
 				}
-				await this.app.vault.create(m.notePath, createDefaultSessionNote(m.sessionName));
+				await this.app.vault.create(m.notePath, createDefaultSessionNote(m.sessionName, this.plugin.settings.defaultQueueMode));
 			} catch { /* race: another view may have created it */ }
 		}
 
