@@ -1456,6 +1456,25 @@ describe("updateProjectConfig", () => {
 		assert.equal(registry["proj"]?.vaultFolder, "old");
 		assert.equal(result["proj"]?.vaultFolder, "new");
 	});
+
+	it("sets inactive flag", () => {
+		const registry: ProjectRegistry = { "proj": { vaultFolder: "path" } };
+		const result = updateProjectConfig(registry, "proj", { inactive: true });
+		assert.equal(result["proj"]?.inactive, true);
+	});
+
+	it("clears inactive flag", () => {
+		const registry: ProjectRegistry = { "proj": { vaultFolder: "path", inactive: true } };
+		const result = updateProjectConfig(registry, "proj", { inactive: undefined });
+		assert.equal(result["proj"]?.inactive, undefined);
+	});
+
+	it("preserves inactive when updating other fields", () => {
+		const registry: ProjectRegistry = { "proj": { vaultFolder: "path", inactive: true } };
+		const result = updateProjectConfig(registry, "proj", { workingDirectory: "/code" });
+		assert.equal(result["proj"]?.inactive, true);
+		assert.equal(result["proj"]?.workingDirectory, "/code");
+	});
 });
 
 // --- removeProject ---
