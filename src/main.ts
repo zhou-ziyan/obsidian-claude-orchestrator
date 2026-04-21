@@ -342,11 +342,11 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			leaf.detach();
 			workspace.setActiveLeaf(anchor, { focus: false });
 			const newLeaf = workspace.getLeaf("tab");
-			await newLeaf.setViewState({ type: VIEW_TYPE_TERMINAL, active: false });
-			const newView = newLeaf.view;
-			if (newView instanceof TerminalView) {
-				newView.setProject(project, sessionName ?? undefined);
-			}
+			await newLeaf.setViewState({
+				type: VIEW_TYPE_TERMINAL,
+				active: false,
+				state: { project, sessionName },
+			});
 		}
 	}
 
@@ -461,12 +461,9 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		await leaf.setViewState({
 			type: VIEW_TYPE_TERMINAL,
 			active: true,
+			state: { project, sessionName },
 		});
 
-		const view = leaf.view;
-		if (view instanceof TerminalView) {
-			view.setProject(project, sessionName ?? undefined);
-		}
 		void workspace.revealLeaf(leaf);
 	}
 
