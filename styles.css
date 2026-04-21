@@ -788,7 +788,7 @@
 }
 .btn[data-tone="danger"] {
     --btn-fg: var(--s-danger);
-    --btn-border: var(--co-border-strong);
+    --btn-border: var(--s-danger);
     --btn-bg-hover: var(--co-bg-danger);
 }
 .btn[data-tone="danger"][data-variant="primary"] {
@@ -798,7 +798,7 @@
     --btn-bg-hover: var(--s-danger-hover);
     --btn-fg-hover: #fff;
 }
-.btn[data-tone="success"] { --btn-fg: var(--s-done); }
+.btn[data-tone="success"] { --btn-fg: var(--s-done); --btn-border: var(--s-done); }
 .btn[data-tone="warn"] { --btn-fg: var(--s-ask); }
 .btn[data-tone="listen"] { --btn-fg: var(--s-listen); }
 .btn[data-tone="auto"] { --btn-fg: var(--s-auto); }

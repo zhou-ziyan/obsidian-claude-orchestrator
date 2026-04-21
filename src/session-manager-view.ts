@@ -832,7 +832,7 @@ export class SessionManagerView extends ItemView {
 		});
 
 		const closeTabBtn = actions.createEl("button", { cls: "btn", text: "Close tab" });
-		closeTabBtn.dataset.variant = "secondary";
+		closeTabBtn.dataset.tone = "success";
 		closeTabBtn.dataset.size = "sm";
 		closeTabBtn.title = "Close terminal tab but keep tmux session running";
 		closeTabBtn.addEventListener("click", (e) => {
@@ -842,7 +842,7 @@ export class SessionManagerView extends ItemView {
 		});
 
 		const archiveBtn = actions.createEl("button", { cls: "btn", text: "Archive" });
-		archiveBtn.dataset.tone = "warn";
+		archiveBtn.dataset.tone = "danger";
 		archiveBtn.dataset.size = "sm";
 		archiveBtn.title = "Kill session, archive note";
 		archiveBtn.addEventListener("click", (e) => {
