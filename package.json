@@ -6,7 +6,8 @@
 	"type": "module",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
-		"build": "node scripts/auto-bump.mjs && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"release": "node scripts/auto-bump.mjs && npm run build",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
 		"test": "node --experimental-strip-types tests/utils.test.ts",
 		"test:coverage": "c8 --include=src/utils.ts --reporter=text node --experimental-strip-types tests/utils.test.ts",
