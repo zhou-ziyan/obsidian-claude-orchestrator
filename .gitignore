@@ -24,3 +24,6 @@ coverage/
 # Exclude macOS Finder (System Explorer) View States
 .DS_Store
 design-reference/
+
+# Environment files
+.env*

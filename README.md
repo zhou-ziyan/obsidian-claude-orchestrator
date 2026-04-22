@@ -1,130 +1,58 @@
 # Claude Orchestrator
 
-Obsidian plugin for running multiple Claude Code sessions inside Obsidian — each project mapped to its own tmux session, with per-session task queues, auto-send on completion, and a Session Manager dashboard.
+Run multiple Claude Code sessions side-by-side inside Obsidian. Queue up tasks, let them auto-send when Claude finishes, and manage everything from a single dashboard — without leaving your notes.
 
-<img width="1988" height="1118" alt="image" src="https://github.com/user-attachments/assets/ca43b4cc-faa8-47c2-926c-4d74c47e12fe" />
+<img width="1988" height="1118" alt="Claude Orchestrator running inside Obsidian" src="https://github.com/user-attachments/assets/ca43b4cc-faa8-47c2-926c-4d74c47e12fe" />
+
+## Why?
+
+If you use Claude Code across multiple projects, you've probably dealt with:
+
+- **Context switching** — jumping between terminals to check which session is done
+- **Idle time** — Claude finishes a task but you don't notice for minutes
+- **Lost context** — forgetting what you asked Claude to do, or what's next in the queue
+
+Claude Orchestrator keeps all your sessions visible, queues your tasks, and auto-sends the next one when Claude is ready. You stay in Obsidian, and Claude stays busy.
 
 ## Features
 
-### Embedded Terminal
-- xterm.js view docked to the sidebar, real PTY via `node-pty`
-- Per-project tmux binding: open a project note → terminal auto-attaches to that project's tmux session
-- Multiple terminals per project (`project-1`, `project-2`, ...) with independent sessions
-- Focus indicator: clicking a terminal dims all others with a semi-transparent overlay
-- Dark/light theme: follows Obsidian theme automatically
+### Embedded terminals with project binding
+Open a project note and the terminal auto-attaches to that project's tmux session. Run multiple terminals per project, each with its own persistent session. Terminals follow your Obsidian theme automatically.
 
-### Task Queue & History
-- **Queue panel** below the terminal: add, edit, delete, reorder (▴/▾) tasks
-- **"Send next ▶"** injects the next queue item into tmux via `send-keys`
-- **History panel** above the terminal: chronological log of sent tasks (✓ complete / ⟳ in-progress)
-- **📌 Pin note**: bind a vault note to a session, auto-jumps on terminal focus
-- **Image support**: queue items containing `![[img.png]]` or `![alt](path)` render inline thumbnails; paste images from clipboard directly into the input
-- Timestamps on all items (`[YYYY-MM-DD HH:MM]`), displayed as relative time
-- IME-friendly: Chinese input composition doesn't trigger premature submit
+### Task queue and history
+Line up tasks in a queue below the terminal. When you're ready, send the next one — or let auto-send handle it. Everything you've sent is logged in a history panel with timestamps and completion status. Pin a vault note to any session for quick reference.
 
-### Auto-Send (M3b Stage 2)
-- **Stop hook integration**: Claude Code's Stop hook writes a signal file; the plugin detects it and classifies the stop as "done" or "asking"
-- **Queue mode toggle**: Manual / Listen / Auto — persisted per-session in the session note
-- **Auto mode**: when Claude finishes (done) and queue is non-empty, Send Next button shows a 3-second red countdown (`Cancel (3s)` → `(2s)` → `(1s)`), then auto-sends. Click to cancel
-- **Listen mode**: shows an Obsidian Notice when Claude stops, but doesn't auto-send
-- **History auto-mark**: when Claude finishes, the last history item is automatically marked `[x]`
+### Auto-send on completion
+Connect Claude Code's [Stop hook](https://docs.anthropic.com/en/docs/claude-code/hooks) to the plugin. When Claude finishes a task, the plugin detects it and auto-sends the next queued item after a 3-second countdown (cancelable). Three modes: **Auto** (send automatically), **Listen** (notify only), or **Manual** (full control).
 
-### Session Manager
-Left-sidebar dashboard showing all tmux sessions grouped by project:
+### Session Manager dashboard
+A sidebar panel showing all your sessions at a glance — grouped by project, with status indicators, queue counts, and activity timestamps. Quick-reply buttons for common responses. Idle detection flags sessions that haven't been active in 24+ hours. Hide sessions you don't need without killing them.
 
-- **Session cards**: status dot (green = has panel, gray = tmux only), session name, queue count, relative activity time
-- **Display name**: double-click the session name to rename (stored in session note `displayName:` field, shown in card + terminal tab title)
-- **Notes summary**: first line of session note `## Notes` section shown as italic gray text
-- **Message preview**: last queue or history item shown as single-line gray preview
-- **Idle detection**: sessions inactive >24h get ⏳ badge + tinted background
-- **Hide/unhide**: 👁 button hides a session without killing it; "Show N hidden" toggle at bottom of project group reveals them (semi-transparent)
-- **Quick Reply**: 1, 2, Y buttons for fast responses to Claude's questions
-- **Actions**: Send ▶ (green when queue has items, gray when empty), Kill × (with 8-second confirmation portal)
-- **Per-project controls**: `+` new session, ⧉ restore detached sessions, ⚙ edit project
-- **Inactive projects**: zero-session projects fold to bottom "Inactive projects (N)" section
-- **PTY usage** (footer): `PTY used/max` with color-coded progress bar (green <70%, yellow 70-90%, red >90%)
-- **Project Registry**: register any vault folder as a project (not limited to `01_Projects/` naming)
-
-### PTY Management
-- **Pre-spawn check**: refuses to create terminals when PTYs are exhausted (100%), warns at >90%
-- **Accurate diagnostics**: spawn failures show PTY usage instead of misleading "Is tmux installed?" error
-- **Dashboard**: real-time PTY count in Session Manager footer
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| Open terminal for current project | Reveal existing terminal or create one |
-| Restore all terminals for current project | Reattach all alive tmux sessions missing a tab |
-| Create new terminal for current project | Always create a fresh tmux session |
-| Toggle simple mode | Hide/show queue + history panels |
-| Open session manager | Open the session manager panel in left sidebar |
+### Flexible project setup
+Register any folder as a project — not limited to any particular vault structure. Each project gets its own tmux sessions, task queues, and session notes.
 
 ## Installation
 
-### Via BRAT (recommended for beta testing)
+### Via BRAT (recommended)
 
-1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) from the Community plugins directory
+1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) from Community plugins
 2. In BRAT settings, click **Add Beta plugin** and enter: `zhou-ziyan/obsidian-claude-orchestrator`
-3. BRAT downloads `main.js`, `manifest.json`, and `styles.css` from the latest GitHub release
-
-### Post-install: native dependency
-
-The plugin uses [node-pty](https://github.com/nicholasday/node-pty) for terminal emulation. This native binary isn't included in the release — run the install script after BRAT installs the plugin:
+3. Run the post-install script to set up the native terminal dependency:
 
 ```bash
 bash "<vault>/.obsidian/plugins/claude-orchestrator/install.sh"
 ```
 
-Or manually:
-
-```bash
-cd "<vault>/.obsidian/plugins/claude-orchestrator"
-npm install node-pty
-```
-
-Restart Obsidian after installation.
+4. Restart Obsidian
 
 ### Prerequisites
 
-- **Node.js** >= 18 — required for the install script (`npm`)
-- **tmux** — the plugin uses tmux to manage persistent terminal sessions
-  - macOS: `brew install tmux`
-  - Linux (Debian/Ubuntu): `sudo apt install tmux`
-  - Linux (Arch): `sudo pacman -S tmux`
-- **Recommended tmux config** — add to `~/.tmux.conf` (create if it doesn't exist):
-  ```bash
-  set -g mouse on  # scroll with mouse wheel/trackpad
+- **Node.js** >= 18
+- **tmux** — `brew install tmux` (macOS) or `sudo apt install tmux` (Ubuntu/Debian)
 
-  # Copy on mouse select: release mouse button → copied to clipboard
-  # macOS:
-  bind -T copy-mode MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "pbcopy"
-  bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "pbcopy"
-  # Linux (replace pbcopy with): xclip -selection clipboard
-  ```
+### Auto-send setup (optional)
 
-## Dev Setup
-
-```bash
-git clone <this repo> ~/code/obsidian-claude-orchestrator
-cd ~/code/obsidian-claude-orchestrator
-npm install
-npm run dev     # esbuild watch mode
-npm run check   # lint + typecheck + 313 tests with coverage
-npm run build   # auto-bumps patch version, then builds
-```
-
-Symlink into your Obsidian vault's plugins directory:
-
-```bash
-ln -s "$(pwd)" "<vault>/.obsidian/plugins/claude-orchestrator"
-```
-
-Then in Obsidian: Settings → Community plugins → enable **Claude Orchestrator** → `Cmd+P` → "Claude Orchestrator: Open terminal".
-
-### Stop Hook Setup
-
-For auto-send to work, configure Claude Code's Stop hook in the project's `.claude/settings.json`:
+To enable auto-send, add the Stop hook to your project's `.claude/settings.json`:
 
 ```json
 {
@@ -144,39 +72,31 @@ For auto-send to work, configure Claude Code's Stop hook in the project's `.clau
 }
 ```
 
-The hook script reads the stop event from stdin, identifies the tmux session, and writes a signal file to `/tmp/co-stop/` for the plugin to pick up.
+## Commands
 
-## Architecture
+| Command | Description |
+|---------|-------------|
+| Open terminal for current project | Reveal existing terminal or create one |
+| Create new terminal for current project | Always create a fresh session |
+| Restore all terminals for current project | Reattach sessions that lost their tab |
+| Toggle simple mode | Hide/show queue and history panels |
+| Open session manager | Open the dashboard in the left sidebar |
 
+## Contributing
+
+```bash
+git clone https://github.com/zhou-ziyan/obsidian-claude-orchestrator.git
+cd obsidian-claude-orchestrator
+npm install
+npm run dev       # watch mode
+npm run check     # lint + typecheck + tests
 ```
-src/
-  main.ts                  — plugin lifecycle, commands, settings, stop signal routing
-  view.ts                  — TerminalView (xterm.js + PTY + queue/history/auto-send UI)
-  session-manager-view.ts  — SessionManagerView (left-sidebar session dashboard)
-  utils.ts                 — pure functions (session naming, note parsing, tmux helpers,
-                             PTY usage, stop signal parsing, queue image parsing)
-  workspace-helpers.ts     — shared leaf traversal helpers (findBySession, collectNames)
-  stop-hook-watcher.ts     — fs.watch on /tmp/co-stop/ for stop hook signals
-scripts/
-  auto-bump.mjs            — patch version bump (runs before each build)
-  co-stop-hook.sh          — Claude Code Stop hook script
-tests/
-  utils.test.ts            — 313 tests for utils.ts (node:test, zero dependencies)
-styles.css                 — CSS custom properties for dark/light themes
+
+Symlink into your vault for development:
+
+```bash
+ln -s "$(pwd)" "<vault>/.obsidian/plugins/claude-orchestrator"
 ```
-
-## Milestone Status
-
-| Milestone | Status |
-|-----------|--------|
-| M1 — Embedded terminal | ✓ Complete |
-| M2 — Per-project tmux binding | ✓ Complete |
-| M3a — Multi-terminal per project | ✓ Complete |
-| M3b — Queue UI + auto-send | ✓ Complete (stage 1: manual queue + stage 2: stop hook + auto-send) |
-| Session Manager | ✓ Complete |
-| Project Registry | ✓ Complete |
-| M4 — Task dispatch | Not started |
-| M5 — Periodic summaries | Not started |
 
 ## License
 
