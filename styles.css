@@ -1681,6 +1681,7 @@
 .co-ask-banner-text strong {
     display: inline-flex;
     align-items: center;
+    vertical-align: middle;
     gap: 4px;
     color: var(--s-ask);
     font-weight: 600;
