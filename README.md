@@ -2,7 +2,7 @@
 
 Run multiple Claude Code sessions side-by-side inside Obsidian. Queue up tasks, let them auto-send when Claude finishes, and manage everything from a single dashboard — without leaving your notes.
 
-<img width="1624" height="1061" alt="image" src="https://github.com/user-attachments/assets/ca315741-79c6-4c45-b993-4d8837505532" />
+<img width="1624" height="1061" alt="image" src="https://github.com/user-attachments/assets/58c1ca3f-4982-45e8-bf35-894341115487" />
 
 ## Why?
 
