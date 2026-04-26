@@ -1690,6 +1690,15 @@ describe("buildQuickReplyTmuxArgs", () => {
 		assert.ok(result.textArgs.includes("15_Claude_Orchestrator-2"));
 		assert.ok(result.enterArgs.includes("15_Claude_Orchestrator-2"));
 	});
+
+	it("includes -- before text to prevent dash-prefixed text being parsed as flags", () => {
+		const result = buildQuickReplyTmuxArgs("session", "-hello");
+		const ddIdx = result.textArgs.indexOf("--");
+		const textIdx = result.textArgs.indexOf("-hello");
+		assert.ok(ddIdx !== -1, "should contain --");
+		assert.ok(textIdx !== -1, "should contain the text");
+		assert.ok(ddIdx < textIdx, "-- should come before text");
+	});
 });
 
 // --- cancelCopyModeArgs ---
