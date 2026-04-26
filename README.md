@@ -37,10 +37,17 @@ Register any folder as a project — not limited to any particular vault structu
 
 1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) from Community plugins
 2. In BRAT settings, click **Add Beta plugin** and enter: `zhou-ziyan/obsidian-claude-orchestrator`
-3. Run the post-install script to set up the native terminal dependency:
+3. Install the native terminal dependency (BRAT doesn't include this automatically):
 
 ```bash
-bash "<vault>/.obsidian/plugins/claude-orchestrator/install.sh"
+cd "<vault>/.obsidian/plugins/claude-orchestrator" && npm install node-pty
+```
+
+Or download and run the full install script (includes error handling and platform checks):
+
+```bash
+curl -sLO "https://github.com/zhou-ziyan/obsidian-claude-orchestrator/releases/latest/download/install.sh"
+bash install.sh "<vault>"
 ```
 
 4. Restart Obsidian
