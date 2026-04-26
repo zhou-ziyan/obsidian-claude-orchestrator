@@ -439,6 +439,23 @@ export function createDefaultSessionNote(sessionName: string, queueMode: QueueMo
 	].join("\n");
 }
 
+export function restoreSessionNote(
+	archive: SessionNote,
+	newSessionName: string,
+	queueMode: QueueMode = "manual",
+): SessionNote {
+	return {
+		session: newSessionName,
+		status: "idle",
+		queueMode,
+		displayName: "",
+		summary: "",
+		notes: archive.notes,
+		history: archive.history.map((h) => ({ ...h })),
+		queue: [...archive.queue],
+	};
+}
+
 /**
  * Parse a session note markdown string into a structured SessionNote.
  */

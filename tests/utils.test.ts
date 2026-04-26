@@ -81,6 +81,7 @@ import {
 	sessionsMissingNotes,
 	archiveSessionNotePath,
 	renamedSessionNotePath,
+	restoreSessionNote,
 	unregisterConfirmText,
 	extractTimestamp,
 	findLastActivityTimestamp,
@@ -624,6 +625,57 @@ describe("renamedSessionNotePath", () => {
 		const result = renamedSessionNotePath("", "old-session", "new-session");
 		assert.equal(result.oldPath, "sessions/old-session.md");
 		assert.equal(result.newPath, "sessions/new-session.md");
+	});
+});
+
+// --- restoreSessionNote ---
+
+describe("restoreSessionNote", () => {
+	it("copies history, queue, and notes from archive", () => {
+		const archive: SessionNote = {
+			session: "old-session",
+			status: "idle",
+			queueMode: "auto",
+			displayName: "Old Display",
+			summary: "old summary",
+			notes: "some notes",
+			history: [{ text: "sent task A", completed: true }, { text: "sent task B", completed: false }],
+			queue: ["pending task 1", "pending task 2"],
+		};
+		const result = restoreSessionNote(archive, "new-session-1");
+		assert.equal(result.session, "new-session-1");
+		assert.equal(result.status, "idle");
+		assert.equal(result.queueMode, "manual");
+		assert.equal(result.displayName, "");
+		assert.equal(result.summary, "");
+		assert.equal(result.notes, "some notes");
+		assert.equal(result.history.length, 2);
+		assert.equal(result.history[0]!.text, "sent task A");
+		assert.equal(result.queue.length, 2);
+		assert.equal(result.queue[0], "pending task 1");
+	});
+
+	it("uses provided queueMode", () => {
+		const archive: SessionNote = {
+			session: "old", status: "idle", queueMode: "auto",
+			displayName: "", summary: "", notes: "", history: [], queue: [],
+		};
+		const result = restoreSessionNote(archive, "new-1", "auto");
+		assert.equal(result.queueMode, "auto");
+	});
+
+	it("does not mutate the archive", () => {
+		const archive: SessionNote = {
+			session: "old", status: "idle", queueMode: "manual",
+			displayName: "", summary: "", notes: "keep me",
+			history: [{ text: "h1", completed: true }],
+			queue: ["q1"],
+		};
+		const result = restoreSessionNote(archive, "new-1");
+		result.history[0]!.text = "mutated";
+		result.queue[0] = "mutated";
+		assert.equal(archive.history[0]!.text, "h1");
+		assert.equal(archive.queue[0], "q1");
 	});
 });
 
