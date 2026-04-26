@@ -17,6 +17,7 @@ import {
 	buildQuickReplyTmuxArgs,
 	quickReplyLabel,
 	cancelCopyModeArgs,
+	tmuxScrollArgs,
 	queueModeLabel,
 	fetchPtyUsage,
 	getPtyStatus,
@@ -377,11 +378,15 @@ export class TerminalView extends ItemView {
 		host.addEventListener("focusout", this.onHostFocusOut);
 
 		host.addEventListener("wheel", (e) => {
-			if (!this.term) return;
+			if (!this.term || !this.sessionName) return;
 			const lines = wheelDeltaToLines(e.deltaY, e.deltaMode);
-			if (lines !== 0) this.term.scrollLines(lines);
+			if (lines === 0) return;
 			e.preventDefault();
 			e.stopPropagation();
+			const { copyModeArgs, scrollArgs } = tmuxScrollArgs(this.sessionName, lines);
+			void execTmux(copyModeArgs)
+				.catch(() => {})
+				.then(() => execTmux(scrollArgs).catch(() => {}));
 		}, { passive: false });
 	}
 

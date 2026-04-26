@@ -719,6 +719,15 @@ export function cancelCopyModeArgs(sessionName: string): string[] {
 	return ["send-keys", "-t", sessionName, "-X", "cancel"];
 }
 
+export function tmuxScrollArgs(sessionName: string, lines: number): { copyModeArgs: string[]; scrollArgs: string[] } {
+	const direction = lines < 0 ? "scroll-up" : "scroll-down";
+	const count = Math.abs(lines);
+	return {
+		copyModeArgs: ["copy-mode", "-e", "-t", sessionName],
+		scrollArgs: ["send-keys", "-t", sessionName, "-X", "-N", String(count), direction],
+	};
+}
+
 export function buildQuickReplyTmuxArgs(
 	sessionName: string,
 	key: string,
