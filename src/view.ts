@@ -1258,7 +1258,7 @@ export class TerminalView extends ItemView {
 		void (async () => {
 			await execTmux(cancelCopyModeArgs(target)).catch(() => {});
 			try {
-				await execTmux(["send-keys", "-l", "-t", target, taskText]);
+				await execTmux(["send-keys", "-l", "-t", target, "--", taskText]);
 				await new Promise((r) => setTimeout(r, 150));
 				await execTmux(["send-keys", "-t", target, "Enter"]);
 			} catch (err) {

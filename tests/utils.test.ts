@@ -1676,7 +1676,7 @@ describe("QUICK_REPLY_KEYS", () => {
 describe("buildQuickReplyTmuxArgs", () => {
 	it("builds correct text and enter args", () => {
 		const result = buildQuickReplyTmuxArgs("my-session", "Y");
-		assert.deepEqual(result.textArgs, ["send-keys", "-l", "-t", "my-session", "Y"]);
+		assert.deepEqual(result.textArgs, ["send-keys", "-l", "-t", "my-session", "--", "Y"]);
 		assert.deepEqual(result.enterArgs, ["send-keys", "-t", "my-session", "Enter"]);
 	});
 

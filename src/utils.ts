@@ -714,7 +714,7 @@ export function buildQuickReplyTmuxArgs(
 		};
 	}
 	return {
-		textArgs: ["send-keys", "-l", "-t", sessionName, key],
+		textArgs: ["send-keys", "-l", "-t", sessionName, "--", key],
 		enterArgs: ["send-keys", "-t", sessionName, "Enter"],
 	};
 }
