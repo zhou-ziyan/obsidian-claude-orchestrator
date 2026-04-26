@@ -99,6 +99,7 @@ import {
 	ptyMaxWithDefault,
 	notifyQueueMessage,
 	prepareQueueTaskText,
+	computeRelinkTarget,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote, SessionGroup, HistoryItem, SlashCommandEntry } from "../src/utils.ts";
 
@@ -4612,5 +4613,57 @@ describe("tmuxScrollArgs", () => {
 		const result = tmuxScrollArgs("15_Claude_Orchestrator-2", -1);
 		assert.ok(result.copyModeArgs.includes("15_Claude_Orchestrator-2"));
 		assert.ok(result.scrollArgs.includes("15_Claude_Orchestrator-2"));
+	});
+});
+
+// ---------------------------------------------------------------------------
+// computeRelinkTarget (for unmanaged session relink)
+// ---------------------------------------------------------------------------
+
+describe("computeRelinkTarget", () => {
+	it("generates new session name and paths for a project", () => {
+		const result = computeRelinkTarget(
+			"random-tmux-session",
+			"15_Claude_Orchestrator",
+			"01_Projects/15_Claude_Orchestrator",
+			new Set(),
+		);
+		assert.equal(result.newSessionName, "15_Claude_Orchestrator-1");
+		assert.equal(result.notePath, "01_Projects/15_Claude_Orchestrator/sessions/15_Claude_Orchestrator-1.md");
+		assert.equal(result.dirPath, "01_Projects/15_Claude_Orchestrator/sessions");
+		assert.equal(result.oldSessionName, "random-tmux-session");
+	});
+
+	it("skips existing session names", () => {
+		const existing = new Set(["15_Claude_Orchestrator-1", "15_Claude_Orchestrator-2"]);
+		const result = computeRelinkTarget(
+			"my-session",
+			"15_Claude_Orchestrator",
+			"01_Projects/15_Claude_Orchestrator",
+			existing,
+		);
+		assert.equal(result.newSessionName, "15_Claude_Orchestrator-3");
+	});
+
+	it("preserves old session name in result", () => {
+		const result = computeRelinkTarget(
+			"some-weird-name",
+			"MyProject",
+			"01_Projects/MyProject",
+			new Set(),
+		);
+		assert.equal(result.oldSessionName, "some-weird-name");
+		assert.equal(result.newSessionName, "MyProject-1");
+	});
+
+	it("works with vault root folder", () => {
+		const result = computeRelinkTarget(
+			"orphan",
+			"RootProject",
+			"",
+			new Set(),
+		);
+		assert.equal(result.notePath, "sessions/RootProject-1.md");
+		assert.equal(result.dirPath, "sessions");
 	});
 });
