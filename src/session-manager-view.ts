@@ -29,6 +29,9 @@ import {
 	sessionsMissingNotes,
 	createDefaultSessionNote,
 	archiveSessionNotePath,
+	restoreSessionNote,
+	generateSessionName,
+	collectNoteNamesFromFiles,
 	unregisterConfirmText,
 	sessionDisplayLabel,
 	splitActiveInactive,
@@ -88,6 +91,30 @@ class SessionNoteModal extends FuzzySuggestModal<TFile> {
 
 	getItemText(item: TFile): string {
 		return item.basename;
+	}
+
+	onChooseItem(item: TFile): void {
+		this.onChoose(item);
+	}
+}
+
+class ArchiveModal extends FuzzySuggestModal<TFile> {
+	private files: TFile[];
+	private onChoose: (file: TFile) => void;
+
+	constructor(app: App, files: TFile[], onChoose: (file: TFile) => void) {
+		super(app);
+		this.files = files;
+		this.onChoose = onChoose;
+		this.setPlaceholder("Select an archived session to restore…");
+	}
+
+	getItems(): TFile[] {
+		return this.files;
+	}
+
+	getItemText(item: TFile): string {
+		return item.basename.replace(/^archive-/, "");
 	}
 
 	onChooseItem(item: TFile): void {
@@ -392,6 +419,16 @@ export class SessionManagerView extends ItemView {
 					});
 				});
 			}
+
+			const restoreBtn = groupHeader.createEl("button", {
+				cls: "icon-btn co-sm-gear",
+			});
+			setIcon(restoreBtn, "archive-restore");
+			restoreBtn.title = "Restore from archive";
+			restoreBtn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				void this.showArchiveRestore(group.project);
+			});
 
 			const newBtn = groupHeader.createEl("button", {
 				cls: "icon-btn co-sm-gear",
@@ -1128,6 +1165,53 @@ export class SessionManagerView extends ItemView {
 				}
 			}
 		}
+		setTimeout(() => { void this.refresh(); }, 500);
+	}
+
+	private async showArchiveRestore(project: string): Promise<void> {
+		const config = this.plugin.settings.projects[project];
+		if (!config) return;
+		const dir = sessionDirPath(config.vaultFolder);
+		const folder = this.app.vault.getAbstractFileByPath(dir);
+		if (!(folder instanceof TFolder)) {
+			new Notice("No sessions directory found.");
+			return;
+		}
+		const archives = folder.children
+			.filter((c): c is TFile => c instanceof TFile && c.name.startsWith("archive-") && c.extension === "md");
+		if (archives.length === 0) {
+			new Notice("No archived sessions found.");
+			return;
+		}
+		new ArchiveModal(this.app, archives, (file) => {
+			void this.restoreFromArchive(project, config, file);
+		}).open();
+	}
+
+	private async restoreFromArchive(project: string, config: ProjectConfig, archiveFile: TFile): Promise<void> {
+		const content = await this.app.vault.read(archiveFile);
+		const archive = parseSessionNote(content, "");
+
+		const openNames = collectOpenSessionNames(this.app.workspace);
+		const dirPath = sessionDirPath(config.vaultFolder);
+		const dirFolder = this.app.vault.getAbstractFileByPath(dirPath);
+		if (dirFolder instanceof TFolder) {
+			const fileNames = dirFolder.children
+				.filter((c): c is TFile => c instanceof TFile)
+				.map((f) => f.name);
+			for (const n of collectNoteNamesFromFiles(fileNames)) {
+				openNames.add(n);
+			}
+		}
+		const newSessionName = generateSessionName(project, openNames);
+
+		const defaultMode = this.plugin.settings.defaultQueueMode ?? "manual";
+		const restored = restoreSessionNote(archive, newSessionName, defaultMode);
+		const notePath = sessionNotePath(config.vaultFolder, newSessionName);
+		await this.app.vault.create(notePath, serializeSessionNote(restored));
+
+		await this.plugin.createTerminalLeaf(project, newSessionName);
+		new Notice(`Restored from ${archiveFile.basename}`);
 		setTimeout(() => { void this.refresh(); }, 500);
 	}
 }
