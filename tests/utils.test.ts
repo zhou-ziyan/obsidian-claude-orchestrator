@@ -32,6 +32,7 @@ import {
 	buildQuickReplyTmuxArgs,
 	quickReplyLabel,
 	cancelCopyModeArgs,
+	tmuxScrollArgs,
 	nextQueueMode,
 	queueModeLabel,
 	queueModeTooltip,
@@ -4582,5 +4583,34 @@ describe("prepareQueueTaskText", () => {
 
 	it("returns empty string for timestamp-only text", () => {
 		assert.equal(prepareQueueTaskText("[2026-04-20 14:30] "), "");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// tmuxScrollArgs
+// ---------------------------------------------------------------------------
+
+describe("tmuxScrollArgs", () => {
+	it("generates copy-mode -e and scroll-up for negative lines", () => {
+		const result = tmuxScrollArgs("session-1", -3);
+		assert.deepEqual(result.copyModeArgs, ["copy-mode", "-e", "-t", "session-1"]);
+		assert.deepEqual(result.scrollArgs, ["send-keys", "-t", "session-1", "-X", "-N", "3", "scroll-up"]);
+	});
+
+	it("generates scroll-down for positive lines", () => {
+		const result = tmuxScrollArgs("session-1", 5);
+		assert.deepEqual(result.scrollArgs, ["send-keys", "-t", "session-1", "-X", "-N", "5", "scroll-down"]);
+	});
+
+	it("uses absolute value of lines for count", () => {
+		const result = tmuxScrollArgs("s", -1);
+		assert.ok(result.scrollArgs.includes("1"));
+		assert.ok(result.scrollArgs.includes("scroll-up"));
+	});
+
+	it("targets the correct session name", () => {
+		const result = tmuxScrollArgs("15_Claude_Orchestrator-2", -1);
+		assert.ok(result.copyModeArgs.includes("15_Claude_Orchestrator-2"));
+		assert.ok(result.scrollArgs.includes("15_Claude_Orchestrator-2"));
 	});
 });
