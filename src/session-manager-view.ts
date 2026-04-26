@@ -38,6 +38,7 @@ import {
 	ptyBarPercent,
 	countdownText,
 	summarizeSessionNote,
+	computeRelinkTarget,
 } from "./utils";
 import { findTerminalLeafBySession, collectOpenSessionNames } from "./workspace-helpers";
 import type { ProjectConfig, PtyLevel } from "./utils";
@@ -118,6 +119,30 @@ class ArchiveModal extends FuzzySuggestModal<TFile> {
 	}
 
 	onChooseItem(item: TFile): void {
+		this.onChoose(item);
+	}
+}
+
+class ProjectPickerModal extends FuzzySuggestModal<string> {
+	private keys: string[];
+	private onChoose: (key: string) => void;
+
+	constructor(app: App, keys: string[], onChoose: (key: string) => void) {
+		super(app);
+		this.keys = keys;
+		this.onChoose = onChoose;
+		this.setPlaceholder("Select a project to adopt this session…");
+	}
+
+	getItems(): string[] {
+		return this.keys;
+	}
+
+	getItemText(item: string): string {
+		return item;
+	}
+
+	onChooseItem(item: string): void {
 		this.onChoose(item);
 	}
 }
@@ -601,6 +626,17 @@ export class SessionManagerView extends ItemView {
 				cls: "co-sm-badge co-sm-unmanaged",
 				text: "no session note",
 			});
+			const relinkBtn = metaRow.createEl("button", { cls: "btn" });
+			relinkBtn.dataset.size = "sm";
+			relinkBtn.dataset.variant = "secondary";
+			const relinkIcon = relinkBtn.createSpan();
+			setIcon(relinkIcon, "link");
+			relinkBtn.createSpan({ text: " Adopt" });
+			relinkBtn.title = "Adopt into a project";
+			relinkBtn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				void this.relinkUnmanagedSession(session.name);
+			});
 		}
 
 		// Note preview (italic gray)
@@ -970,6 +1006,66 @@ export class SessionManagerView extends ItemView {
 				(err: unknown) => { new Notice(`Failed to link note: ${String(err)}`); },
 			);
 		}).open();
+	}
+
+	private async relinkUnmanagedSession(sessionName: string): Promise<void> {
+		const projectKeys = Object.keys(this.plugin.settings.projects).filter(
+			(k) => !this.plugin.settings.projects[k]?.inactive,
+		);
+		if (projectKeys.length === 0) {
+			new Notice("No projects registered. Add a project first.");
+			return;
+		}
+
+		new ProjectPickerModal(this.app, projectKeys, (project) => {
+			void this.doRelink(sessionName, project);
+		}).open();
+	}
+
+	private async doRelink(oldSessionName: string, project: string): Promise<void> {
+		const config = this.plugin.settings.projects[project];
+		if (!config) return;
+
+		const openNames = collectOpenSessionNames(this.app.workspace);
+		const dir = this.app.vault.getAbstractFileByPath(sessionDirPath(config.vaultFolder));
+		if (dir instanceof TFolder) {
+			for (const n of collectNoteNamesFromFiles(
+				dir.children.filter((c): c is TFile => c instanceof TFile).map((f) => f.name),
+			)) {
+				openNames.add(n);
+			}
+		}
+
+		const target = computeRelinkTarget(oldSessionName, project, config.vaultFolder, openNames);
+
+		try {
+			await execTmux(["rename-session", "-t", oldSessionName, target.newSessionName]);
+		} catch (err) {
+			new Notice(`Failed to rename tmux session: ${(err as Error).message}`);
+			return;
+		}
+
+		try {
+			if (!this.app.vault.getAbstractFileByPath(target.dirPath)) {
+				await this.app.vault.createFolder(target.dirPath);
+			}
+			await this.app.vault.create(
+				target.notePath,
+				createDefaultSessionNote(target.newSessionName, this.plugin.settings.defaultQueueMode),
+			);
+		} catch (err) {
+			new Notice(`Session renamed but note creation failed: ${(err as Error).message}`);
+		}
+
+		for (const leaf of this.app.workspace.getLeavesOfType("claude-orchestrator-terminal")) {
+			const view = leaf.view;
+			if (view instanceof TerminalView && view.getSessionName() === oldSessionName) {
+				view.updateSessionName(target.newSessionName);
+			}
+		}
+
+		new Notice(`Adopted as ${target.newSessionName}`);
+		void this.refresh();
 	}
 
 	private showProjectForm(existingKey?: string) {

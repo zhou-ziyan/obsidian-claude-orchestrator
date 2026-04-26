@@ -456,6 +456,21 @@ export function restoreSessionNote(
 	};
 }
 
+export function computeRelinkTarget(
+	oldSessionName: string,
+	project: string,
+	vaultFolder: string,
+	existingNames: Set<string>,
+): { oldSessionName: string; newSessionName: string; notePath: string; dirPath: string } {
+	const newSessionName = generateSessionName(project, existingNames);
+	return {
+		oldSessionName,
+		newSessionName,
+		notePath: sessionNotePath(vaultFolder, newSessionName),
+		dirPath: sessionDirPath(vaultFolder),
+	};
+}
+
 /**
  * Parse a session note markdown string into a structured SessionNote.
  */
