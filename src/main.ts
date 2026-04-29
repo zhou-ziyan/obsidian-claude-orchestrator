@@ -184,6 +184,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+		this.loadSlashCommands();
 	}
 
 	applyThemeToAllViews(): void {
