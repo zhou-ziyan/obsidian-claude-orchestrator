@@ -663,9 +663,6 @@ export class TerminalView extends ItemView {
 
 		input.addEventListener("input", () => { histIdx = -1; });
 
-		let composing = false;
-		input.addEventListener("compositionstart", () => { composing = true; });
-		input.addEventListener("compositionend", () => { composing = false; });
 		addBtn.addEventListener("click", doAdd);
 		input.addEventListener("keydown", (e) => {
 			if (acDropdown && acItems.length > 0) {
@@ -706,7 +703,7 @@ export class TerminalView extends ItemView {
 			if (e.key === "ArrowDown" && !e.shiftKey) {
 				if (historyPrefill("down")) { e.preventDefault(); return; }
 			}
-			if (e.key === "Enter" && !e.shiftKey && !composing && !e.isComposing) { e.preventDefault(); doAdd(); }
+			if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); doAdd(); }
 		});
 		input.addEventListener("blur", () => { setTimeout(closeAc, 150); });
 	}
@@ -1208,12 +1205,9 @@ export class TerminalView extends ItemView {
 				}
 				this.renderQueue();
 			};
-			let editComposing = false;
-			input.addEventListener("compositionstart", () => { editComposing = true; });
-			input.addEventListener("compositionend", () => { editComposing = false; });
 			saveBtn.addEventListener("click", save);
 			input.addEventListener("keydown", (e) => {
-				if (e.key === "Enter" && !e.shiftKey && !editComposing && !e.isComposing) { e.preventDefault(); save(); }
+				if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); save(); }
 				if (e.key === "Escape") cancel();
 			});
 			input.focus();
