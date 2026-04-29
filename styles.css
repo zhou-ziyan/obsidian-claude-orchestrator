@@ -724,12 +724,12 @@
     left: 12px;
     right: 80px;
     max-height: 200px;
+    overflow-x: hidden;
     overflow-y: auto;
     background: var(--co-bg-elevated);
     border: 1px solid var(--co-border-strong);
     border-radius: 6px;
     z-index: 10;
-    overflow: hidden;
     margin-bottom: 6px;
     box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.5);
 }
