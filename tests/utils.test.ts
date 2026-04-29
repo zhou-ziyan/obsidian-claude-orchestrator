@@ -4667,3 +4667,83 @@ describe("computeRelinkTarget", () => {
 		assert.equal(result.dirPath, "sessions");
 	});
 });
+
+// ---------------------------------------------------------------------------
+// parseAllTmuxSessions — vault tag support
+// ---------------------------------------------------------------------------
+
+describe("parseAllTmuxSessions vault tag", () => {
+	it("parses vault tag from tab-separated field", () => {
+		const output = "session-1:100\tWork\nsession-2:200\tLife";
+		const sessions = parseAllTmuxSessions(output);
+		assert.equal(sessions[0]!.vaultId, "Work");
+		assert.equal(sessions[1]!.vaultId, "Life");
+	});
+
+	it("returns undefined vaultId for legacy format without tab", () => {
+		const output = "session-1:100";
+		const sessions = parseAllTmuxSessions(output);
+		assert.equal(sessions[0]!.vaultId, undefined);
+	});
+
+	it("returns undefined vaultId for empty vault tag", () => {
+		const output = "session-1:100\t";
+		const sessions = parseAllTmuxSessions(output);
+		assert.equal(sessions[0]!.vaultId, undefined);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// groupSessionsByProject — vault isolation
+// ---------------------------------------------------------------------------
+
+describe("groupSessionsByProject vault isolation", () => {
+	it("hides unmanaged sessions from other vaults", () => {
+		const sessions = [
+			{ name: "15_Claude_Orchestrator-1", activity: 100, vaultId: "Work" },
+			{ name: "PersonalFinance-1", activity: 200, vaultId: "Life" },
+		];
+		const groups = groupSessionsByProject(
+			sessions, new Set(), new Map(), TEST_PROJECTS, undefined, "Work",
+		);
+		const unmanaged = groups.find((g) => g.project === "Unmanaged");
+		assert.equal(unmanaged, undefined);
+	});
+
+	it("shows unmanaged sessions from current vault", () => {
+		const sessions = [
+			{ name: "random-thing", activity: 100, vaultId: "Work" },
+		];
+		const groups = groupSessionsByProject(
+			sessions, new Set(), new Map(), TEST_PROJECTS, undefined, "Work",
+		);
+		const unmanaged = groups.find((g) => g.project === "Unmanaged");
+		assert.ok(unmanaged);
+		assert.equal(unmanaged!.sessions.length, 1);
+	});
+
+	it("shows untagged legacy sessions in Unmanaged", () => {
+		const sessions = [
+			{ name: "old-session", activity: 100 },
+		];
+		const groups = groupSessionsByProject(
+			sessions, new Set(), new Map(), TEST_PROJECTS, undefined, "Work",
+		);
+		const unmanaged = groups.find((g) => g.project === "Unmanaged");
+		assert.ok(unmanaged);
+		assert.equal(unmanaged!.sessions.length, 1);
+	});
+
+	it("without vaultId param, shows all unmanaged sessions (backward compat)", () => {
+		const sessions = [
+			{ name: "other-vault-session", activity: 100, vaultId: "Life" },
+			{ name: "local-session", activity: 200, vaultId: "Work" },
+		];
+		const groups = groupSessionsByProject(
+			sessions, new Set(), new Map(), TEST_PROJECTS,
+		);
+		const unmanaged = groups.find((g) => g.project === "Unmanaged");
+		assert.ok(unmanaged);
+		assert.equal(unmanaged!.sessions.length, 2);
+	});
+});
