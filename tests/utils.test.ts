@@ -4719,7 +4719,7 @@ describe("groupSessionsByProject vault isolation", () => {
 		);
 		const unmanaged = groups.find((g) => g.project === "Unmanaged");
 		assert.ok(unmanaged);
-		assert.equal(unmanaged!.sessions.length, 1);
+		assert.equal(unmanaged?.sessions.length, 1);
 	});
 
 	it("shows untagged legacy sessions in Unmanaged", () => {
@@ -4731,7 +4731,7 @@ describe("groupSessionsByProject vault isolation", () => {
 		);
 		const unmanaged = groups.find((g) => g.project === "Unmanaged");
 		assert.ok(unmanaged);
-		assert.equal(unmanaged!.sessions.length, 1);
+		assert.equal(unmanaged?.sessions.length, 1);
 	});
 
 	it("without vaultId param, shows all unmanaged sessions (backward compat)", () => {
@@ -4744,6 +4744,6 @@ describe("groupSessionsByProject vault isolation", () => {
 		);
 		const unmanaged = groups.find((g) => g.project === "Unmanaged");
 		assert.ok(unmanaged);
-		assert.equal(unmanaged!.sessions.length, 2);
+		assert.equal(unmanaged?.sessions.length, 2);
 	});
 });

@@ -170,7 +170,7 @@ export function execTmux(args: string[]): Promise<string> {
 }
 
 export function tmuxLs(): Promise<string> {
-	return execTmux(["ls", "-F", "#{session_name}:#{session_activity}"]).catch(() => "");
+	return execTmux(["ls", "-F", "#{session_name}:#{session_activity}\t#{@co_vault}"]).catch(() => "");
 }
 
 /**
@@ -178,17 +178,20 @@ export function tmuxLs(): Promise<string> {
  */
 export function parseAllTmuxSessions(
 	tmuxLsOutput: string,
-): { name: string; activity: number }[] {
-	const sessions: { name: string; activity: number }[] = [];
+): { name: string; activity: number; vaultId?: string }[] {
+	const sessions: { name: string; activity: number; vaultId?: string }[] = [];
 	for (const line of tmuxLsOutput.split("\n")) {
 		const trimmed = line.trim();
 		if (!trimmed) continue;
-		const colonIdx = trimmed.indexOf(":");
+		const tabIdx = trimmed.indexOf("\t");
+		const nameActivity = tabIdx === -1 ? trimmed : trimmed.slice(0, tabIdx);
+		const vaultRaw = tabIdx === -1 ? "" : trimmed.slice(tabIdx + 1).trim();
+		const colonIdx = nameActivity.indexOf(":");
 		if (colonIdx === -1) continue;
-		const name = trimmed.slice(0, colonIdx);
-		const rest = trimmed.slice(colonIdx + 1).trim();
+		const name = nameActivity.slice(0, colonIdx);
+		const rest = nameActivity.slice(colonIdx + 1).trim();
 		const activity = /^\d+$/.test(rest) ? Number(rest) : 0;
-		sessions.push({ name, activity });
+		sessions.push({ name, activity, vaultId: vaultRaw || undefined });
 	}
 	return sessions;
 }
@@ -255,11 +258,12 @@ export function sessionsMissingNotes(
  * `noteData` — map from session name to parsed note summary (if exists).
  */
 export function groupSessionsByProject(
-	allSessions: { name: string; activity: number }[],
+	allSessions: { name: string; activity: number; vaultId?: string }[],
 	openSessionNames: Set<string>,
 	noteData: Map<string, { queueCount: number; lastActivity: string | null; preview: string | null; displayName: string | null; status: SessionStatus; queueMode: QueueMode }>,
 	projects: ProjectRegistry,
 	projectsWithNotes?: Set<string>,
+	vaultId?: string,
 ): SessionGroup[] {
 	const projectMap = new Map<string, SessionInfo[]>();
 	const unmanaged: SessionInfo[] = [];
@@ -283,7 +287,7 @@ export function groupSessionsByProject(
 		if (project) {
 			if (!projectMap.has(project)) projectMap.set(project, []);
 			projectMap.get(project)!.push(info);
-		} else {
+		} else if (!vaultId || !s.vaultId || s.vaultId === vaultId) {
 			unmanaged.push(info);
 		}
 	}

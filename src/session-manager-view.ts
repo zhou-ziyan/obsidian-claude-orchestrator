@@ -330,7 +330,7 @@ export class SessionManagerView extends ItemView {
 		}
 
 		// 6. Group
-		this.groups = groupSessionsByProject(allSessions, openNames, noteData, projects, projectsWithNotes);
+		this.groups = groupSessionsByProject(allSessions, openNames, noteData, projects, projectsWithNotes, this.app.vault.getName());
 
 		// 6. Render
 		this.render();
