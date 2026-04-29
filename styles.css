@@ -349,6 +349,71 @@
     --term-status-fg: #cdb9ff;
 }
 
+/* Light mode override for Obsidian theme */
+.theme-light [data-theme="obsidian"] {
+    --co-xterm-bg: #ffffff;
+    --co-xterm-fg: #1e1e1e;
+
+    --co-bg: #ffffff;
+    --co-bg-header: #f7f7f8;
+    --co-bg-card: #f2f2f4;
+    --co-bg-card-hover: #eaeaed;
+    --co-bg-input: #f7f7f8;
+    --co-bg-elevated: #f0f0f2;
+    --co-bg-hover: #ebebed;
+    --co-bg-card-focused: #ece8f4;
+    --co-bg-danger: #fef0f0;
+    --co-bg-dimmed: rgba(255, 255, 255, 0.5);
+
+    --co-border: #dcdce0;
+    --co-border-subtle: #e8e8ea;
+    --co-border-strong: #c8c8cc;
+
+    --co-text: #1e1e1e;
+    --co-text-secondary: #3c3c3e;
+    --co-text-heading: #1a1a1c;
+    --co-text-body: #4a4a4e;
+    --co-text-muted: #7a7a80;
+    --co-text-faint: #a0a0a6;
+    --co-text-dim: #c8c8cc;
+    --co-text-pin: #6a6a6e;
+    --co-text-preview: #8a8a90;
+
+    --co-btn-hover: #e4e4e8;
+
+    --s-running:      #2e8b2e;
+    --s-running-halo: rgba(46,139,46,0.15);
+    --s-done:         #2e8b2e;
+    --s-idle:         #9a7b1a;
+    --s-ask:          #c47a00;
+    --s-ask-halo:     rgba(196,122,0,0.18);
+    --s-danger:       #cc3333;
+    --s-danger-hover: #dd4444;
+    --s-danger-bg:    #fef0f0;
+    --s-listen:       #2070b0;
+    --s-auto:         #2e8b2e;
+
+    --accent:         #7c4dcc;
+    --accent-on:      #fff;
+    --accent-hover:   #8e5ee0;
+    --accent-halo:    rgba(124,77,204,0.18);
+
+    --autocomplete-selected: #ece8f4;
+    --badge-queue-bg: #ece8f4;
+    --badge-queue-fg: #5c35a0;
+
+    --seg-active-fg:   var(--accent);
+    --seg-active-border: rgba(124,77,204,0.4);
+
+    --term-green:  #2e8b2e;
+    --term-dim:    #8a8a90;
+    --term-red:    #cc3333;
+    --term-yellow: #c47a00;
+    --term-blue:   #2070b0;
+    --term-status-bg: #ece8f4;
+    --term-status-fg: #5c35a0;
+}
+
 /* V1: monospace typography + square corners */
 [data-theme="terminal"] .co-sm-card-name,
 [data-theme="terminal"] .co-sm-card-meta,

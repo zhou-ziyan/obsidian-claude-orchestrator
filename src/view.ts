@@ -242,10 +242,14 @@ export class TerminalView extends ItemView {
 		}
 	}
 
+	private isDark(): boolean {
+		return !document.body.classList.contains("theme-light");
+	}
+
 	applyTheme(theme: ThemeName): void {
 		const container = this.containerEl.children[1] as HTMLElement | undefined;
 		if (container) container.dataset.theme = theme;
-		if (this.term) this.term.options.theme = terminalTheme(theme);
+		if (this.term) this.term.options.theme = terminalTheme(theme, this.isDark());
 	}
 
 	async onOpen() {
@@ -263,6 +267,11 @@ export class TerminalView extends ItemView {
 				this.fitTerminal();
 				this.debouncedFit();
 				setTimeout(() => this.fitAndResize(), 300);
+			}),
+		);
+		this.registerEvent(
+			this.app.workspace.on("css-change", () => {
+				this.applyTheme(this.getSettings?.().theme ?? "obsidian");
 			}),
 		);
 
@@ -710,7 +719,7 @@ export class TerminalView extends ItemView {
 			fontFamily: "Menlo, Monaco, 'Courier New', monospace",
 			fontSize: 13,
 			lineHeight: 1.2,
-			theme: terminalTheme(this.getSettings?.().theme ?? "obsidian"),
+			theme: terminalTheme(this.getSettings?.().theme ?? "obsidian", this.isDark()),
 		});
 		this.term.open(this.host);
 		requestAnimationFrame(() => {

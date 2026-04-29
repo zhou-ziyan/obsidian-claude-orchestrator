@@ -782,10 +782,11 @@ export interface TerminalTheme {
 	cursor?: string;
 }
 
-export function terminalTheme(theme: ThemeName): TerminalTheme {
-	return theme === "terminal"
-		? { background: "#06090a", foreground: "#d6d7c9" }
-		: { background: "#16161a", foreground: "#dcddde" };
+export function terminalTheme(theme: ThemeName, isDark = true): TerminalTheme {
+	if (theme === "terminal") return { background: "#06090a", foreground: "#d6d7c9" };
+	return isDark
+		? { background: "#16161a", foreground: "#dcddde" }
+		: { background: "#ffffff", foreground: "#1e1e1e", cursor: "#1e1e1e" };
 }
 
 export function migrateThemeName(value: unknown): ThemeName {
