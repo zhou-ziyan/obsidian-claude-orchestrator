@@ -1311,6 +1311,14 @@ export function wheelDeltaToLines(deltaY: number, deltaMode: number): number {
 	return lines === 0 ? (deltaY > 0 ? 1 : deltaY < 0 ? -1 : 0) : lines;
 }
 
+// In alt-screen mode (tmux running Claude Code TUI), xterm.js converts wheel
+// to ↑/↓ escape sequences and writes them to the PTY — Claude Code reads that
+// as input-history navigation. Pass this to attachCustomWheelEventHandler so
+// our host-level handler (routing to tmux copy-mode) can run instead.
+export function suppressXtermAltScreenWheel(): boolean {
+	return false;
+}
+
 export type AcKeyAction = "accept" | "close" | "next" | "prev" | null;
 
 export function classifyAcKey(key: string, shiftKey: boolean): AcKeyAction {

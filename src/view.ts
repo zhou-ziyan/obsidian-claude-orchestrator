@@ -31,6 +31,7 @@ import {
 	stripTimestamp,
 	handleTerminalScrollKey,
 	wheelDeltaToLines,
+	suppressXtermAltScreenWheel,
 	classifyAcKey,
 	escapeLeadingBang,
 	projectFromSessionName,
@@ -728,6 +729,7 @@ export class TerminalView extends ItemView {
 		this.term.attachCustomKeyEventHandler((ev) =>
 			handleTerminalScrollKey(ev.key, (n) => this.term?.scrollPages(n)),
 		);
+		this.term.attachCustomWheelEventHandler(suppressXtermAltScreenWheel);
 
 		this.term.textarea?.addEventListener("focus", () => {
 			if (this.termFocusIndicator) this.termFocusIndicator.style.visibility = "";

@@ -69,6 +69,7 @@ import {
 	stripTimestamp,
 	handleTerminalScrollKey,
 	wheelDeltaToLines,
+	suppressXtermAltScreenWheel,
 	WHEEL_LINES_PER_PAGE,
 	classifyAcKey,
 	allSessionNotePaths,
@@ -3319,6 +3320,12 @@ describe("wheelDeltaToLines", () => {
 		assert.equal(wheelDeltaToLines(1, 2), WHEEL_LINES_PER_PAGE);
 		assert.equal(wheelDeltaToLines(-1, 2), -WHEEL_LINES_PER_PAGE);
 		assert.equal(wheelDeltaToLines(2, 2), 2 * WHEEL_LINES_PER_PAGE);
+	});
+});
+
+describe("suppressXtermAltScreenWheel", () => {
+	it("returns false to short-circuit xterm's built-in wheel handler", () => {
+		assert.equal(suppressXtermAltScreenWheel(), false);
 	});
 });
 
