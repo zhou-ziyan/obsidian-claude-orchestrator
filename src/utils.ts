@@ -1257,6 +1257,13 @@ interface ClaudeHookMatcher {
 	hooks: ClaudeHookEntry[];
 }
 
+// Single-quote a path for /bin/sh -c. Required because the registered command
+// is run via shell, and unquoted paths with spaces (e.g. iCloud's "Mobile
+// Documents/") get word-split into "command not found".
+export function shellQuoteSingle(path: string): string {
+	return `'${path.replace(/'/g, "'\\''")}'`;
+}
+
 export function ensureStopHookConfig(
 	settingsJson: string,
 	scriptPath: string,
@@ -1268,22 +1275,30 @@ export function ensureStopHookConfig(
 		return { updated: false, content: settingsJson };
 	}
 
+	const expectedCommand = shellQuoteSingle(scriptPath);
 	const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
 	const stopMatchers = (hooks.Stop ?? []) as ClaudeHookMatcher[];
 
-	const alreadyRegistered = stopMatchers.some((m) =>
-		m.hooks?.some((h) => h.command?.includes("co-stop-hook.sh")),
-	);
+	const existing = stopMatchers
+		.flatMap((m) => m.hooks ?? [])
+		.find((h) => h.command?.includes("co-stop-hook.sh"));
 
-	if (alreadyRegistered) {
-		return { updated: false, content: settingsJson };
+	if (existing) {
+		if (existing.command === expectedCommand) {
+			return { updated: false, content: settingsJson };
+		}
+		// Wrong command (unquoted path, stale path, etc.) — repair in place.
+		existing.command = expectedCommand;
+		hooks.Stop = stopMatchers;
+		settings.hooks = hooks;
+		return { updated: true, content: JSON.stringify(settings, null, 2) };
 	}
 
 	stopMatchers.push({
 		matcher: "*",
 		hooks: [{
 			type: "command",
-			command: scriptPath,
+			command: expectedCommand,
 			timeout: 10,
 		}],
 	});

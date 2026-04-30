@@ -54,4 +54,8 @@ data['stop_reason'] = stop_reason
 json.dump(data, sys.stdout)
 ")
 
-echo "$SIGNAL" > "$SIGNAL_DIR/${TIMESTAMP}-${TMUX_SESSION}.json"
+# Atomic write: stage to .tmp then mv. Otherwise the watcher can read the
+# zero-byte file mid-write and silently drop the signal.
+SIGNAL_FILE="$SIGNAL_DIR/${TIMESTAMP}-${TMUX_SESSION}.json"
+echo "$SIGNAL" > "$SIGNAL_FILE.tmp"
+mv "$SIGNAL_FILE.tmp" "$SIGNAL_FILE"

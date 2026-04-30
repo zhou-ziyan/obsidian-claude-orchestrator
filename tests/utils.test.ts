@@ -2844,17 +2844,25 @@ describe("parseSessionNote displayName", () => {
 
 describe("ensureStopHookConfig", () => {
 	const SCRIPT = "/path/to/plugins/claude-orchestrator/scripts/co-stop-hook.sh";
+	const SCRIPT_QUOTED = `'${SCRIPT}'`;
 
 	const parse = (s: string) => JSON.parse(s) as Record<string, Record<string, Array<{ matcher: string; hooks: Array<{ command: string; timeout?: number }> }>>>;
 
-	it("adds hook when settings has no hooks", () => {
+	it("adds hook (shell-quoted) when settings has no hooks", () => {
 		const result = ensureStopHookConfig(JSON.stringify({ model: "test" }), SCRIPT);
 		assert.equal(result.updated, true);
 		const parsed = parse(result.content);
 		assert.equal(parsed.hooks.Stop.length, 1);
-		assert.equal(parsed.hooks.Stop[0].hooks[0].command, SCRIPT);
+		assert.equal(parsed.hooks.Stop[0].hooks[0].command, SCRIPT_QUOTED);
 		assert.equal(parsed.hooks.Stop[0].matcher, "*");
 		assert.equal((parsed as unknown as Record<string, string>).model, "test");
+	});
+
+	it("shell-quotes paths with spaces (iCloud Mobile Documents case)", () => {
+		const spacedScript = "/Users/me/Library/Mobile Documents/iCloud/plugin/co-stop-hook.sh";
+		const result = ensureStopHookConfig("{}", spacedScript);
+		const parsed = parse(result.content);
+		assert.equal(parsed.hooks.Stop[0].hooks[0].command, `'${spacedScript}'`);
 	});
 
 	it("adds hook when hooks exists but no Stop event", () => {
@@ -2882,14 +2890,39 @@ describe("ensureStopHookConfig", () => {
 		assert.equal(parsed.hooks.Stop.length, 2);
 	});
 
-	it("does not add when co-stop-hook.sh already registered", () => {
+	it("leaves entry alone when command exactly matches expected quoted form", () => {
+		const input = JSON.stringify({
+			hooks: {
+				Stop: [{ matcher: "*", hooks: [{ type: "command", command: SCRIPT_QUOTED, timeout: 10 }] }],
+			},
+		});
+		const result = ensureStopHookConfig(input, SCRIPT);
+		assert.equal(result.updated, false);
+	});
+
+	it("repairs unquoted existing entry to shell-quoted form", () => {
+		const input = JSON.stringify({
+			hooks: {
+				Stop: [{ matcher: "*", hooks: [{ type: "command", command: SCRIPT, timeout: 10 }] }],
+			},
+		});
+		const result = ensureStopHookConfig(input, SCRIPT);
+		assert.equal(result.updated, true);
+		const parsed = parse(result.content);
+		assert.equal(parsed.hooks.Stop.length, 1);
+		assert.equal(parsed.hooks.Stop[0].hooks[0].command, SCRIPT_QUOTED);
+	});
+
+	it("repairs stale path in existing entry to current quoted path", () => {
 		const input = JSON.stringify({
 			hooks: {
 				Stop: [{ matcher: "*", hooks: [{ type: "command", command: "/old/path/co-stop-hook.sh", timeout: 10 }] }],
 			},
 		});
 		const result = ensureStopHookConfig(input, SCRIPT);
-		assert.equal(result.updated, false);
+		assert.equal(result.updated, true);
+		const parsed = parse(result.content);
+		assert.equal(parsed.hooks.Stop[0].hooks[0].command, SCRIPT_QUOTED);
 	});
 
 	it("preserves all existing settings", () => {
@@ -2924,7 +2957,7 @@ describe("ensureStopHookConfig", () => {
 		assert.equal(result.content, "");
 	});
 
-	it("detects co-stop-hook.sh in nested matcher arrays", () => {
+	it("repairs co-stop-hook.sh entry inside a nested matcher array", () => {
 		const input = JSON.stringify({
 			hooks: {
 				Stop: [
@@ -2937,7 +2970,13 @@ describe("ensureStopHookConfig", () => {
 			},
 		});
 		const result = ensureStopHookConfig(input, SCRIPT);
-		assert.equal(result.updated, false);
+		assert.equal(result.updated, true);
+		const parsed = parse(result.content);
+		// Other unrelated entries preserved
+		assert.equal(parsed.hooks.Stop[0].hooks[0].command, "/a.sh");
+		assert.equal(parsed.hooks.Stop[1].hooks[0].command, "/b.sh");
+		// The co-stop-hook.sh entry was repaired in place
+		assert.equal(parsed.hooks.Stop[1].hooks[1].command, SCRIPT_QUOTED);
 	});
 });
 

@@ -6,8 +6,15 @@ import type { StopSignal, ProjectRegistry } from "./utils";
 
 export type StopSignalHandler = (signal: StopSignal, project: string) => void;
 
+// Poll interval for the drain fallback. fs.watch on macOS sits on top of
+// FSEvents and occasionally drops events under load — polling every few
+// seconds catches anything the watcher missed without measurable cost on
+// an empty directory.
+const DRAIN_POLL_MS = 3000;
+
 export class StopHookWatcher {
 	private watcher: FSWatcher | null = null;
+	private pollTimer: ReturnType<typeof setInterval> | null = null;
 	private handlers: StopSignalHandler[] = [];
 	private projects: () => ProjectRegistry;
 
@@ -30,12 +37,18 @@ export class StopHookWatcher {
 				this.processFile(join(STOP_SIGNAL_DIR, filename));
 			}
 		});
+
+		this.pollTimer = setInterval(() => this.drainExisting(), DRAIN_POLL_MS);
 	}
 
 	stop(): void {
 		if (this.watcher) {
 			this.watcher.close();
 			this.watcher = null;
+		}
+		if (this.pollTimer) {
+			clearInterval(this.pollTimer);
+			this.pollTimer = null;
 		}
 	}
 
