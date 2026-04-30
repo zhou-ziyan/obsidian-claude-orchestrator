@@ -770,6 +770,21 @@ describe("parseSessionNote", () => {
 		});
 	});
 
+	it("strips leading checkbox from queue items written in Tasks-Convention format", () => {
+		const content = "## Queue\n- [ ] [2026-04-29 22:05] dispatched task\n";
+		const note = parseSessionNote(content);
+		assert.equal(note.queue[0], "[2026-04-29 22:05] dispatched task");
+	});
+
+	it("strips stacked leading checkboxes from stale history items", () => {
+		const content = "## History\n- [ ] [ ] [2026-04-29 22:05] migrated task\n";
+		const note = parseSessionNote(content);
+		assert.deepEqual(note.history[0], {
+			text: "[2026-04-29 22:05] migrated task",
+			completed: false,
+		});
+	});
+
 	it("ignores unknown frontmatter status values", () => {
 		const content = "---\nstatus: banana\n---\n";
 		const note = parseSessionNote(content);

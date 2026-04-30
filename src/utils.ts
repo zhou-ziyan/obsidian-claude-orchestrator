@@ -564,7 +564,11 @@ export function parseSessionNote(
 			// Collect continuation lines: any line starting with 2+ spaces or tab
 			// belongs to this item, regardless of its trimmed content (blank
 			// lines, headings, etc. inside a multi-line item are preserved).
-			const textLines = [currentSection === "history" ? parseHistoryFirstLine(content) : content];
+			// Strip leading checkbox(es) from both queue and history items —
+			// queue items may carry "[ ]" baked into text when written by external
+			// Tasks-Convention-aware tooling, and stale history items may have
+			// stacked "[ ] [ ]" from prior queue→history migrations.
+			const textLines = [stripLeadingCheckboxes(content)];
 			while (i + 1 < lines.length) {
 				const nextRaw = lines[i + 1]!;
 				if (!nextRaw.startsWith("  ") && !nextRaw.startsWith("\t")) break;
@@ -594,9 +598,9 @@ export function parseSessionNote(
 	return note;
 }
 
-function parseHistoryFirstLine(content: string): string {
-	// Strip checkbox prefix "[x] " or "[ ] " from the first line
-	return content.replace(/^\[([ xX])\] /, "");
+function stripLeadingCheckboxes(content: string): string {
+	// Strip one or more leading "[ ] " / "[x] " / "[X] " checkbox prefixes.
+	return content.replace(/^(\[[ xX]\] )+/, "");
 }
 
 function isSessionStatus(s: string): s is SessionStatus {
