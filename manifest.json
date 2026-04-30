@@ -1,7 +1,7 @@
 {
 	"id": "claude-orchestrator",
 	"name": "Claude Orchestrator",
-	"version": "1.1.5",
+	"version": "1.1.6",
 	"minAppVersion": "0.15.0",
 	"description": "Orchestrate multiple Claude Code sessions from inside Obsidian via per-project tmux sessions.",
 	"author": "eureka",
