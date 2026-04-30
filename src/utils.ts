@@ -562,18 +562,27 @@ export function parseSessionNote(
 		if ((currentSection === "history" || currentSection === "queue") && trimmed.startsWith("- ")) {
 			const content = trimmed.slice(2);
 			// Collect continuation lines: any line starting with 2+ spaces or tab
-			// belongs to this item, regardless of its trimmed content (blank
-			// lines, headings, etc. inside a multi-line item are preserved).
-			// Strip leading checkbox(es) from both queue and history items —
-			// queue items may carry "[ ]" baked into text when written by external
-			// Tasks-Convention-aware tooling, and stale history items may have
-			// stacked "[ ] [ ]" from prior queue→history migrations.
+			// belongs to this item. Blank lines (empty or whitespace-only) are
+			// preserved if followed by an indented continuation line.
 			const textLines = [stripLeadingCheckboxes(content)];
 			while (i + 1 < lines.length) {
 				const nextRaw = lines[i + 1]!;
-				if (!nextRaw.startsWith("  ") && !nextRaw.startsWith("\t")) break;
-				textLines.push(nextRaw.trim());
-				i++;
+				if (nextRaw.startsWith("  ") || nextRaw.startsWith("\t")) {
+					textLines.push(nextRaw.trim());
+					i++;
+				} else if (nextRaw.trim() === "") {
+					// Blank line: look ahead to see if an indented line follows
+					let peek = i + 2;
+					while (peek < lines.length && lines[peek]!.trim() === "") peek++;
+					if (peek < lines.length && (lines[peek]!.startsWith("  ") || lines[peek]!.startsWith("\t"))) {
+						textLines.push("");
+						i++;
+					} else {
+						break;
+					}
+				} else {
+					break;
+				}
 			}
 			const fullText = textLines.join("\n");
 			if (currentSection === "history") {
