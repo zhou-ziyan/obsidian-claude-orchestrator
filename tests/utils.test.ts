@@ -1246,6 +1246,38 @@ describe("parseSessionNote multiline", () => {
 		assert.ok(note.queue[0]!.includes("分支：fix/display-text"));
 	});
 
+	it("parses multiline queue item across truly empty lines (no indent)", () => {
+		const md = [
+			"---",
+			"session: test",
+			"status: idle",
+			"queueMode: manual",
+			"---",
+			"",
+			"## Queue",
+			"- 按照 Tasks_Convention 执行以下任务。",
+			"  开始前，先读生命周期。",
+			"",
+			"  ## 任务",
+			"  修复多行 prompt 被截断。",
+			"",
+			"  ## 来源",
+			"  Intake#Queue 截断",
+			"",
+			"  ## 参数",
+			"  - 分支：fix/multiline",
+			"",
+		].join("\n");
+		const note = parseSessionNote(md);
+		assert.equal(note.queue.length, 1);
+		assert.ok(note.queue[0]!.includes("按照 Tasks_Convention"));
+		assert.ok(note.queue[0]!.includes("## 任务"));
+		assert.ok(note.queue[0]!.includes("修复多行 prompt 被截断"));
+		assert.ok(note.queue[0]!.includes("## 来源"));
+		assert.ok(note.queue[0]!.includes("## 参数"));
+		assert.ok(note.queue[0]!.includes("分支：fix/multiline"));
+	});
+
 	it("round-trips multiline items with blank lines", () => {
 		const original = {
 			session: "test",
