@@ -31,7 +31,6 @@ import {
 	stripTimestamp,
 	handleTerminalScrollKey,
 	wheelDeltaToLines,
-	suppressXtermAltScreenWheel,
 	classifyAcKey,
 	escapeLeadingBang,
 	projectFromSessionName,
@@ -386,18 +385,6 @@ export class TerminalView extends ItemView {
 
 		host.addEventListener("focusin", this.onHostFocusIn);
 		host.addEventListener("focusout", this.onHostFocusOut);
-
-		host.addEventListener("wheel", (e) => {
-			if (!this.term || !this.sessionName) return;
-			const lines = wheelDeltaToLines(e.deltaY, e.deltaMode);
-			if (lines === 0) return;
-			e.preventDefault();
-			e.stopPropagation();
-			const { copyModeArgs, scrollArgs } = tmuxScrollArgs(this.sessionName, lines);
-			void execTmux(copyModeArgs)
-				.catch(() => {})
-				.then(() => execTmux(scrollArgs).catch(() => {}));
-		}, { passive: false });
 	}
 
 	private createQueuePanel(container: HTMLElement): void {
@@ -729,7 +716,17 @@ export class TerminalView extends ItemView {
 		this.term.attachCustomKeyEventHandler((ev) =>
 			handleTerminalScrollKey(ev.key, (n) => this.term?.scrollPages(n)),
 		);
-		this.term.attachCustomWheelEventHandler(suppressXtermAltScreenWheel);
+		this.term.attachCustomWheelEventHandler((ev: WheelEvent) => {
+			ev.preventDefault();
+			const lines = wheelDeltaToLines(ev.deltaY, ev.deltaMode);
+			if (lines !== 0 && this.sessionName) {
+				const { copyModeArgs, scrollArgs } = tmuxScrollArgs(this.sessionName, lines);
+				void execTmux(copyModeArgs)
+					.catch(() => {})
+					.then(() => execTmux(scrollArgs).catch(() => {}));
+			}
+			return false;
+		});
 
 		this.term.textarea?.addEventListener("focus", () => {
 			if (this.termFocusIndicator) this.termFocusIndicator.style.visibility = "";
