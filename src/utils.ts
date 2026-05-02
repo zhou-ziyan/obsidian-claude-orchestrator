@@ -319,9 +319,15 @@ export function groupSessionsByProject(
 
 export type SessionStatus = "idle" | "running" | "waiting_for_user";
 
-export type QueueMode = "manual" | "listen" | "auto";
+// M7: "auto" mode removed. lighthouse Job B owns auto-send (stop hook
+// → claimHead → tmux send-keys at the lighthouse layer); the plugin no
+// longer runs an Auto countdown / sendNext loop. Surviving modes are
+// "manual" (click Send next) and "listen" (notify on stop hook). Old
+// vault notes that still carry queueMode: auto degrade to manual via
+// isQueueMode below.
+export type QueueMode = "manual" | "listen";
 
-export const QUEUE_MODES: readonly QueueMode[] = ["manual", "listen", "auto"] as const;
+export const QUEUE_MODES: readonly QueueMode[] = ["manual", "listen"] as const;
 
 export function nextQueueMode(current: QueueMode): QueueMode {
 	const idx = QUEUE_MODES.indexOf(current);
@@ -332,43 +338,18 @@ export function queueModeLabel(mode: QueueMode): string {
 	switch (mode) {
 		case "manual": return "Manual";
 		case "listen": return "Listen";
-		case "auto": return "Auto";
 	}
 }
 
 export function queueModeTooltip(mode: QueueMode): string {
 	switch (mode) {
 		case "manual": return "Manual: click Send next to send\nClick to switch → Listen";
-		case "listen": return "Listen: will notify when Claude stops\nClick to switch → Auto";
-		case "auto": return "Auto: auto-send next after Claude stops\nClick to switch → Manual";
+		case "listen": return "Listen: will notify when Claude stops\nClick to switch → Manual";
 	}
 }
 
-export type AutoSendAction = "send" | "notify" | "none";
-
-export function autoSendAction(
-	mode: QueueMode,
-	stopReason: StopReason | null,
-	queueLength: number,
-): AutoSendAction {
-	if (mode === "manual") return "none";
-	if (stopReason === "asking") return "none";
-	if (queueLength === 0) return "none";
-	if (mode === "auto") return "send";
-	if (mode === "listen") return "notify";
-	return "none";
-}
-
-export const AUTO_SEND_COUNTDOWN_MS = 3000;
-
-export function resolveClaudeIdle(prevIdle: boolean, noteStatus: string, externalModify: boolean): boolean {
-	const noteIdle = noteStatus === "idle";
-	if (externalModify && !prevIdle && noteIdle) return false;
-	return noteIdle;
-}
-
 function isQueueMode(s: string): s is QueueMode {
-	return s === "manual" || s === "listen" || s === "auto";
+	return s === "manual" || s === "listen";
 }
 
 export interface HistoryItem {
@@ -820,15 +801,6 @@ export function findTmuxBinary(exists?: (p: string) => boolean): string {
 		if (check(p)) return p;
 	}
 	return "tmux";
-}
-
-/**
- * After editing a queue item, determine whether to auto-send.
- * Returns true when the queue has exactly 1 item — the one just edited —
- * so save-and-send can happen in one Enter press.
- */
-export function shouldAutoSendAfterEdit(queueLength: number): boolean {
-	return queueLength === 1;
 }
 
 // --- Project registry mutations ---

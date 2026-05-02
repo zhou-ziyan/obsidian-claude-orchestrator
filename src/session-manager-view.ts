@@ -36,7 +36,6 @@ import {
 	sessionDisplayLabel,
 	splitActiveInactive,
 	ptyBarPercent,
-	countdownText,
 	summarizeSessionNote,
 	computeRelinkTarget,
 } from "./utils";
@@ -231,14 +230,8 @@ export class SessionManagerView extends ItemView {
 			}),
 		);
 
-		// Countdown tick — update Send buttons without full refresh
-		/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any -- custom workspace event */
-		this.registerEvent(
-			this.app.workspace.on("claude-orchestrator:countdown-tick" as any, () => {
-				this.updateCountdownButtons();
-			}),
-		);
-		/* eslint-enable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any */
+		// M7: countdown event removed — Auto-send is handled by lighthouse
+		// Job B, not a per-card countdown pill. SM cards just show Send next.
 
 		// Low-frequency polling for external tmux changes
 		this.pollTimer = setInterval(() => { void this.refresh(); }, POLL_INTERVAL_MS);
@@ -323,7 +316,7 @@ export class SessionManagerView extends ItemView {
 				// per-session fetches share one resolution round-trip.
 				const lh = await getLighthouseQueueForTmuxName(s.name);
 				if (lh.available) {
-					note.queue = lh.queue;
+					note.queue = lh.queue.map((q) => q.text);
 					note.history = lh.history;
 				}
 				noteData.set(s.name, summarizeSessionNote(note));
@@ -658,34 +651,19 @@ export class SessionManagerView extends ItemView {
 			previewEl.textContent = session.preview;
 		}
 
-		// Send next / Countdown (below meta/preview, per design reference)
+		// M7: SM card just shows a Send next button when queue is non-empty
+		// — no countdown pill. lighthouse Job B owns auto-dispatch.
 		if (session.hasPanel && session.queueCount > 0) {
-			const match = findTerminalLeafBySession(this.app.workspace, session.name);
-			const countdown = match?.view.getCountdownRemaining() ?? 0;
-
-			if (countdown > 0) {
-				const cdEl = card.createDiv({ cls: "co-sm-card-countdown" });
-				cdEl.style.cursor = "pointer";
-				cdEl.title = "Click to cancel";
-				cdEl.addEventListener("click", (e) => {
-					e.stopPropagation();
-					match?.view.cancelCountdown();
-				});
-				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
-				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: countdownText(countdown) });
-				this.sendBtns.set(session.name, cdEl);
-			} else {
-				const sendBtn = card.createEl("button", { cls: "co-sm-card-send" });
-				const sendIconSpan = sendBtn.createSpan({ cls: "co-sm-card-send-icon" });
-				setIcon(sendIconSpan, "play");
-				sendBtn.createSpan({ text: "Send next" });
-				sendBtn.title = "Send next queue item";
-				sendBtn.addEventListener("click", (e) => {
-					e.stopPropagation();
-					void this.sendNextForSession(session.name);
-				});
-				this.sendBtns.set(session.name, sendBtn);
-			}
+			const sendBtn = card.createEl("button", { cls: "co-sm-card-send" });
+			const sendIconSpan = sendBtn.createSpan({ cls: "co-sm-card-send-icon" });
+			setIcon(sendIconSpan, "play");
+			sendBtn.createSpan({ text: "Send next" });
+			sendBtn.title = "Send next queue item";
+			sendBtn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				void this.sendNextForSession(session.name);
+			});
+			this.sendBtns.set(session.name, sendBtn);
 		}
 
 		card.addEventListener("dblclick", () => {
@@ -696,45 +674,6 @@ export class SessionManagerView extends ItemView {
 			}
 		});
 
-	}
-
-	private updateCountdownButtons(): void {
-		for (const [sessionName, el] of this.sendBtns) {
-			const match = findTerminalLeafBySession(this.app.workspace, sessionName);
-			const remaining = match?.view.getCountdownRemaining() ?? 0;
-			const parent = el.parentElement;
-			if (!parent) continue;
-
-			const isCd = el.classList.contains("co-sm-card-countdown");
-			if (remaining > 0 && isCd) {
-				const label = el.querySelector(".co-sm-card-countdown-text");
-				if (label) label.textContent = countdownText(remaining);
-			} else if (remaining > 0 && !isCd) {
-				el.remove();
-				const cdEl = parent.createDiv({ cls: "co-sm-card-countdown" });
-				cdEl.style.cursor = "pointer";
-				cdEl.title = "Click to cancel";
-				cdEl.addEventListener("click", (e) => {
-					e.stopPropagation();
-					match?.view.cancelCountdown();
-				});
-				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
-				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: countdownText(remaining) });
-				this.sendBtns.set(sessionName, cdEl);
-			} else if (remaining <= 0 && isCd) {
-				el.remove();
-				const sendBtn = parent.createEl("button", { cls: "co-sm-card-send" });
-				const sendIconSpan2 = sendBtn.createSpan({ cls: "co-sm-card-send-icon" });
-				setIcon(sendIconSpan2, "play");
-				sendBtn.createSpan({ text: "Send next" });
-				sendBtn.title = "Send next queue item";
-				sendBtn.addEventListener("click", (e) => {
-					e.stopPropagation();
-					void this.sendNextForSession(sessionName);
-				});
-				this.sendBtns.set(sessionName, sendBtn);
-			}
-		}
 	}
 
 	private attachDragHandlers(card: HTMLElement, groupEl: HTMLElement, project: string): void {

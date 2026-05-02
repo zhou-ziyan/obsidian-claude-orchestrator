@@ -10,7 +10,6 @@ import {
 	nowStamp,
 	copyHistoryItemToQueue,
 	HISTORY_ITEM_MIN_HEIGHT,
-	shouldAutoSendAfterEdit,
 	computeDisplayText,
 	SessionNote,
 	QUICK_REPLY_KEYS,
@@ -23,9 +22,6 @@ import {
 	getPtyStatus,
 	ptyStatusMessage,
 	parseQueueItemSegments,
-	autoSendAction,
-	AUTO_SEND_COUNTDOWN_MS,
-	resolveClaudeIdle,
 	execTmux,
 	filterSlashCommands,
 	stripTimestamp,
@@ -42,14 +38,19 @@ import {
 	SessionLifecycle,
 	extractTimestamp,
 	computeSessionCwd,
-	countdownText,
 	deriveStatusFromStop,
 	markLastHistoryDone,
 	notifyQueueMessage,
 	prepareQueueTaskText,
 } from "./utils";
 import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry, ThemeName } from "./utils";
-import { getLighthouseQueueForTmuxName } from "./lighthouse-client";
+import {
+	getLighthouseQueueForTmuxName,
+	enqueueQueueItem,
+	updateQueueItem,
+	deleteQueueItem,
+	resolveSessionIdByTmuxName,
+} from "./lighthouse-client";
 import { Terminal } from "@xterm/xterm";
 import type { IPty } from "node-pty";
 import * as os from "os";
@@ -115,11 +116,14 @@ export class TerminalView extends ItemView {
 	private termFocusIndicator: HTMLElement | null = null;
 	private modeBtn: HTMLElement | null = null;
 	private sendBtn: HTMLElement | null = null;
-	private countdownEl: HTMLElement | null = null;
-	private countdownTimer: ReturnType<typeof setInterval> | null = null;
-	private countdownRemaining = 0;
-	private escHandler: ((e: KeyboardEvent) => void) | null = null;
-	private claudeIdle = false;
+	// M7: Auto countdown removed. lighthouse Job B owns dispatch; the
+	// plugin's manual Send-next is now a one-shot tmux send-keys + PATCH
+	// status='sent' for bookkeeping. claudeIdle was only used to gate
+	// auto-send so it goes too.
+	// Parallel array of lighthouse queue item ids matching
+	// this.sessionNote.queue (kept in sync by loadSessionNote). Used by
+	// edit / delete / Send-next so handlers can address the right qid.
+	private lighthouseQueueIds: string[] = [];
 	private loadedAt = 0;
 	private fitTerminal(): void {
 		if (!this.term || !this.host) return;
@@ -451,10 +455,8 @@ export class TerminalView extends ItemView {
 			btn.addEventListener("click", () => {
 				if (!this.sessionNote) return;
 				this.sessionNote.queueMode = m;
-				this.cancelCountdown();
 				this.updateModeBtn();
 				void this.saveSessionNote();
-				this.checkAutoSend();
 			});
 		}
 		this.updateModeBtn();
@@ -506,11 +508,7 @@ export class TerminalView extends ItemView {
 		this.sendBtn.dataset.variant = "primary";
 		this.sendBtn.dataset.size = "md";
 		this.sendBtn.addEventListener("click", () => {
-			if (this.countdownTimer) {
-				this.cancelCountdown();
-			} else {
-				void this.sendNext();
-			}
+			void this.sendNext();
 		});
 
 		const addRow = this.queuePanel.createDiv({ cls: "co-queue-add" });
@@ -614,13 +612,26 @@ export class TerminalView extends ItemView {
 				}
 				return;
 			}
-			if (!this.sessionNote) return;
-			this.sessionNote.queue.push(`[${nowStamp()}] ${text}`);
-			input.value = "";
-			input.style.height = "auto";
-			this.renderQueue();
-			void this.saveSessionNote();
-			this.checkAutoSend();
+			if (!this.sessionNote || !this.sessionName) return;
+			// M7: queue is owned by lighthouse — POST instead of mutating
+			// the in-memory copy + rewriting the vault note. Refresh from
+			// lighthouse on success so the user sees the truthful state.
+			void (async () => {
+				const sid = await resolveSessionIdByTmuxName(this.sessionName!);
+				if (!sid) {
+					new Notice("lighthouse offline — item not added");
+					return;
+				}
+				const stamped = `[${nowStamp()}] ${text}`;
+				const result = await enqueueQueueItem(sid, stamped);
+				if (!result) {
+					new Notice("Failed to enqueue (lighthouse error)");
+					return;
+				}
+				input.value = "";
+				input.style.height = "auto";
+				await this.loadSessionNote();
+			})();
 		};
 		// History prefill (shell-like ↑/↓ navigation)
 		let histIdx = -1;
@@ -977,23 +988,26 @@ export class TerminalView extends ItemView {
 			this.sessionNote.session = this.sessionName;
 			void this.saveSessionNote();
 		}
-		// M6 stage 1: override Queue / History from lighthouse before any
-		// render runs. parseSessionNote is still authoritative for status /
-		// queueMode / displayName / notes — those don't have a lighthouse
-		// home yet (M7+). If lighthouse is offline we degrade to empty
-		// queue + banner; renderQueue() reads this.lighthouseOffline.
+		// Override Queue / History from lighthouse before any render runs.
+		// parseSessionNote is still authoritative for status / queueMode /
+		// displayName / notes / summary — those don't have a lighthouse
+		// home. If lighthouse is offline we degrade to empty queue +
+		// banner; renderQueue() reads this.lighthouseOffline. M7 also
+		// tracks the parallel id array so edit / delete / Send-next can
+		// address rows by qid.
 		const lh = await getLighthouseQueueForTmuxName(this.sessionName);
 		if (this.lifecycle.isStale(myGen)) return;
 		if (lh.available) {
-			this.sessionNote.queue = lh.queue;
+			this.sessionNote.queue = lh.queue.map((q) => q.text);
+			this.lighthouseQueueIds = lh.queue.map((q) => q.id);
 			this.sessionNote.history = lh.history;
 			this.lighthouseOffline = false;
 		} else {
 			this.sessionNote.queue = [];
+			this.lighthouseQueueIds = [];
 			this.sessionNote.history = [];
 			this.lighthouseOffline = true;
 		}
-		this.claudeIdle = resolveClaudeIdle(this.claudeIdle, this.sessionNote.status, externalModify);
 		this.loadedAt = Date.now();
 		this.sessionNoteLoaded = true;
 		this.renderHistory();
@@ -1002,10 +1016,6 @@ export class TerminalView extends ItemView {
 		/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Obsidian internal API */
 		(this.leaf as any).updateHeader?.();
 		/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
-		this.checkAutoSend(externalModify);
-		if (this.claudeIdle && this.sessionNote.queue.length > 0 && !externalModify) {
-			setTimeout(() => this.checkAutoSend(), 5500);
-		}
 	}
 
 	private async saveSessionNote(): Promise<void> {
@@ -1167,36 +1177,14 @@ export class TerminalView extends ItemView {
 
 		const actions = row.createDiv({ cls: "co-queue-actions" });
 
-		if (idx > 0) {
-			const upBtn = actions.createEl("button", {
-				cls: "icon-btn co-move-btn",
-			});
-			setIcon(upBtn, "arrow-up");
-			upBtn.addEventListener("click", () => {
-				if (!this.sessionNote) return;
-				const [item] = this.sessionNote.queue.splice(idx, 1);
-				if (item !== undefined) this.sessionNote.queue.splice(idx - 1, 0, item);
-				this.renderQueue();
-				void this.saveSessionNote();
-			});
-		} else {
-			actions.createSpan({ cls: "co-btn-spacer" });
-		}
-		if (this.sessionNote && idx < this.sessionNote.queue.length - 1) {
-			const downBtn = actions.createEl("button", {
-				cls: "icon-btn co-move-btn",
-			});
-			setIcon(downBtn, "arrow-down");
-			downBtn.addEventListener("click", () => {
-				if (!this.sessionNote) return;
-				const [item] = this.sessionNote.queue.splice(idx, 1);
-				if (item !== undefined) this.sessionNote.queue.splice(idx + 1, 0, item);
-				this.renderQueue();
-				void this.saveSessionNote();
-			});
-		} else {
-			actions.createSpan({ cls: "co-btn-spacer" });
-		}
+		// M7: up/down reorder is disabled — lighthouse PATCH allow-list
+		// is {text, status, task_id} and doesn't accept `position`. Need
+		// a follow-up intake to expand the allow-list before re-enabling.
+		// For now we just hold spacers so the row layout stays stable.
+		actions.createSpan({ cls: "co-btn-spacer" });
+		actions.createSpan({ cls: "co-btn-spacer" });
+
+		const qid = this.lighthouseQueueIds[idx];
 
 		const editBtn = actions.createEl("button", {
 			cls: "icon-btn",
@@ -1232,15 +1220,19 @@ export class TerminalView extends ItemView {
 			};
 			const save = () => {
 				const newText = input.value.trim();
-				if (newText && this.sessionNote) {
-					this.sessionNote.queue[idx] = `${tsPrefix}${newText}`;
-					void this.saveSessionNote();
-					if (shouldAutoSendAfterEdit(this.sessionNote.queue.length)) {
-						void this.sendNext();
+				if (!newText || !qid) {
+					this.renderQueue();
+					return;
+				}
+				void (async () => {
+					const ok = await updateQueueItem(qid, { text: `${tsPrefix}${newText}` });
+					if (!ok) {
+						new Notice("Edit failed (lighthouse error)");
+						this.renderQueue();
 						return;
 					}
-				}
-				this.renderQueue();
+					await this.loadSessionNote();
+				})();
 			};
 			saveBtn.addEventListener("click", save);
 			input.addEventListener("keydown", (e) => {
@@ -1258,9 +1250,15 @@ export class TerminalView extends ItemView {
 		setIcon(removeBtn, "x");
 		removeBtn.dataset.tone = "danger";
 		removeBtn.addEventListener("click", () => {
-			this.sessionNote?.queue.splice(idx, 1);
-			this.renderQueue();
-			void this.saveSessionNote();
+			if (!qid) return;
+			void (async () => {
+				const ok = await deleteQueueItem(qid);
+				if (!ok) {
+					new Notice("Delete failed (lighthouse error)");
+					return;
+				}
+				await this.loadSessionNote();
+			})();
 		});
 	}
 
@@ -1277,25 +1275,24 @@ export class TerminalView extends ItemView {
 	}
 
 	// --- Send next ---
-
+	//
+	// M7: this is the manual desktop fallback. lighthouse Job B (M3) owns
+	// auto-dispatch when Obsidian is closed; when Zoey clicks Send-next ▶
+	// here we still tmux send-keys directly (terminal view sits in the
+	// Obsidian process, doing it locally is fine) and PATCH the queue
+	// item's status to 'sent' so the dashboard reflects the action.
 	async sendNext(): Promise<void> {
 		if (!this.sessionNote || !this.sessionName) return;
 		if (this.sessionNote.queue.length === 0) return;
 
-		this.cancelCountdown();
-		this.claudeIdle = false;
+		const task = this.sessionNote.queue[0];
+		const qid = this.lighthouseQueueIds[0];
+		if (!task || !qid) return;
+
 		this.sessionNote.status = "running";
 		if (this.host) delete this.host.dataset.ask;
-		const task = this.sessionNote.queue.shift()!;
-
-		// Move to history as in-progress
-		this.sessionNote.history.push({ text: task, completed: false });
-		this.renderHistory();
-		this.renderQueue();
-		await this.saveSessionNote();
 
 		const taskText = prepareQueueTaskText(task);
-
 		const target = this.sessionName;
 
 		this.term?.scrollToBottom();
@@ -1308,7 +1305,15 @@ export class TerminalView extends ItemView {
 				await execTmux(["send-keys", "-t", target, "Enter"]);
 			} catch (err) {
 				new Notice(`Send failed: ${(err as Error).message}`);
+				return;
 			}
+			// PATCH bookkeeping — lighthouse moves the row from pending to
+			// sent so the dashboard / next loadSessionNote reflect the
+			// state change. Failure here is not fatal: the tmux send-keys
+			// already happened; we just lose dashboard sync until next
+			// fetch resolves it.
+			await updateQueueItem(qid, { status: "sent" });
+			await this.loadSessionNote();
 		})();
 	}
 
@@ -1318,7 +1323,6 @@ export class TerminalView extends ItemView {
 
 		if (this.sessionNote) {
 			this.sessionNote.status = "running";
-			this.claudeIdle = false;
 			if (this.host) delete this.host.dataset.ask;
 			this.renderQueue();
 			void this.saveSessionNote();
@@ -1339,11 +1343,13 @@ export class TerminalView extends ItemView {
 		}
 	}
 
+	// M7: stop-hook → no auto-send. lighthouse Job B owns dispatch. Listen
+	// mode still notifies (bell + Notice); manual mode is silent. asking
+	// stops keep playing the prompt sound when configured.
 	onStopSignal(stopReason: StopReason | null): void {
 		if (!this.sessionNote) return;
 
 		const derived = deriveStatusFromStop(stopReason);
-		this.claudeIdle = derived.claudeIdle;
 		this.sessionNote.status = derived.status;
 
 		if (this.host) {
@@ -1360,98 +1366,18 @@ export class TerminalView extends ItemView {
 		this.renderQueue();
 		void this.saveSessionNote();
 
-		const action = autoSendAction(
-			this.sessionNote.queueMode,
-			stopReason,
-			this.sessionNote.queue.length,
-		);
-
-		if (action === "send") {
-			this.startCountdown();
-		} else if (action === "notify") {
+		// Listen mode: notify when Claude finishes and there's still queue.
+		// Manual mode: stay silent — Zoey decides when to send.
+		if (
+			this.sessionNote.queueMode === "listen" &&
+			stopReason !== "asking" &&
+			this.sessionNote.queue.length > 0
+		) {
 			this.notifyUser(notifyQueueMessage("Claude finished", this.sessionNote.queue.length));
 		}
 
 		if (stopReason === "asking" && this.getSettings?.().playSoundOnAsking) {
 			this.playSound();
-		}
-	}
-
-	private startCountdown(): void {
-		this.cancelCountdown();
-		if (!this.sendBtn?.parentElement) return;
-
-		const totalSeconds = this.getSettings?.().autoSendCountdownSeconds ?? Math.round(AUTO_SEND_COUNTDOWN_MS / 1000);
-		this.countdownRemaining = totalSeconds;
-
-		const parent = this.sendBtn.parentElement;
-		const pill = parent.createDiv({ cls: "co-countdown" });
-		pill.style.cursor = "pointer";
-		pill.title = "Click to cancel";
-		pill.addEventListener("click", () => this.cancelCountdown());
-		pill.createDiv({ cls: "co-countdown-dot" });
-		pill.createSpan({ cls: "co-countdown-label", text: countdownText(totalSeconds) });
-
-		parent.insertBefore(pill, this.sendBtn);
-		this.sendBtn.style.display = "none";
-		this.countdownEl = pill;
-
-		this.escHandler = (e: KeyboardEvent) => {
-			if (e.key === "Escape") this.cancelCountdown();
-		};
-		document.addEventListener("keydown", this.escHandler);
-
-		this.countdownTimer = setInterval(() => {
-			this.countdownRemaining--;
-			if (this.countdownRemaining <= 0) {
-				this.cancelCountdown();
-				void this.sendNext();
-			} else {
-				this.updateCountdownLabel();
-			}
-		}, 1000);
-
-		this.app.workspace.trigger("claude-orchestrator:countdown-tick");
-	}
-
-	getCountdownRemaining(): number {
-		return this.countdownRemaining;
-	}
-
-	cancelCountdown(): void {
-		if (this.countdownTimer) {
-			clearInterval(this.countdownTimer);
-			this.countdownTimer = null;
-		}
-		if (this.escHandler) {
-			document.removeEventListener("keydown", this.escHandler);
-			this.escHandler = null;
-		}
-		this.countdownRemaining = 0;
-		this.countdownEl?.remove();
-		this.countdownEl = null;
-		if (this.sendBtn) {
-			this.sendBtn.style.display = "";
-		}
-		this.app.workspace.trigger("claude-orchestrator:countdown-tick");
-	}
-
-	private checkAutoSend(force = false): void {
-		if (!this.claudeIdle) return;
-		if (!this.sessionNote) return;
-		if (this.countdownRemaining > 0) return;
-		if (!force && Date.now() - this.loadedAt < 5000) return;
-
-		const action = autoSendAction(
-			this.sessionNote.queueMode,
-			null,
-			this.sessionNote.queue.length,
-		);
-
-		if (action === "send") {
-			this.startCountdown();
-		} else if (action === "notify") {
-			this.notifyUser(notifyQueueMessage("Claude idle", this.sessionNote.queue.length));
 		}
 	}
 
@@ -1466,12 +1392,6 @@ export class TerminalView extends ItemView {
 			new Notification("Claude Orchestrator", { body: message });
 		} catch { /* Notification API may not be available */ }
 		this.playSound();
-	}
-
-	private updateCountdownLabel(): void {
-		const label = this.countdownEl?.querySelector(".co-countdown-label");
-		if (label) label.textContent = countdownText(this.countdownRemaining);
-		this.app.workspace.trigger("claude-orchestrator:countdown-tick");
 	}
 
 	private onHostFocusIn = () => {
@@ -1522,8 +1442,6 @@ export class TerminalView extends ItemView {
 		this.queuePanel = null;
 		this.queueList = null;
 		this.sendBtn = null;
-		this.countdownEl = null;
-		this.cancelCountdown();
 		this.sessionNote = null;
 		this.termFocusIndicator = null;
 		this.ptyGen++; // invalidate pending callbacks
