@@ -20,7 +20,6 @@ import {
 	TMUX_SEARCH_PATHS,
 	HISTORY_ITEM_MIN_HEIGHT,
 	copyHistoryItemToQueue,
-	shouldAutoSendAfterEdit,
 	validateProjectKey,
 	addProject,
 	updateProjectConfig,
@@ -56,9 +55,6 @@ import {
 	parseQueueItemSegments,
 	classifyStopReason,
 	extractLastAssistantText,
-	autoSendAction,
-	AUTO_SEND_COUNTDOWN_MS,
-	resolveClaudeIdle,
 	ensureStopHookConfig,
 	parseQuickReplyKeys,
 	SLASH_COMMANDS,
@@ -638,7 +634,7 @@ describe("restoreSessionNote", () => {
 		const archive: SessionNote = {
 			session: "old-session",
 			status: "idle",
-			queueMode: "auto",
+			queueMode: "listen",
 			displayName: "Old Display",
 			summary: "old summary",
 			notes: "some notes",
@@ -660,11 +656,11 @@ describe("restoreSessionNote", () => {
 
 	it("uses provided queueMode", () => {
 		const archive: SessionNote = {
-			session: "old", status: "idle", queueMode: "auto",
+			session: "old", status: "idle", queueMode: "manual",
 			displayName: "", summary: "", notes: "", history: [], queue: [],
 		};
-		const result = restoreSessionNote(archive, "new-1", "auto");
-		assert.equal(result.queueMode, "auto");
+		const result = restoreSessionNote(archive, "new-1", "listen");
+		assert.equal(result.queueMode, "listen");
 	});
 
 	it("does not mutate the archive", () => {
@@ -1439,26 +1435,6 @@ describe("copyHistoryItemToQueue", () => {
 	});
 });
 
-// --- shouldAutoSendAfterEdit ---
-
-describe("shouldAutoSendAfterEdit", () => {
-	it("returns true when queue has exactly 1 item", () => {
-		assert.equal(shouldAutoSendAfterEdit(1), true);
-	});
-
-	it("returns false when queue is empty", () => {
-		assert.equal(shouldAutoSendAfterEdit(0), false);
-	});
-
-	it("returns false when queue has 2 items", () => {
-		assert.equal(shouldAutoSendAfterEdit(2), false);
-	});
-
-	it("returns false when queue has many items", () => {
-		assert.equal(shouldAutoSendAfterEdit(10), false);
-	});
-});
-
 // --- validateProjectKey ---
 
 describe("validateProjectKey", () => {
@@ -1822,35 +1798,33 @@ describe("cancelCopyModeArgs", () => {
 // --- QueueMode helpers ---
 
 describe("nextQueueMode", () => {
-	it("cycles manual → listen → auto → manual", () => {
+	// M7: "auto" mode is gone — lighthouse Job B owns auto-send. The
+	// cycle is now binary: manual ↔ listen.
+	it("cycles manual → listen → manual (no auto)", () => {
 		assert.equal(nextQueueMode("manual"), "listen");
-		assert.equal(nextQueueMode("listen"), "auto");
-		assert.equal(nextQueueMode("auto"), "manual");
+		assert.equal(nextQueueMode("listen"), "manual");
 	});
 });
 
 describe("queueModeLabel", () => {
-	it("returns human-readable labels", () => {
+	it("returns human-readable labels for the two surviving modes", () => {
 		assert.equal(queueModeLabel("manual"), "Manual");
 		assert.equal(queueModeLabel("listen"), "Listen");
-		assert.equal(queueModeLabel("auto"), "Auto");
 	});
 });
 
 describe("queueModeTooltip", () => {
-	it("includes mode description and next mode hint", () => {
+	it("includes mode description and the other mode as next hint", () => {
 		assert.ok(queueModeTooltip("manual").includes("Manual"));
 		assert.ok(queueModeTooltip("manual").includes("Listen"));
 		assert.ok(queueModeTooltip("listen").includes("Listen"));
-		assert.ok(queueModeTooltip("listen").includes("Auto"));
-		assert.ok(queueModeTooltip("auto").includes("Auto"));
-		assert.ok(queueModeTooltip("auto").includes("Manual"));
+		assert.ok(queueModeTooltip("listen").includes("Manual"));
 	});
 });
 
 describe("QUEUE_MODES", () => {
-	it("contains all three modes", () => {
-		assert.deepEqual([...QUEUE_MODES], ["manual", "listen", "auto"]);
+	it("contains exactly manual + listen (auto removed in M7)", () => {
+		assert.deepEqual([...QUEUE_MODES], ["manual", "listen"]);
 	});
 });
 
@@ -1861,8 +1835,13 @@ describe("parseSessionNote queueMode", () => {
 	});
 
 	it("parses queueMode from frontmatter", () => {
+		const note = parseSessionNote("---\nsession: test\nstatus: idle\nqueueMode: listen\n---\n\n## History\n\n## Queue\n");
+		assert.equal(note.queueMode, "listen");
+	});
+
+	it("falls back to manual when queueMode is the legacy 'auto' value (M7 removed auto)", () => {
 		const note = parseSessionNote("---\nsession: test\nstatus: idle\nqueueMode: auto\n---\n\n## History\n\n## Queue\n");
-		assert.equal(note.queueMode, "auto");
+		assert.equal(note.queueMode, "manual");
 	});
 
 	it("ignores invalid queueMode values", () => {
@@ -1887,14 +1866,8 @@ describe("createDefaultSessionNote queueMode", () => {
 	});
 
 	it("uses custom queueMode when provided", () => {
-		const content = createDefaultSessionNote("test-session", "auto");
-		assert.ok(content.includes("queueMode: auto"));
-		const parsed = parseSessionNote(content);
-		assert.equal(parsed.queueMode, "auto");
-	});
-
-	it("uses listen mode when provided", () => {
 		const content = createDefaultSessionNote("test-session", "listen");
+		assert.ok(content.includes("queueMode: listen"));
 		const parsed = parseSessionNote(content);
 		assert.equal(parsed.queueMode, "listen");
 	});
@@ -2797,51 +2770,6 @@ describe("parseStopSignal with stop_reason", () => {
 		assert.equal(signal.stopReason, null);
 	});
 });
-
-// ---------------------------------------------------------------------------
-// autoSendAction
-// ---------------------------------------------------------------------------
-
-describe("autoSendAction", () => {
-	it("returns 'none' for manual mode regardless of other params", () => {
-		assert.equal(autoSendAction("manual", "done", 5), "none");
-		assert.equal(autoSendAction("manual", "asking", 5), "none");
-		assert.equal(autoSendAction("manual", null, 5), "none");
-	});
-
-	it("returns 'none' when stopReason is 'asking'", () => {
-		assert.equal(autoSendAction("auto", "asking", 5), "none");
-		assert.equal(autoSendAction("listen", "asking", 5), "none");
-	});
-
-	it("returns 'none' when queue is empty", () => {
-		assert.equal(autoSendAction("auto", "done", 0), "none");
-		assert.equal(autoSendAction("listen", "done", 0), "none");
-	});
-
-	it("returns 'send' for auto mode + done + queue non-empty", () => {
-		assert.equal(autoSendAction("auto", "done", 3), "send");
-	});
-
-	it("returns 'send' for auto mode + null reason + queue non-empty", () => {
-		assert.equal(autoSendAction("auto", null, 1), "send");
-	});
-
-	it("returns 'notify' for listen mode + done + queue non-empty", () => {
-		assert.equal(autoSendAction("listen", "done", 2), "notify");
-	});
-
-	it("returns 'notify' for listen mode + null reason + queue non-empty", () => {
-		assert.equal(autoSendAction("listen", null, 1), "notify");
-	});
-});
-
-describe("AUTO_SEND_COUNTDOWN_MS", () => {
-	it("is 3000ms", () => {
-		assert.equal(AUTO_SEND_COUNTDOWN_MS, 3000);
-	});
-});
-
 
 // --- SessionNote displayName ---
 
@@ -3905,7 +3833,7 @@ describe("pinnedNote removal", () => {
 			"session: legacy",
 			"status: running",
 			"pinnedNote: 01_Projects/old/note.md",
-			"queueMode: auto",
+			"queueMode: listen",
 			"---",
 			"",
 			"## Notes",
@@ -3921,7 +3849,7 @@ describe("pinnedNote removal", () => {
 		const note = parseSessionNote(md, "legacy");
 		assert.equal(note.session, "legacy");
 		assert.equal(note.status, "running");
-		assert.equal(note.queueMode, "auto");
+		assert.equal(note.queueMode, "listen");
 		assert.equal(note.notes, "some notes");
 		assert.equal(note.history.length, 1);
 		assert.equal(note.queue.length, 1);
@@ -4014,35 +3942,6 @@ describe("unregisterConfirmText", () => {
 		const text = unregisterConfirmText(2);
 		assert.ok(text.includes("2"));
 		assert.ok(text.includes("sessions"));
-	});
-});
-
-// ---------------------------------------------------------------------------
-// resolveClaudeIdle
-// ---------------------------------------------------------------------------
-
-describe("resolveClaudeIdle", () => {
-	it("external modify: does not promote idle when prev was not idle", () => {
-		assert.equal(resolveClaudeIdle(false, "idle", true), false);
-	});
-
-	it("external modify: keeps idle when prev was idle", () => {
-		assert.equal(resolveClaudeIdle(true, "idle", true), true);
-	});
-
-	it("external modify: respects non-idle note status", () => {
-		assert.equal(resolveClaudeIdle(true, "running", true), false);
-		assert.equal(resolveClaudeIdle(false, "running", true), false);
-	});
-
-	it("non-external: uses note status directly", () => {
-		assert.equal(resolveClaudeIdle(false, "idle", false), true);
-		assert.equal(resolveClaudeIdle(true, "running", false), false);
-	});
-
-	it("non-external: idle note status sets idle regardless of prev", () => {
-		assert.equal(resolveClaudeIdle(false, "idle", false), true);
-		assert.equal(resolveClaudeIdle(true, "idle", false), true);
 	});
 });
 
@@ -4404,7 +4303,7 @@ describe("summarizeSessionNote", () => {
 		const note: SessionNote = {
 			session: "test",
 			status: "running",
-			queueMode: "auto",
+			queueMode: "listen",
 			displayName: "My Session",
 			summary: "",
 			notes: "",
@@ -4416,7 +4315,7 @@ describe("summarizeSessionNote", () => {
 		assert.equal(result.lastActivity, "2026-04-20 14:30");
 		assert.equal(result.displayName, "My Session");
 		assert.equal(result.status, "running");
-		assert.equal(result.queueMode, "auto");
+		assert.equal(result.queueMode, "listen");
 		assert.ok(result.preview !== null);
 	});
 
