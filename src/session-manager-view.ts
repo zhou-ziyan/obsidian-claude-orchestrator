@@ -40,6 +40,7 @@ import {
 	summarizeSessionNote,
 	computeRelinkTarget,
 } from "./utils";
+import { getLighthouseQueueForTmuxName } from "./lighthouse-client";
 import { findTerminalLeafBySession, collectOpenSessionNames } from "./workspace-helpers";
 import type { ProjectConfig, PtyLevel } from "./utils";
 import type ClaudeOrchestratorPlugin from "./main";
@@ -313,6 +314,18 @@ export class SessionManagerView extends ItemView {
 			try {
 				const content = await this.app.vault.read(file);
 				const note = parseSessionNote(content, s.name);
+				// M6 stage 1: queue / history come from lighthouse so the
+				// SM card's queueCount + lastActivity reflect the SQLite
+				// truth, not the (now-frozen) vault `## Queue` section.
+				// Other note fields (status / displayName / queueMode /
+				// preview) still come from the vault parse — those
+				// migrate in M7+. /api/db/sessions is cached so the N
+				// per-session fetches share one resolution round-trip.
+				const lh = await getLighthouseQueueForTmuxName(s.name);
+				if (lh.available) {
+					note.queue = lh.queue;
+					note.history = lh.history;
+				}
 				noteData.set(s.name, summarizeSessionNote(note));
 			} catch {
 				// Note read failed — skip

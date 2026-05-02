@@ -911,6 +911,19 @@
     font-style: italic;
 }
 
+/* M6 stage 1: lighthouse offline banner. Sits above the queue list when
+   /api/sessions/<id>/queue isn't reachable (mac-mini off, Tailscale
+   dropped) so the empty queue isn't read as "all caught up". */
+.co-lighthouse-offline-banner {
+    font-size: 11px;
+    color: var(--co-warn, #d4a14a);
+    background: rgba(212, 161, 74, 0.08);
+    border: 1px solid rgba(212, 161, 74, 0.25);
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin-bottom: 6px;
+}
+
 .co-queue-bar {
     display: flex;
     flex-direction: row;

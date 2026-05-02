@@ -49,6 +49,7 @@ import {
 	prepareQueueTaskText,
 } from "./utils";
 import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry, ThemeName } from "./utils";
+import { getLighthouseQueueForTmuxName } from "./lighthouse-client";
 import { Terminal } from "@xterm/xterm";
 import type { IPty } from "node-pty";
 import * as os from "os";
@@ -944,6 +945,14 @@ export class TerminalView extends ItemView {
 
 	private sessionNoteLoaded = false;
 	private savingSessionNote = false;
+	// M6 stage 1: Queue / History display reads from lighthouse
+	// (/api/sessions/<id>/queue) instead of the vault note. When the
+	// fetch succeeds we override note.queue / note.history with the
+	// lighthouse split; when it fails we render an offline banner above
+	// the queue list and show empty queue/history. Other note fields
+	// (status / queueMode / displayName / notes / summary) still come
+	// from the vault parse — those move to lighthouse in M7+.
+	private lighthouseOffline = false;
 
 	private async loadSessionNote(gen?: number, externalModify = false): Promise<void> {
 		if (!this.project || !this.sessionName) return;
@@ -967,6 +976,22 @@ export class TerminalView extends ItemView {
 		if (this.sessionNote.session !== this.sessionName) {
 			this.sessionNote.session = this.sessionName;
 			void this.saveSessionNote();
+		}
+		// M6 stage 1: override Queue / History from lighthouse before any
+		// render runs. parseSessionNote is still authoritative for status /
+		// queueMode / displayName / notes — those don't have a lighthouse
+		// home yet (M7+). If lighthouse is offline we degrade to empty
+		// queue + banner; renderQueue() reads this.lighthouseOffline.
+		const lh = await getLighthouseQueueForTmuxName(this.sessionName);
+		if (this.lifecycle.isStale(myGen)) return;
+		if (lh.available) {
+			this.sessionNote.queue = lh.queue;
+			this.sessionNote.history = lh.history;
+			this.lighthouseOffline = false;
+		} else {
+			this.sessionNote.queue = [];
+			this.sessionNote.history = [];
+			this.lighthouseOffline = true;
 		}
 		this.claudeIdle = resolveClaudeIdle(this.claudeIdle, this.sessionNote.status, externalModify);
 		this.loadedAt = Date.now();
@@ -1081,6 +1106,17 @@ export class TerminalView extends ItemView {
 
 		if (this.sendBtn) {
 			this.sendBtn.dataset.variant = this.sessionNote.queue.length > 0 ? "primary" : "secondary";
+		}
+
+		// M6 stage 1: surface the lighthouse-unreachable state so Zoey
+		// knows the queue view is stale (mac-mini off / Tailscale dropped
+		// / lighthouse not running). Sits above the queue list so it's
+		// still visible when the list is empty.
+		if (this.lighthouseOffline) {
+			this.queueList.createDiv({
+				cls: "co-lighthouse-offline-banner",
+				text: "⚠️ lighthouse 不可达，queue 视图离线",
+			});
 		}
 
 		if (this.sessionNote.queue.length === 0) {
