@@ -48,6 +48,9 @@ import {
 	isSessionIdle,
 	IDLE_THRESHOLD_MS,
 	parseStopSignal,
+	stopSignalDisposition,
+	isStaleSignalFile,
+	STOP_SIGNAL_TTL_MS,
 	STOP_SIGNAL_DIR,
 	stopSignalFileName,
 	getPtyStatus,
@@ -4986,5 +4989,64 @@ describe("sessionNameFromNotePath", () => {
 
 	it("ignores non-markdown files", () => {
 		assert.equal(sessionNameFromNotePath("01_Projects/Alpha/sessions/Alpha-2.txt", projects), null);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Multi-vault stop signal isolation
+// ---------------------------------------------------------------------------
+
+describe("parseStopSignal vault field", () => {
+	it("parses the vault field when present", () => {
+		const sig = parseStopSignal(JSON.stringify({ tmux_session: "P-1", timestamp: 1, vault: "Work" }));
+		assert.equal(sig?.vault, "Work");
+	});
+
+	it("returns null vault for legacy signals", () => {
+		const sig = parseStopSignal(JSON.stringify({ tmux_session: "P-1", timestamp: 1 }));
+		assert.equal(sig?.vault, null);
+	});
+});
+
+describe("stopSignalDisposition", () => {
+	const projects: ProjectRegistry = { "Alpha": { vaultFolder: "01_Projects/Alpha" } };
+
+	it("consumes signals tagged with our vault for a known project", () => {
+		const sig = parseStopSignal(JSON.stringify({ tmux_session: "Alpha-1", timestamp: 1, vault: "Work" }))!;
+		assert.deepStrictEqual(stopSignalDisposition(sig, "Work", projects), { action: "consume", project: "Alpha" });
+	});
+
+	it("ignores (does not delete) signals tagged with another vault", () => {
+		const sig = parseStopSignal(JSON.stringify({ tmux_session: "Beta-1", timestamp: 1, vault: "Personal" }))!;
+		assert.deepStrictEqual(stopSignalDisposition(sig, "Work", projects), { action: "ignore", project: null });
+	});
+
+	it("consumes legacy untagged signals for a known project", () => {
+		const sig = parseStopSignal(JSON.stringify({ tmux_session: "Alpha-2", timestamp: 1 }))!;
+		assert.deepStrictEqual(stopSignalDisposition(sig, "Work", projects), { action: "consume", project: "Alpha" });
+	});
+
+	it("ignores legacy untagged signals for unknown projects (another vault may claim them)", () => {
+		const sig = parseStopSignal(JSON.stringify({ tmux_session: "Mystery-1", timestamp: 1 }))!;
+		assert.deepStrictEqual(stopSignalDisposition(sig, "Work", projects), { action: "ignore", project: null });
+	});
+
+	it("discards our-vault signals with no matching project (nobody else will claim them)", () => {
+		const sig = parseStopSignal(JSON.stringify({ tmux_session: "Gone-1", timestamp: 1, vault: "Work" }))!;
+		assert.deepStrictEqual(stopSignalDisposition(sig, "Work", projects), { action: "discard", project: null });
+	});
+
+	it("discards unparseable signals", () => {
+		assert.deepStrictEqual(stopSignalDisposition(null, "Work", projects), { action: "discard", project: null });
+	});
+});
+
+describe("isStaleSignalFile", () => {
+	it("flags files older than the TTL", () => {
+		assert.equal(isStaleSignalFile(0, STOP_SIGNAL_TTL_MS + 1), true);
+	});
+
+	it("keeps fresh files", () => {
+		assert.equal(isStaleSignalFile(1000, 1000 + STOP_SIGNAL_TTL_MS - 1), false);
 	});
 });
