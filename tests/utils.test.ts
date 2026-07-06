@@ -4903,3 +4903,78 @@ describe("groupSessionsByProject vault isolation", () => {
 		assert.equal(unmanaged?.sessions.length, 2);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Session note round-trip fidelity (P0: never destroy user content)
+// ---------------------------------------------------------------------------
+
+describe("session note round-trip fidelity", () => {
+	const fm = ["---", "session: s-1", "status: idle", "queueMode: manual"];
+
+	it("preserves unknown frontmatter keys (e.g. pinnedNote) through parse→serialize", () => {
+		const md = [...fm, "pinnedNote: \"[[Some Note]]\"", "tags: claude", "---", "", "## Notes", "", "## History", "", "## Queue", ""].join("\n");
+		const out = serializeSessionNote(parseSessionNote(md, "s-1"));
+		assert.ok(out.includes("pinnedNote: \"[[Some Note]]\""));
+		assert.ok(out.includes("tags: claude"));
+		const fmEnd = out.indexOf("---", 3);
+		assert.ok(out.indexOf("pinnedNote:") < fmEnd, "unknown keys stay inside frontmatter");
+	});
+
+	it("preserves a custom section and its position between Notes and History", () => {
+		const md = [...fm, "---", "", "## Notes", "note line", "", "## Design", "decision A", "decision B", "", "## History", "- [x] done", "", "## Queue", "- next", ""].join("\n");
+		const out = serializeSessionNote(parseSessionNote(md, "s-1"));
+		assert.ok(out.includes("## Design"));
+		assert.ok(out.includes("decision A\ndecision B"));
+		assert.ok(out.indexOf("## Notes") < out.indexOf("## Design"));
+		assert.ok(out.indexOf("## Design") < out.indexOf("## History"));
+	});
+
+	it("preserves multiple custom sections in order after Queue", () => {
+		const md = [...fm, "---", "", "## Notes", "", "## History", "", "## Queue", "- next", "", "## Alpha", "a", "", "## Beta", "b", ""].join("\n");
+		const out = serializeSessionNote(parseSessionNote(md, "s-1"));
+		assert.ok(out.indexOf("## Queue") < out.indexOf("## Alpha"));
+		assert.ok(out.indexOf("## Alpha") < out.indexOf("## Beta"));
+		assert.ok(out.includes("a"));
+		assert.ok(out.includes("b"));
+	});
+
+	it("preserves preamble content before the first heading", () => {
+		const md = [...fm, "---", "", "Intro paragraph kept by hand.", "", "## Notes", "", "## History", "", "## Queue", ""].join("\n");
+		const out = serializeSessionNote(parseSessionNote(md, "s-1"));
+		assert.ok(out.includes("Intro paragraph kept by hand."));
+		assert.ok(out.indexOf("Intro paragraph") < out.indexOf("## Notes"));
+	});
+
+	it("survives a second round-trip unchanged (stable fixpoint)", () => {
+		const md = [...fm, "pinnedNote: x", "---", "", "pre", "", "## Custom", "body", "", "## Notes", "n", "", "## History", "- [x] h", "", "## Queue", "- q", ""].join("\n");
+		const once = serializeSessionNote(parseSessionNote(md, "s-1"));
+		const twice = serializeSessionNote(parseSessionNote(once, "s-1"));
+		assert.equal(twice, once);
+	});
+
+	it("keeps canonical notes free of fidelity fields (no behavior change for default notes)", () => {
+		const note = parseSessionNote(createDefaultSessionNote("s-1"), "s-1");
+		assert.equal(note.extraFrontmatter, undefined);
+		assert.equal(note.preamble, undefined);
+		assert.equal(note.extraSections, undefined);
+		assert.equal(note.sectionSeq, undefined);
+	});
+
+	it("status update in memory keeps custom sections on save", () => {
+		const md = [...fm, "---", "", "## Notes", "", "## Scratch", "keep me", "", "## History", "", "## Queue", ""].join("\n");
+		const note = parseSessionNote(md, "s-1");
+		note.status = "running";
+		const out = serializeSessionNote(note);
+		assert.ok(out.includes("status: running"));
+		assert.ok(out.includes("## Scratch"));
+		assert.ok(out.includes("keep me"));
+	});
+
+	it("does not duplicate a known section that appears twice in the source", () => {
+		const md = [...fm, "---", "", "## Queue", "- a", "", "## Queue", "- b", "", "## Notes", "", "## History", ""].join("\n");
+		const parsed = parseSessionNote(md, "s-1");
+		assert.deepStrictEqual(parsed.queue, ["a", "b"]);
+		const out = serializeSessionNote(parsed);
+		assert.equal(out.match(/^## Queue$/gm)?.length, 1);
+	});
+});
