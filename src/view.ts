@@ -18,6 +18,7 @@ import {
 	quickReplyLabel,
 	cancelCopyModeArgs,
 	buildTmuxSessionArgs,
+	computeTerminalFit,
 	terminalPageKey,
 	tmuxPageArgs,
 	parseOsc52Clipboard,
@@ -125,27 +126,27 @@ export class TerminalView extends ItemView {
 		if (!this.term || !this.host) return;
 		/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment -- xterm internal API (same pattern as FitAddon) */
 		const dims = (this.term as any)._core?._renderService?.dimensions;
-		if (!dims || dims.css.cell.width === 0 || dims.css.cell.height === 0) return;
-		const rect = this.host.getBoundingClientRect();
-		const cols = Math.max(2, Math.floor(rect.width / dims.css.cell.width));
-		const rows = Math.max(1, Math.floor(rect.height / dims.css.cell.height));
+		const cellWidth: number = dims?.css.cell.width ?? 0;
+		const cellHeight: number = dims?.css.cell.height ?? 0;
 		/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
-		if (this.term.cols !== cols || this.term.rows !== rows) {
-			this.term.resize(cols, rows);
+		const rect = this.host.getBoundingClientRect();
+		const fit = computeTerminalFit(rect.width, rect.height, cellWidth, cellHeight);
+		if (!fit) return;
+		if (this.term.cols !== fit.cols || this.term.rows !== fit.rows) {
+			this.term.resize(fit.cols, fit.rows);
 		}
 	}
 
+	// The PTY is the single source of truth for terminal size: resizing it
+	// delivers SIGWINCH to tmux, which resizes the window (window-size
+	// latest). No `resize-window -x -y` here — that command flips the window
+	// into manual sizing, permanently detaching it from client resizes, and
+	// concurrent execs raced each other leaving stale sizes.
 	private fitAndResize(): void {
 		if (!this.host || this.host.clientWidth < 50) return;
 		this.fitTerminal();
 		if (this.term && this.ptyProcess) {
 			try { this.ptyProcess.resize(this.term.cols, this.term.rows); } catch { /* ignore */ }
-		}
-		if (this.sessionName && this.term) {
-			void execTmux([
-				"resize-window", "-t", this.sessionName,
-				"-x", String(this.term.cols), "-y", String(this.term.rows),
-			]).catch(() => {});
 		}
 	}
 

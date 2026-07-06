@@ -759,10 +759,37 @@ export function cancelCopyModeArgs(sessionName: string): string[] {
  * run when `-A` attaches to a pre-existing session.
  */
 export function buildTmuxSessionArgs(sessionName: string, vaultName: string): string[] {
+	// window-size latest: PTY (client) resizes drive the window size. Also
+	// heals sessions stuck in `manual` mode by older plugin versions whose
+	// `resize-window -x -y` calls set the manual flag and froze client sizing.
 	return ["new-session", "-A", "-s", sessionName,
 		";", "set-option", "status", "off",
 		";", "set-option", "mouse", "on",
+		";", "set-option", "-w", "window-size", "latest",
 		";", "set-option", "@co_vault", vaultName];
+}
+
+export const TERMINAL_MIN_FIT_WIDTH = 50;
+export const TERMINAL_MIN_FIT_HEIGHT = 10;
+
+/**
+ * Cols/rows for a host rect, or null when fitting must be skipped: cell
+ * metrics not measured yet, or the host is hidden/collapsed (a zero-size
+ * rect would otherwise resize xterm to 2x1 and mangle the alt screen while
+ * the PTY stays at the real size).
+ */
+export function computeTerminalFit(
+	rectWidth: number,
+	rectHeight: number,
+	cellWidth: number,
+	cellHeight: number,
+): { cols: number; rows: number } | null {
+	if (cellWidth <= 0 || cellHeight <= 0) return null;
+	if (rectWidth < TERMINAL_MIN_FIT_WIDTH || rectHeight < TERMINAL_MIN_FIT_HEIGHT) return null;
+	return {
+		cols: Math.max(2, Math.floor(rectWidth / cellWidth)),
+		rows: Math.max(1, Math.floor(rectHeight / cellHeight)),
+	};
 }
 
 export interface TerminalPageKeyResult {
