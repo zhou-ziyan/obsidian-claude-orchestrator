@@ -66,6 +66,7 @@ import {
 	autoSendAction,
 	AUTO_SEND_COUNTDOWN_MS,
 	ensureStopHookConfig,
+	ensureNotificationHookConfig,
 	parseQuickReplyKeys,
 	SLASH_COMMANDS,
 	filterSlashCommands,
@@ -5048,5 +5049,54 @@ describe("isStaleSignalFile", () => {
 
 	it("keeps fresh files", () => {
 		assert.equal(isStaleSignalFile(1000, 1000 + STOP_SIGNAL_TTL_MS - 1), false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// ensureNotificationHookConfig (asking via Notification hook)
+// ---------------------------------------------------------------------------
+
+describe("ensureNotificationHookConfig", () => {
+	const scriptPath = "/Users/z/.obsidian/plugins/claude-orchestrator/scripts/co-notification-hook.sh";
+
+	it("registers the Notification hook in empty settings", () => {
+		const result = ensureNotificationHookConfig("{}", scriptPath);
+		assert.equal(result.updated, true);
+		const parsed = JSON.parse(result.content) as { hooks: { Notification: { hooks: { command: string }[] }[] } };
+		const cmd = parsed.hooks.Notification[0]!.hooks[0]!.command;
+		assert.ok(cmd.includes("co-notification-hook.sh"));
+		assert.ok(cmd.startsWith("'"), "path is shell-quoted (iCloud paths contain spaces)");
+	});
+
+	it("is idempotent when already registered", () => {
+		const once = ensureNotificationHookConfig("{}", scriptPath);
+		const twice = ensureNotificationHookConfig(once.content, scriptPath);
+		assert.equal(twice.updated, false);
+	});
+
+	it("repairs a stale or unquoted command in place", () => {
+		const stale = JSON.stringify({
+			hooks: { Notification: [{ matcher: "*", hooks: [{ type: "command", command: "/old/path/co-notification-hook.sh" }] }] },
+		});
+		const result = ensureNotificationHookConfig(stale, scriptPath);
+		assert.equal(result.updated, true);
+		assert.ok(result.content.includes("'" + scriptPath + "'"));
+	});
+
+	it("leaves Stop hook entries untouched", () => {
+		const withStop = ensureStopHookConfig("{}", "/p/co-stop-hook.sh").content;
+		const result = ensureNotificationHookConfig(withStop, scriptPath);
+		const parsed = JSON.parse(result.content) as { hooks: Record<string, unknown[]> };
+		assert.equal(parsed.hooks.Stop?.length, 1);
+		assert.equal(parsed.hooks.Notification?.length, 1);
+	});
+
+	it("does not clobber unrelated settings or invalid JSON", () => {
+		const withOther = JSON.stringify({ model: "opus", hooks: { PreToolUse: [] } });
+		const result = ensureNotificationHookConfig(withOther, scriptPath);
+		const parsed = JSON.parse(result.content) as Record<string, unknown>;
+		assert.equal(parsed.model, "opus");
+		assert.deepStrictEqual((parsed.hooks as Record<string, unknown>).PreToolUse, []);
+		assert.equal(ensureNotificationHookConfig("not json", scriptPath).updated, false);
 	});
 });
