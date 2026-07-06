@@ -33,6 +33,9 @@ import {
 	quickReplyLabel,
 	cancelCopyModeArgs,
 	buildTmuxSessionArgs,
+	computeTerminalFit,
+	TERMINAL_MIN_FIT_WIDTH,
+	TERMINAL_MIN_FIT_HEIGHT,
 	nextQueueMode,
 	queueModeLabel,
 	queueModeTooltip,
@@ -4728,9 +4731,44 @@ describe("buildTmuxSessionArgs", () => {
 		assert.ok(joined.includes("set-option @co_vault MyVault"));
 	});
 
+	it("resets window-size to latest so PTY resizes drive tmux (heals manual-sized legacy sessions)", () => {
+		const joined = buildTmuxSessionArgs("s", "V").join(" ");
+		assert.ok(joined.includes("set-option -w window-size latest"));
+	});
+
 	it("chains options with ; so they also apply when attaching to an existing session", () => {
 		const args = buildTmuxSessionArgs("s", "V");
-		assert.equal(args.filter((a) => a === ";").length, 3);
+		assert.equal(args.filter((a) => a === ";").length, 4);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// computeTerminalFit
+// ---------------------------------------------------------------------------
+
+describe("computeTerminalFit", () => {
+	it("computes cols and rows from host rect and cell size", () => {
+		assert.deepStrictEqual(computeTerminalFit(800, 600, 8, 17), { cols: 100, rows: 35 });
+	});
+
+	it("floors partial cells", () => {
+		assert.deepStrictEqual(computeTerminalFit(807, 605, 8, 17), { cols: 100, rows: 35 });
+	});
+
+	it("returns null when cell metrics are not ready", () => {
+		assert.equal(computeTerminalFit(800, 600, 0, 17), null);
+		assert.equal(computeTerminalFit(800, 600, 8, 0), null);
+	});
+
+	it("returns null for hidden or collapsed hosts instead of resizing to 2x1", () => {
+		assert.equal(computeTerminalFit(0, 0, 8, 17), null);
+		assert.equal(computeTerminalFit(TERMINAL_MIN_FIT_WIDTH - 1, 600, 8, 17), null);
+		assert.equal(computeTerminalFit(800, TERMINAL_MIN_FIT_HEIGHT - 1, 8, 17), null);
+	});
+
+	it("clamps to at least 2 cols and 1 row for small-but-visible hosts", () => {
+		const result = computeTerminalFit(TERMINAL_MIN_FIT_WIDTH, TERMINAL_MIN_FIT_HEIGHT, 40, 40);
+		assert.deepStrictEqual(result, { cols: 2, rows: 1 });
 	});
 });
 
