@@ -376,6 +376,11 @@ export interface HistoryItem {
 	completed: boolean;
 }
 
+export interface ExtraSection {
+	heading: string;
+	body: string;
+}
+
 export interface SessionNote {
 	session: string;
 	status: SessionStatus;
@@ -385,6 +390,13 @@ export interface SessionNote {
 	notes: string;
 	history: HistoryItem[];
 	queue: string[];
+	// Fidelity fields — parse sets them only when the source deviates from
+	// the canonical template, and serialize replays them verbatim, so user-
+	// or agent-added content is never destroyed by a plugin save.
+	extraFrontmatter?: string[];
+	preamble?: string;
+	extraSections?: ExtraSection[];
+	sectionSeq?: ("notes" | "history" | "queue" | number)[];
 }
 
 /**
@@ -457,6 +469,10 @@ export function restoreSessionNote(
 		notes: archive.notes,
 		history: archive.history.map((h) => ({ ...h })),
 		queue: [...archive.queue],
+		...(archive.extraFrontmatter ? { extraFrontmatter: [...archive.extraFrontmatter] } : {}),
+		...(archive.preamble ? { preamble: archive.preamble } : {}),
+		...(archive.extraSections ? { extraSections: archive.extraSections.map((s) => ({ ...s })) } : {}),
+		...(archive.sectionSeq ? { sectionSeq: [...archive.sectionSeq] } : {}),
 	};
 }
 
@@ -496,14 +512,20 @@ export function parseSessionNote(
 	const lines = markdown.split("\n");
 	let i = 0;
 
+	const KNOWN_FM_KEYS = new Set(["session", "status", "queueMode", "displayName", "summary"]);
+	// Plugin-written keys from removed features — consumed and dropped on
+	// save (deliberate migration), unlike user keys which are preserved.
+	const LEGACY_STRIP_FM_KEYS = new Set(["pinnedNote"]);
+	const extraFrontmatter: string[] = [];
+
 	// Parse frontmatter
 	if (lines[i]?.trim() === "---") {
 		i++;
 		while (i < lines.length && lines[i]?.trim() !== "---") {
 			const line = lines[i]!.trim();
 			const colonIdx = line.indexOf(":");
-			if (colonIdx !== -1) {
-				const key = line.slice(0, colonIdx).trim();
+			const key = colonIdx !== -1 ? line.slice(0, colonIdx).trim() : "";
+			if (KNOWN_FM_KEYS.has(key)) {
 				const value = line.slice(colonIdx + 1).trim();
 				if (key === "session") note.session = value;
 				if (key === "status" && isSessionStatus(value))
@@ -514,38 +536,87 @@ export function parseSessionNote(
 					note.displayName = value;
 				if (key === "summary" && value)
 					note.summary = value;
+			} else if (line !== "" && !LEGACY_STRIP_FM_KEYS.has(key)) {
+				// Unknown frontmatter (tags, aliases, agent-written keys, …) —
+				// preserve verbatim so a plugin save never destroys it.
+				extraFrontmatter.push(lines[i]!);
 			}
 			i++;
 		}
 		if (i < lines.length) i++; // skip closing ---
 	}
 
-	// Parse body sections
-	let currentSection: "none" | "notes" | "history" | "queue" = "none";
+	// Parse body sections. Everything the plugin doesn't own (content before
+	// the first heading, unknown ## sections) is captured raw and replayed
+	// in place by serializeSessionNote.
+	let currentSection: "preamble" | "notes" | "history" | "queue" | "extra" = "preamble";
 	const notesLines: string[] = [];
+	const preambleLines: string[] = [];
+	const extraSections: ExtraSection[] = [];
+	const sectionSeq: ("notes" | "history" | "queue" | number)[] = [];
+	const seenKnown = new Set<string>();
+	let extraLines: string[] = [];
+
+	const trimBlankEdges = (arr: string[]): string[] => {
+		const copy = [...arr];
+		while (copy.length > 0 && copy[0]!.trim() === "") copy.shift();
+		while (copy.length > 0 && copy[copy.length - 1]!.trim() === "") copy.pop();
+		return copy;
+	};
+
+	const closeExtra = (): void => {
+		if (currentSection === "extra" && extraSections.length > 0) {
+			extraSections[extraSections.length - 1]!.body = trimBlankEdges(extraLines).join("\n");
+		}
+		extraLines = [];
+	};
+
+	const enterKnown = (kind: "notes" | "history" | "queue"): void => {
+		closeExtra();
+		if (!seenKnown.has(kind)) {
+			seenKnown.add(kind);
+			sectionSeq.push(kind);
+		}
+		currentSection = kind;
+	};
 
 	while (i < lines.length) {
 		const line = lines[i]!;
 		const trimmed = line.trim();
 
 		if (trimmed.toLowerCase() === "## notes") {
-			currentSection = "notes";
+			enterKnown("notes");
 			i++;
 			continue;
 		}
 		if (trimmed.toLowerCase() === "## history") {
-			currentSection = "history";
+			enterKnown("history");
 			i++;
 			continue;
 		}
 		if (trimmed.toLowerCase() === "## queue") {
-			currentSection = "queue";
+			enterKnown("queue");
 			i++;
 			continue;
 		}
-		// Any other heading ends the current section
+		// Unknown heading — capture the section verbatim.
 		if (trimmed.startsWith("## ")) {
-			currentSection = "none";
+			closeExtra();
+			extraSections.push({ heading: trimmed, body: "" });
+			sectionSeq.push(extraSections.length - 1);
+			currentSection = "extra";
+			i++;
+			continue;
+		}
+
+		if (currentSection === "preamble") {
+			preambleLines.push(line);
+			i++;
+			continue;
+		}
+
+		if (currentSection === "extra") {
+			extraLines.push(line);
 			i++;
 			continue;
 		}
@@ -599,10 +670,23 @@ export function parseSessionNote(
 		i++;
 	}
 
+	closeExtra();
+
 	// Trim leading/trailing blank lines from notes
 	while (notesLines.length > 0 && notesLines[0]!.trim() === "") notesLines.shift();
 	while (notesLines.length > 0 && notesLines[notesLines.length - 1]!.trim() === "") notesLines.pop();
 	note.notes = notesLines.join("\n");
+
+	// Fidelity fields only when the source deviates from the canonical shape.
+	if (extraFrontmatter.length > 0) note.extraFrontmatter = extraFrontmatter;
+	const preamble = trimBlankEdges(preambleLines).join("\n");
+	if (preamble) note.preamble = preamble;
+	if (extraSections.length > 0) {
+		note.extraSections = extraSections;
+		note.sectionSeq = sectionSeq;
+	} else if (sectionSeq.length > 0 && sectionSeq.join(",") !== "notes,history,queue") {
+		note.sectionSeq = sectionSeq;
+	}
 
 	return note;
 }
@@ -628,31 +712,47 @@ export function serializeSessionNote(note: SessionNote): string {
 	];
 	if (note.displayName) lines.push(`displayName: ${note.displayName}`);
 	if (note.summary) lines.push(`summary: ${note.summary}`);
-	lines.push("---", "", "## Notes");
+	if (note.extraFrontmatter) lines.push(...note.extraFrontmatter);
+	lines.push("---");
 
-	if (note.notes) {
-		lines.push(note.notes);
+	if (note.preamble) lines.push("", note.preamble);
+
+	// Emit sections in source order; known sections missing from the
+	// sequence (or when no sequence was recorded) follow canonical order.
+	const seq: ("notes" | "history" | "queue" | number)[] = [...(note.sectionSeq ?? [])];
+	for (const kind of ["notes", "history", "queue"] as const) {
+		if (!seq.includes(kind)) seq.push(kind);
 	}
 
-	lines.push("", "## History");
-
-	for (const item of note.history) {
-		const mark = item.completed ? "x" : " ";
-		const itemLines = item.text.split("\n");
-		lines.push(`- [${mark}] ${itemLines[0]}`);
-		for (let j = 1; j < itemLines.length; j++) {
-			lines.push(`  ${itemLines[j]}`);
-		}
-	}
-
-	lines.push("");
-	lines.push("## Queue");
-
-	for (const item of note.queue) {
-		const itemLines = item.split("\n");
-		lines.push(`- ${itemLines[0]}`);
-		for (let j = 1; j < itemLines.length; j++) {
-			lines.push(`  ${itemLines[j]}`);
+	for (const kind of seq) {
+		if (kind === "notes") {
+			lines.push("", "## Notes");
+			if (note.notes) lines.push(note.notes);
+		} else if (kind === "history") {
+			lines.push("", "## History");
+			for (const item of note.history) {
+				const mark = item.completed ? "x" : " ";
+				const itemLines = item.text.split("\n");
+				lines.push(`- [${mark}] ${itemLines[0]}`);
+				for (let j = 1; j < itemLines.length; j++) {
+					lines.push(`  ${itemLines[j]}`);
+				}
+			}
+		} else if (kind === "queue") {
+			lines.push("", "## Queue");
+			for (const item of note.queue) {
+				const itemLines = item.split("\n");
+				lines.push(`- ${itemLines[0]}`);
+				for (let j = 1; j < itemLines.length; j++) {
+					lines.push(`  ${itemLines[j]}`);
+				}
+			}
+		} else {
+			const extra = note.extraSections?.[kind];
+			if (extra) {
+				lines.push("", extra.heading);
+				if (extra.body) lines.push(extra.body);
+			}
 		}
 	}
 

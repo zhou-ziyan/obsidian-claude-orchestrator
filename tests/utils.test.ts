@@ -4911,13 +4911,19 @@ describe("groupSessionsByProject vault isolation", () => {
 describe("session note round-trip fidelity", () => {
 	const fm = ["---", "session: s-1", "status: idle", "queueMode: manual"];
 
-	it("preserves unknown frontmatter keys (e.g. pinnedNote) through parse→serialize", () => {
-		const md = [...fm, "pinnedNote: \"[[Some Note]]\"", "tags: claude", "---", "", "## Notes", "", "## History", "", "## Queue", ""].join("\n");
+	it("preserves unknown frontmatter keys (e.g. tags, agent-written keys) through parse→serialize", () => {
+		const md = [...fm, "linkedTicket: \"[[Some Note]]\"", "tags: claude", "---", "", "## Notes", "", "## History", "", "## Queue", ""].join("\n");
 		const out = serializeSessionNote(parseSessionNote(md, "s-1"));
-		assert.ok(out.includes("pinnedNote: \"[[Some Note]]\""));
+		assert.ok(out.includes("linkedTicket: \"[[Some Note]]\""));
 		assert.ok(out.includes("tags: claude"));
 		const fmEnd = out.indexOf("---", 3);
-		assert.ok(out.indexOf("pinnedNote:") < fmEnd, "unknown keys stay inside frontmatter");
+		assert.ok(out.indexOf("linkedTicket:") < fmEnd, "unknown keys stay inside frontmatter");
+	});
+
+	it("still strips legacy plugin-written pinnedNote (deliberate migration)", () => {
+		const md = [...fm, "pinnedNote: old/path.md", "---", "", "## Notes", "", "## History", "", "## Queue", ""].join("\n");
+		const out = serializeSessionNote(parseSessionNote(md, "s-1"));
+		assert.ok(!out.includes("pinnedNote"));
 	});
 
 	it("preserves a custom section and its position between Notes and History", () => {
@@ -4946,7 +4952,7 @@ describe("session note round-trip fidelity", () => {
 	});
 
 	it("survives a second round-trip unchanged (stable fixpoint)", () => {
-		const md = [...fm, "pinnedNote: x", "---", "", "pre", "", "## Custom", "body", "", "## Notes", "n", "", "## History", "- [x] h", "", "## Queue", "- q", ""].join("\n");
+		const md = [...fm, "customKey: x", "---", "", "pre", "", "## Custom", "body", "", "## Notes", "n", "", "## History", "- [x] h", "", "## Queue", "- q", ""].join("\n");
 		const once = serializeSessionNote(parseSessionNote(md, "s-1"));
 		const twice = serializeSessionNote(parseSessionNote(once, "s-1"));
 		assert.equal(twice, once);
