@@ -32,7 +32,7 @@ import {
 	buildQuickReplyTmuxArgs,
 	quickReplyLabel,
 	cancelCopyModeArgs,
-	tmuxScrollArgs,
+	buildTmuxSessionArgs,
 	nextQueueMode,
 	queueModeLabel,
 	queueModeTooltip,
@@ -67,10 +67,9 @@ import {
 	parseSkillMd,
 	BUILTIN_SLASH_COMMANDS,
 	stripTimestamp,
-	handleTerminalScrollKey,
-	wheelDeltaToLines,
-	suppressXtermAltScreenWheel,
-	WHEEL_LINES_PER_PAGE,
+	terminalPageKey,
+	tmuxPageArgs,
+	parseOsc52Clipboard,
 	classifyAcKey,
 	allSessionNotePaths,
 	escapeLeadingBang,
@@ -3281,29 +3280,63 @@ describe("stripTimestamp", () => {
 	});
 });
 
-// --- handleTerminalScrollKey ---
+// --- terminalPageKey ---
 
-describe("handleTerminalScrollKey", () => {
-	it("scrolls up on PageUp and returns false", () => {
-		const calls: number[] = [];
-		const result = handleTerminalScrollKey("PageUp", (n) => calls.push(n));
-		assert.equal(result, false);
-		assert.deepStrictEqual(calls, [-1]);
+describe("terminalPageKey", () => {
+	it("routes PageUp keydown to tmux when a tmux session exists", () => {
+		const result = terminalPageKey("PageUp", "keydown", true);
+		assert.equal(result.suppress, true);
+		assert.deepStrictEqual(result.action, { target: "tmux", direction: "up" });
 	});
 
-	it("scrolls down on PageDown and returns false", () => {
-		const calls: number[] = [];
-		const result = handleTerminalScrollKey("PageDown", (n) => calls.push(n));
-		assert.equal(result, false);
-		assert.deepStrictEqual(calls, [1]);
+	it("routes PageDown keydown to tmux when a tmux session exists", () => {
+		const result = terminalPageKey("PageDown", "keydown", true);
+		assert.equal(result.suppress, true);
+		assert.deepStrictEqual(result.action, { target: "tmux", direction: "down" });
 	});
 
-	it("returns true and does not scroll for regular keys", () => {
-		const calls: number[] = [];
-		for (const key of ["a", "Enter", "ArrowUp", "ArrowDown", "Escape", "Tab"]) {
-			assert.equal(handleTerminalScrollKey(key, (n) => calls.push(n)), true);
+	it("falls back to local xterm scrollback without a tmux session", () => {
+		assert.deepStrictEqual(terminalPageKey("PageUp", "keydown", false).action, { target: "local", direction: "up" });
+		assert.deepStrictEqual(terminalPageKey("PageDown", "keydown", false).action, { target: "local", direction: "down" });
+	});
+
+	it("suppresses but does not act on keyup/keypress (no double paging)", () => {
+		for (const type of ["keyup", "keypress"]) {
+			const result = terminalPageKey("PageUp", type, true);
+			assert.equal(result.suppress, true);
+			assert.equal(result.action, null);
 		}
-		assert.deepStrictEqual(calls, []);
+	});
+
+	it("does not suppress or act on regular keys", () => {
+		for (const key of ["a", "Enter", "ArrowUp", "ArrowDown", "Escape", "Tab"]) {
+			const result = terminalPageKey(key, "keydown", true);
+			assert.equal(result.suppress, false);
+			assert.equal(result.action, null);
+		}
+	});
+});
+
+// --- tmuxPageArgs ---
+
+describe("tmuxPageArgs", () => {
+	it("pages up by entering copy-mode with -eu (repeatable while in copy-mode)", () => {
+		assert.deepStrictEqual(
+			tmuxPageArgs("session-1", "up"),
+			["copy-mode", "-eu", "-t", "session-1"],
+		);
+	});
+
+	it("pages down via copy-mode page-down (exits at bottom thanks to -e)", () => {
+		assert.deepStrictEqual(
+			tmuxPageArgs("session-1", "down"),
+			["send-keys", "-t", "session-1", "-X", "page-down"],
+		);
+	});
+
+	it("targets the given session name", () => {
+		assert.ok(tmuxPageArgs("15_Claude_Orchestrator-2", "up").includes("15_Claude_Orchestrator-2"));
+		assert.ok(tmuxPageArgs("15_Claude_Orchestrator-2", "down").includes("15_Claude_Orchestrator-2"));
 	});
 });
 
@@ -3373,45 +3406,38 @@ describe("allSessionNotePaths", () => {
 	});
 });
 
-// --- wheelDeltaToLines ---
+// --- parseOsc52Clipboard ---
 
-describe("wheelDeltaToLines", () => {
-	it("converts pixel deltas (mode 0) to lines using 20px step", () => {
-		assert.equal(wheelDeltaToLines(60, 0), 3);
-		assert.equal(wheelDeltaToLines(-60, 0), -3);
-		assert.equal(wheelDeltaToLines(100, 0), 5);
-		assert.equal(wheelDeltaToLines(-100, 0), -5);
+describe("parseOsc52Clipboard", () => {
+	it("decodes a clipboard set sequence (c;base64)", () => {
+		assert.equal(parseOsc52Clipboard("c;aGVsbG8="), "hello");
 	});
 
-	it("returns at least ±1 for small pixel deltas", () => {
-		assert.equal(wheelDeltaToLines(5, 0), 1);
-		assert.equal(wheelDeltaToLines(-5, 0), -1);
-		assert.equal(wheelDeltaToLines(19, 0), 1);
-		assert.equal(wheelDeltaToLines(-19, 0), -1);
+	it("decodes UTF-8 multibyte content", () => {
+		const b64 = Buffer.from("你好 Zoey", "utf8").toString("base64");
+		assert.equal(parseOsc52Clipboard(`c;${b64}`), "你好 Zoey");
 	});
 
-	it("returns 0 for zero delta", () => {
-		assert.equal(wheelDeltaToLines(0, 0), 0);
-		assert.equal(wheelDeltaToLines(0, 1), 0);
-		assert.equal(wheelDeltaToLines(0, 2), 0);
+	it("accepts other selection targets (p, s, empty)", () => {
+		assert.equal(parseOsc52Clipboard("p;aGk="), "hi");
+		assert.equal(parseOsc52Clipboard(";aGk="), "hi");
 	});
 
-	it("passes through line deltas (mode 1) directly", () => {
-		assert.equal(wheelDeltaToLines(3, 1), 3);
-		assert.equal(wheelDeltaToLines(-3, 1), -3);
-		assert.equal(wheelDeltaToLines(1, 1), 1);
+	it("returns null for clipboard query (?)", () => {
+		assert.equal(parseOsc52Clipboard("c;?"), null);
 	});
 
-	it("multiplies page deltas (mode 2) by WHEEL_LINES_PER_PAGE", () => {
-		assert.equal(wheelDeltaToLines(1, 2), WHEEL_LINES_PER_PAGE);
-		assert.equal(wheelDeltaToLines(-1, 2), -WHEEL_LINES_PER_PAGE);
-		assert.equal(wheelDeltaToLines(2, 2), 2 * WHEEL_LINES_PER_PAGE);
+	it("returns null for empty payload", () => {
+		assert.equal(parseOsc52Clipboard("c;"), null);
 	});
-});
 
-describe("suppressXtermAltScreenWheel", () => {
-	it("returns false to short-circuit xterm's built-in wheel handler", () => {
-		assert.equal(suppressXtermAltScreenWheel(), false);
+	it("returns null when the separator is missing", () => {
+		assert.equal(parseOsc52Clipboard("aGVsbG8="), null);
+	});
+
+	it("returns null for invalid base64", () => {
+		assert.equal(parseOsc52Clipboard("c;not base64!!"), null);
+		assert.equal(parseOsc52Clipboard("c;abc"), null);
 	});
 });
 
@@ -4681,31 +4707,30 @@ describe("prepareQueueTaskText", () => {
 });
 
 // ---------------------------------------------------------------------------
-// tmuxScrollArgs
+// buildTmuxSessionArgs
 // ---------------------------------------------------------------------------
 
-describe("tmuxScrollArgs", () => {
-	it("generates copy-mode -e and scroll-up for negative lines", () => {
-		const result = tmuxScrollArgs("session-1", -3);
-		assert.deepEqual(result.copyModeArgs, ["copy-mode", "-e", "-t", "session-1"]);
-		assert.deepEqual(result.scrollArgs, ["send-keys", "-t", "session-1", "-X", "-N", "3", "scroll-up"]);
+describe("buildTmuxSessionArgs", () => {
+	it("attaches-or-creates the named session", () => {
+		const args = buildTmuxSessionArgs("session-1", "Work");
+		assert.deepStrictEqual(args.slice(0, 4), ["new-session", "-A", "-s", "session-1"]);
 	});
 
-	it("generates scroll-down for positive lines", () => {
-		const result = tmuxScrollArgs("session-1", 5);
-		assert.deepEqual(result.scrollArgs, ["send-keys", "-t", "session-1", "-X", "-N", "5", "scroll-down"]);
+	it("enables mouse mode so wheel events flow through the PTY natively", () => {
+		const args = buildTmuxSessionArgs("session-1", "Work");
+		const joined = args.join(" ");
+		assert.ok(joined.includes("set-option mouse on"));
 	});
 
-	it("uses absolute value of lines for count", () => {
-		const result = tmuxScrollArgs("s", -1);
-		assert.ok(result.scrollArgs.includes("1"));
-		assert.ok(result.scrollArgs.includes("scroll-up"));
+	it("keeps status off and tags the vault name", () => {
+		const joined = buildTmuxSessionArgs("s", "MyVault").join(" ");
+		assert.ok(joined.includes("set-option status off"));
+		assert.ok(joined.includes("set-option @co_vault MyVault"));
 	});
 
-	it("targets the correct session name", () => {
-		const result = tmuxScrollArgs("15_Claude_Orchestrator-2", -1);
-		assert.ok(result.copyModeArgs.includes("15_Claude_Orchestrator-2"));
-		assert.ok(result.scrollArgs.includes("15_Claude_Orchestrator-2"));
+	it("chains options with ; so they also apply when attaching to an existing session", () => {
+		const args = buildTmuxSessionArgs("s", "V");
+		assert.equal(args.filter((a) => a === ";").length, 3);
 	});
 });
 
