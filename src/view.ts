@@ -14,9 +14,7 @@ import {
 	computeDisplayText,
 	SessionNote,
 	QUICK_REPLY_KEYS,
-	buildQuickReplyTmuxArgs,
 	quickReplyLabel,
-	cancelCopyModeArgs,
 	buildTmuxSessionArgs,
 	computeTerminalFit,
 	terminalPageKey,
@@ -27,14 +25,10 @@ import {
 	getPtyStatus,
 	ptyStatusMessage,
 	parseQueueItemSegments,
-	autoSendAction,
-	AUTO_SEND_COUNTDOWN_MS,
-	resolveClaudeIdle,
 	execTmux,
 	filterSlashCommands,
 	stripTimestamp,
 	classifyAcKey,
-	escapeLeadingBang,
 	projectFromSessionName,
 	tmuxLs,
 	parseAllTmuxSessions,
@@ -45,12 +39,9 @@ import {
 	extractTimestamp,
 	computeSessionCwd,
 	countdownText,
-	deriveStatusFromStop,
-	markLastHistoryDone,
-	notifyQueueMessage,
-	prepareQueueTaskText,
 } from "./utils";
 import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry, ThemeName } from "./utils";
+import type { QueueEngine } from "./queue-engine";
 import { Terminal } from "@xterm/xterm";
 import type { IPty } from "node-pty";
 import * as os from "os";
@@ -117,11 +108,11 @@ export class TerminalView extends ItemView {
 	private modeBtn: HTMLElement | null = null;
 	private sendBtn: HTMLElement | null = null;
 	private countdownEl: HTMLElement | null = null;
-	private countdownTimer: ReturnType<typeof setInterval> | null = null;
-	private countdownRemaining = 0;
 	private escHandler: ((e: KeyboardEvent) => void) | null = null;
-	private claudeIdle = false;
-	private loadedAt = 0;
+	private getEngine?: () => QueueEngine;
+	private engine(): QueueEngine | null {
+		return this.getEngine?.() ?? null;
+	}
 	private fitTerminal(): void {
 		if (!this.term || !this.host) return;
 		/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment -- xterm internal API (same pattern as FitAddon) */
@@ -156,10 +147,12 @@ export class TerminalView extends ItemView {
 		leaf: WorkspaceLeaf,
 		pluginDir: string,
 		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean; theme: ThemeName; autoSendCountdownSeconds: number; defaultQueueMode: QueueMode },
+		getEngine?: () => QueueEngine,
 	) {
 		super(leaf);
 		this.pluginDir = pluginDir;
 		this.getSettings = getSettings;
+		this.getEngine = getEngine;
 	}
 
 	getViewType(): string {
@@ -276,6 +269,14 @@ export class TerminalView extends ItemView {
 				this.applyTheme(this.getSettings?.().theme ?? "obsidian");
 			}),
 		);
+		// Countdown state lives in the queue engine; this view only renders it.
+		/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument -- custom workspace event */
+		this.registerEvent(
+			this.app.workspace.on("claude-orchestrator:countdown-tick" as any, () => {
+				this.syncCountdownUI();
+			}),
+		);
+		/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument */
 
 		const queueEnabled = !(this.getSettings?.().simpleMode ?? false);
 
@@ -452,10 +453,9 @@ export class TerminalView extends ItemView {
 			btn.addEventListener("click", () => {
 				if (!this.sessionNote) return;
 				this.sessionNote.queueMode = m;
-				this.cancelCountdown();
+				if (this.sessionName) this.engine()?.cancelCountdown(this.sessionName);
 				this.updateModeBtn();
 				void this.saveSessionNote();
-				this.checkAutoSend();
 			});
 		}
 		this.updateModeBtn();
@@ -507,8 +507,9 @@ export class TerminalView extends ItemView {
 		this.sendBtn.dataset.variant = "primary";
 		this.sendBtn.dataset.size = "md";
 		this.sendBtn.addEventListener("click", () => {
-			if (this.countdownTimer) {
-				this.cancelCountdown();
+			const engine = this.engine();
+			if (this.sessionName && engine && engine.getCountdownRemaining(this.sessionName) > 0) {
+				engine.cancelCountdown(this.sessionName);
 			} else {
 				void this.sendNext();
 			}
@@ -620,8 +621,8 @@ export class TerminalView extends ItemView {
 			input.value = "";
 			input.style.height = "auto";
 			this.renderQueue();
+			// The engine watches note saves and handles idle auto-send.
 			void this.saveSessionNote();
-			this.checkAutoSend();
 		};
 		// History prefill (shell-like ↑/↓ navigation)
 		let histIdx = -1;
@@ -980,8 +981,6 @@ export class TerminalView extends ItemView {
 			this.sessionNote.session = this.sessionName;
 			void this.saveSessionNote();
 		}
-		this.claudeIdle = resolveClaudeIdle(this.claudeIdle, this.sessionNote.status, externalModify);
-		this.loadedAt = Date.now();
 		this.sessionNoteLoaded = true;
 		this.renderHistory();
 		this.renderQueue();
@@ -989,10 +988,6 @@ export class TerminalView extends ItemView {
 		/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Obsidian internal API */
 		(this.leaf as any).updateHeader?.();
 		/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
-		this.checkAutoSend(externalModify);
-		if (this.claudeIdle && this.sessionNote.queue.length > 0 && !externalModify) {
-			setTimeout(() => this.checkAutoSend(), 5500);
-		}
 	}
 
 	private async saveSessionNote(): Promise<void> {
@@ -1252,202 +1247,92 @@ export class TerminalView extends ItemView {
 		});
 	}
 
-	// --- Send next ---
+	// --- Send next / quick reply — pipeline lives in the queue engine ---
 
 	async sendNext(): Promise<void> {
-		if (!this.sessionNote || !this.sessionName) return;
-		if (this.sessionNote.queue.length === 0) return;
-
-		this.cancelCountdown();
-		this.claudeIdle = false;
-		this.sessionNote.status = "running";
+		if (!this.sessionName) return;
+		const engine = this.engine();
+		if (!engine) return;
 		if (this.host) delete this.host.dataset.ask;
-		const task = this.sessionNote.queue.shift()!;
-
-		// Move to history as in-progress
-		this.sessionNote.history.push({ text: task, completed: false });
-		this.renderHistory();
-		this.renderQueue();
-		await this.saveSessionNote();
-
-		const taskText = prepareQueueTaskText(task);
-
-		const target = this.sessionName;
-
 		this.term?.scrollToBottom();
-
-		void (async () => {
-			await execTmux(cancelCopyModeArgs(target)).catch(() => {});
-			try {
-				await execTmux(["send-keys", "-l", "-t", target, "--", taskText]);
-				await new Promise((r) => setTimeout(r, 150));
-				await execTmux(["send-keys", "-t", target, "Enter"]);
-			} catch (err) {
-				new Notice(`Send failed: ${(err as Error).message}`);
-			}
-		})();
+		try {
+			await engine.sendNext(this.sessionName);
+		} catch (err) {
+			new Notice(`Send failed: ${(err as Error).message}`);
+		}
 	}
 
 	private async sendQuickReply(key: string): Promise<void> {
 		const target = this.lifecycle.captureTarget();
 		if (!target) return;
-
-		if (this.sessionNote) {
-			this.sessionNote.status = "running";
-			this.claudeIdle = false;
-			if (this.host) delete this.host.dataset.ask;
-			this.renderQueue();
-			void this.saveSessionNote();
-		}
-
-		const { textArgs, enterArgs } = buildQuickReplyTmuxArgs(target, escapeLeadingBang(key));
-
+		const engine = this.engine();
+		if (!engine) return;
+		if (this.host) delete this.host.dataset.ask;
 		this.term?.scrollToBottom();
-		await execTmux(cancelCopyModeArgs(target)).catch(() => {});
 		try {
-			await execTmux(textArgs);
-			if (enterArgs.length > 0) {
-				await new Promise((r) => setTimeout(r, 150));
-				await execTmux(enterArgs);
-			}
+			await engine.sendQuickReply(target, key);
 		} catch (err) {
 			new Notice(`Quick reply failed: ${(err as Error).message}`);
 		}
 	}
 
+	// UI-only reaction to a stop signal; the engine owns note updates and
+	// auto-send. Note re-rendering happens via the vault modify event when
+	// the engine saves.
 	onStopSignal(stopReason: StopReason | null): void {
-		if (!this.sessionNote) return;
+		if (!this.host) return;
+		if (stopReason === "asking") {
+			this.host.dataset.ask = "true";
+		} else {
+			delete this.host.dataset.ask;
+		}
+	}
 
-		const derived = deriveStatusFromStop(stopReason);
-		this.claudeIdle = derived.claudeIdle;
-		this.sessionNote.status = derived.status;
+	// --- Countdown pill (renders engine state) ---
 
-		if (this.host) {
-			if (stopReason === "asking") {
-				this.host.dataset.ask = "true";
-			} else {
-				delete this.host.dataset.ask;
+	private syncCountdownUI(): void {
+		const remaining = this.sessionName
+			? this.engine()?.getCountdownRemaining(this.sessionName) ?? 0
+			: 0;
+
+		if (remaining <= 0) {
+			if (this.countdownEl) {
+				this.countdownEl.remove();
+				this.countdownEl = null;
+				if (this.sendBtn) this.sendBtn.style.display = "";
 			}
-		}
-
-		markLastHistoryDone(this.sessionNote.history, stopReason);
-
-		this.renderHistory();
-		this.renderQueue();
-		void this.saveSessionNote();
-
-		const action = autoSendAction(
-			this.sessionNote.queueMode,
-			stopReason,
-			this.sessionNote.queue.length,
-		);
-
-		if (action === "send") {
-			this.startCountdown();
-		} else if (action === "notify") {
-			this.notifyUser(notifyQueueMessage("Claude finished", this.sessionNote.queue.length));
-		}
-
-		if (stopReason === "asking" && this.getSettings?.().playSoundOnAsking) {
-			this.playSound();
-		}
-	}
-
-	private startCountdown(): void {
-		this.cancelCountdown();
-		if (!this.sendBtn?.parentElement) return;
-
-		const totalSeconds = this.getSettings?.().autoSendCountdownSeconds ?? Math.round(AUTO_SEND_COUNTDOWN_MS / 1000);
-		this.countdownRemaining = totalSeconds;
-
-		const parent = this.sendBtn.parentElement;
-		const pill = parent.createDiv({ cls: "co-countdown" });
-		pill.style.cursor = "pointer";
-		pill.title = "Click to cancel";
-		pill.addEventListener("click", () => this.cancelCountdown());
-		pill.createDiv({ cls: "co-countdown-dot" });
-		pill.createSpan({ cls: "co-countdown-label", text: countdownText(totalSeconds) });
-
-		parent.insertBefore(pill, this.sendBtn);
-		this.sendBtn.style.display = "none";
-		this.countdownEl = pill;
-
-		this.escHandler = (e: KeyboardEvent) => {
-			if (e.key === "Escape") this.cancelCountdown();
-		};
-		document.addEventListener("keydown", this.escHandler);
-
-		this.countdownTimer = setInterval(() => {
-			this.countdownRemaining--;
-			if (this.countdownRemaining <= 0) {
-				this.cancelCountdown();
-				void this.sendNext();
-			} else {
-				this.updateCountdownLabel();
+			if (this.escHandler) {
+				document.removeEventListener("keydown", this.escHandler);
+				this.escHandler = null;
 			}
-		}, 1000);
-
-		this.app.workspace.trigger("claude-orchestrator:countdown-tick");
-	}
-
-	getCountdownRemaining(): number {
-		return this.countdownRemaining;
-	}
-
-	cancelCountdown(): void {
-		if (this.countdownTimer) {
-			clearInterval(this.countdownTimer);
-			this.countdownTimer = null;
+			return;
 		}
-		if (this.escHandler) {
-			document.removeEventListener("keydown", this.escHandler);
-			this.escHandler = null;
+
+		if (!this.countdownEl) {
+			const parent = this.sendBtn?.parentElement;
+			if (!parent || !this.sendBtn) return;
+			const pill = parent.createDiv({ cls: "co-countdown" });
+			pill.style.cursor = "pointer";
+			pill.title = "Click to cancel";
+			pill.addEventListener("click", () => {
+				if (this.sessionName) this.engine()?.cancelCountdown(this.sessionName);
+			});
+			pill.createDiv({ cls: "co-countdown-dot" });
+			pill.createSpan({ cls: "co-countdown-label" });
+			parent.insertBefore(pill, this.sendBtn);
+			this.sendBtn.style.display = "none";
+			this.countdownEl = pill;
+
+			this.escHandler = (e: KeyboardEvent) => {
+				if (e.key === "Escape" && this.sessionName) {
+					this.engine()?.cancelCountdown(this.sessionName);
+				}
+			};
+			document.addEventListener("keydown", this.escHandler);
 		}
-		this.countdownRemaining = 0;
-		this.countdownEl?.remove();
-		this.countdownEl = null;
-		if (this.sendBtn) {
-			this.sendBtn.style.display = "";
-		}
-		this.app.workspace.trigger("claude-orchestrator:countdown-tick");
-	}
 
-	private checkAutoSend(force = false): void {
-		if (!this.claudeIdle) return;
-		if (!this.sessionNote) return;
-		if (this.countdownRemaining > 0) return;
-		if (!force && Date.now() - this.loadedAt < 5000) return;
-
-		const action = autoSendAction(
-			this.sessionNote.queueMode,
-			null,
-			this.sessionNote.queue.length,
-		);
-
-		if (action === "send") {
-			this.startCountdown();
-		} else if (action === "notify") {
-			this.notifyUser(notifyQueueMessage("Claude idle", this.sessionNote.queue.length));
-		}
-	}
-
-	private playSound(): void {
-		const { execFile } = require("child_process") as typeof import("child_process");
-		execFile("afplay", ["/System/Library/Sounds/Glass.aiff"], () => {});
-	}
-
-	private notifyUser(message: string): void {
-		new Notice(message);
-		try {
-			new Notification("Claude Orchestrator", { body: message });
-		} catch { /* Notification API may not be available */ }
-		this.playSound();
-	}
-
-	private updateCountdownLabel(): void {
-		const label = this.countdownEl?.querySelector(".co-countdown-label");
-		if (label) label.textContent = countdownText(this.countdownRemaining);
-		this.app.workspace.trigger("claude-orchestrator:countdown-tick");
+		const label = this.countdownEl.querySelector(".co-countdown-label");
+		if (label) label.textContent = countdownText(remaining);
 	}
 
 	private onHostFocusIn = () => {
@@ -1498,8 +1383,12 @@ export class TerminalView extends ItemView {
 		this.queuePanel = null;
 		this.queueList = null;
 		this.sendBtn = null;
+		this.countdownEl?.remove();
 		this.countdownEl = null;
-		this.cancelCountdown();
+		if (this.escHandler) {
+			document.removeEventListener("keydown", this.escHandler);
+			this.escHandler = null;
+		}
 		this.sessionNote = null;
 		this.termFocusIndicator = null;
 		this.ptyGen++; // invalidate pending callbacks

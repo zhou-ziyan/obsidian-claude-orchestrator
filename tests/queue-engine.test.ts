@@ -4,6 +4,15 @@ import { QueueEngine } from "../src/queue-engine.ts";
 import type { SessionNote } from "../src/utils.ts";
 import { parseSessionNote } from "../src/utils.ts";
 
+// @types/node v16 predates node:test mock timers — type the accessor locally.
+interface MockTimers {
+	enable(opts: { apis: string[] }): void;
+	tick(ms: number): void;
+}
+function timers(t: unknown): MockTimers {
+	return (t as { mock: { timers: MockTimers } }).mock.timers;
+}
+
 function makeNote(over: Partial<SessionNote> = {}): SessionNote {
 	return {
 		session: "P-1",
@@ -70,12 +79,12 @@ describe("QueueEngine stop signal", () => {
 	});
 
 	it("auto mode: starts countdown on done and sends the next item when it elapses", async (t) => {
-		t.mock.timers.enable({ apis: ["setInterval"] });
+		timers(t).enable({ apis: ["setInterval"] });
 		const h = makeHarness(makeNote({ queueMode: "auto", queue: ["[2026-07-06 10:00] next task"] }), { countdownSeconds: 3 });
 		await h.engine.onStopSignal("P-1", "done");
 		assert.equal(h.engine.getCountdownRemaining("P-1"), 3);
 		assert.equal(h.execs.length, 0, "nothing sent during countdown");
-		t.mock.timers.tick(3000);
+		timers(t).tick(3000);
 		await h.engine.flush();
 		const saved = h.notes.get("P-1")!;
 		assert.equal(saved.queue.length, 0);
@@ -83,7 +92,7 @@ describe("QueueEngine stop signal", () => {
 		assert.equal(saved.status, "running");
 		const sendKeys = h.execs.find((a) => a.includes("-l"));
 		assert.ok(sendKeys, "literal send-keys issued");
-		assert.ok(sendKeys!.join(" ").includes("next task"));
+		assert.ok(sendKeys.join(" ").includes("next task"));
 		assert.equal(h.engine.isIdle("P-1"), false);
 	});
 
@@ -143,12 +152,12 @@ describe("QueueEngine sendNext", () => {
 	});
 
 	it("cancelCountdown aborts a pending auto-send", async (t) => {
-		t.mock.timers.enable({ apis: ["setInterval"] });
+		timers(t).enable({ apis: ["setInterval"] });
 		const h = makeHarness(makeNote({ queueMode: "auto", queue: ["x"] }), { countdownSeconds: 5 });
 		await h.engine.onStopSignal("P-1", "done");
 		assert.equal(h.engine.getCountdownRemaining("P-1"), 5);
 		h.engine.cancelCountdown("P-1");
-		t.mock.timers.tick(10_000);
+		timers(t).tick(10_000);
 		await h.engine.flush();
 		assert.equal(h.notes.get("P-1")!.queue.length, 1, "item still queued");
 	});
@@ -156,11 +165,11 @@ describe("QueueEngine sendNext", () => {
 
 describe("QueueEngine note changes (external edits / view edits)", () => {
 	it("starts countdown when idle in auto mode and a task appears", async (t) => {
-		t.mock.timers.enable({ apis: ["setInterval"] });
+		timers(t).enable({ apis: ["setInterval"] });
 		const h = makeHarness(makeNote({ status: "idle", queueMode: "auto", queue: ["new task"] }), { countdownSeconds: 2 });
 		await h.engine.onNoteChanged("P-1"); // idle seeded from note.status
 		assert.equal(h.engine.getCountdownRemaining("P-1"), 2);
-		t.mock.timers.tick(2000);
+		timers(t).tick(2000);
 		await h.engine.flush();
 		assert.equal(h.notes.get("P-1")!.queue.length, 0);
 	});
@@ -185,7 +194,7 @@ describe("QueueEngine note changes (external edits / view edits)", () => {
 	});
 
 	it("does nothing while a countdown is already pending", async (t) => {
-		t.mock.timers.enable({ apis: ["setInterval"] });
+		timers(t).enable({ apis: ["setInterval"] });
 		const h = makeHarness(makeNote({ queueMode: "auto", queue: ["a", "b"] }), { countdownSeconds: 5 });
 		await h.engine.onStopSignal("P-1", "done");
 		await h.engine.onNoteChanged("P-1");

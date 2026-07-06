@@ -6,6 +6,7 @@ import {
 	normalizeViewState,
 	parseTmuxSessionsForProject,
 	sessionNotePath,
+	sessionNameFromNotePath,
 	createDefaultSessionNote,
 	parseSessionNote,
 	serializeSessionNote,
@@ -61,7 +62,6 @@ import {
 	extractLastAssistantText,
 	autoSendAction,
 	AUTO_SEND_COUNTDOWN_MS,
-	resolveClaudeIdle,
 	ensureStopHookConfig,
 	parseQuickReplyKeys,
 	SLASH_COMMANDS,
@@ -4047,35 +4047,6 @@ describe("unregisterConfirmText", () => {
 });
 
 // ---------------------------------------------------------------------------
-// resolveClaudeIdle
-// ---------------------------------------------------------------------------
-
-describe("resolveClaudeIdle", () => {
-	it("external modify: does not promote idle when prev was not idle", () => {
-		assert.equal(resolveClaudeIdle(false, "idle", true), false);
-	});
-
-	it("external modify: keeps idle when prev was idle", () => {
-		assert.equal(resolveClaudeIdle(true, "idle", true), true);
-	});
-
-	it("external modify: respects non-idle note status", () => {
-		assert.equal(resolveClaudeIdle(true, "running", true), false);
-		assert.equal(resolveClaudeIdle(false, "running", true), false);
-	});
-
-	it("non-external: uses note status directly", () => {
-		assert.equal(resolveClaudeIdle(false, "idle", false), true);
-		assert.equal(resolveClaudeIdle(true, "running", false), false);
-	});
-
-	it("non-external: idle note status sets idle regardless of prev", () => {
-		assert.equal(resolveClaudeIdle(false, "idle", false), true);
-		assert.equal(resolveClaudeIdle(true, "idle", false), true);
-	});
-});
-
-// ---------------------------------------------------------------------------
 // extractTimestamp (extracted from view.ts)
 // ---------------------------------------------------------------------------
 
@@ -4982,5 +4953,38 @@ describe("session note round-trip fidelity", () => {
 		assert.deepStrictEqual(parsed.queue, ["a", "b"]);
 		const out = serializeSessionNote(parsed);
 		assert.equal(out.match(/^## Queue$/gm)?.length, 1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// sessionNameFromNotePath (engine vault-modify wiring)
+// ---------------------------------------------------------------------------
+
+describe("sessionNameFromNotePath", () => {
+	const projects: ProjectRegistry = {
+		"Alpha": { vaultFolder: "01_Projects/Alpha" },
+		"Root": { vaultFolder: "" },
+	};
+
+	it("resolves a session note path to its session name", () => {
+		assert.equal(sessionNameFromNotePath("01_Projects/Alpha/sessions/Alpha-2.md", projects), "Alpha-2");
+	});
+
+	it("resolves vault-root projects", () => {
+		assert.equal(sessionNameFromNotePath("sessions/Root-1.md", projects), "Root-1");
+	});
+
+	it("ignores archived notes", () => {
+		assert.equal(sessionNameFromNotePath("01_Projects/Alpha/sessions/archive-Alpha-2.md", projects), null);
+	});
+
+	it("ignores paths outside any project's sessions dir", () => {
+		assert.equal(sessionNameFromNotePath("01_Projects/Alpha/Alpha.md", projects), null);
+		assert.equal(sessionNameFromNotePath("02_Other/sessions/X-1.md", projects), null);
+		assert.equal(sessionNameFromNotePath("01_Projects/Alpha/sessions/nested/X-1.md", projects), null);
+	});
+
+	it("ignores non-markdown files", () => {
+		assert.equal(sessionNameFromNotePath("01_Projects/Alpha/sessions/Alpha-2.txt", projects), null);
 	});
 });

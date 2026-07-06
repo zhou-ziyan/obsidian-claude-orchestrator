@@ -1,9 +1,10 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, parseSessionNote, serializeSessionNote, ensureStopHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, loadSlashCommands, BUILTIN_SLASH_COMMANDS, migrateThemeName } from "./utils";
-import type { ProjectRegistry, QueueMode, SlashCommandEntry, ThemeName } from "./utils";
+import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, ensureStopHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, loadSlashCommands, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux } from "./utils";
+import type { ProjectRegistry, QueueMode, SessionNote, SlashCommandEntry, ThemeName } from "./utils";
 import { QUEUE_MODES, queueModeLabel } from "./utils";
+import { QueueEngine } from "./queue-engine";
 import { StopHookWatcher } from "./stop-hook-watcher";
 import { findTerminalLeafBySession, findTerminalLeafByProject, collectOpenSessionNames } from "./workspace-helpers";
 import { readFileSync, writeFileSync } from "fs";
@@ -34,6 +35,7 @@ const DEFAULT_SETTINGS: OrchestratorSettings = {
 
 export default class ClaudeOrchestratorPlugin extends Plugin {
 	settings: OrchestratorSettings = DEFAULT_SETTINGS;
+	queueEngine!: QueueEngine;
 	private slashCommands: SlashCommandEntry[] = [...BUILTIN_SLASH_COMMANDS];
 	private stopHookWatcher: StopHookWatcher | null = null;
 
@@ -44,6 +46,38 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		const pluginDir = this.resolvePluginDir();
 		this.ensureStopHookRegistered(pluginDir);
 
+		// Headless queue engine — owns the stop-signal → status/history →
+		// auto-send pipeline for every managed session, panel or not.
+		this.queueEngine = new QueueEngine({
+			store: {
+				read: (session) => this.readSessionNote(session),
+				write: (session, note) => this.writeSessionNote(session, note),
+			},
+			exec: execTmux,
+			notifier: {
+				notify: (message) => this.notifyUser(message),
+				soundOnAsking: () => this.playSound(),
+			},
+			getCountdownSeconds: () => this.settings.autoSendCountdownSeconds,
+			playSoundOnAsking: () => this.settings.playSoundOnAsking,
+			onUpdate: () => {
+				/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument -- custom workspace event */
+				this.app.workspace.trigger("claude-orchestrator:countdown-tick" as any);
+				/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument */
+			},
+		});
+
+		// Engine reacts to session note edits (view saves, external agents,
+		// hand edits) — replaces the old view-level auto-send checks.
+		this.registerEvent(
+			this.app.vault.on("modify", (file) => {
+				const session = sessionNameFromNotePath(file.path, this.settings.projects);
+				if (session && !this.queueEngine.isSelfWrite(session)) {
+					void this.queueEngine.onNoteChanged(session);
+				}
+			}),
+		);
+
 		this.registerView(
 			VIEW_TYPE_TERMINAL,
 			(leaf) =>
@@ -51,6 +85,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 					leaf,
 					pluginDir,
 					() => ({ ...this.settings, slashCommands: this.slashCommands }),
+					() => this.queueEngine,
 				),
 		);
 
@@ -143,14 +178,13 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		// Load dynamic slash commands
 		this.loadSlashCommands();
 
-		// Stop hook watcher
+		// Stop hook watcher — the engine owns the pipeline; views only get
+		// notified for UI touches (ask highlight).
 		this.stopHookWatcher = new StopHookWatcher(() => this.settings.projects);
-		this.stopHookWatcher.onSignal((signal, project) => {
+		this.stopHookWatcher.onSignal((signal) => {
 			const reason = signal.stopReason ?? "done";
-			const routed = this.routeStopSignalToView(signal.tmuxSession, reason);
-			if (!routed) {
-				void this.updateSessionStatus(project, signal.tmuxSession, reason);
-			}
+			void this.queueEngine.onStopSignal(signal.tmuxSession, reason);
+			this.routeStopSignalToView(signal.tmuxSession, reason);
 			this.refreshSessionManager();
 		});
 		this.stopHookWatcher.start();
@@ -158,6 +192,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 	onunload() {
 		this.stopHookWatcher?.stop();
+		this.queueEngine.dispose();
 	}
 
 	private loadSlashCommands(): void {
@@ -386,16 +421,41 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		}
 	}
 
-	private async updateSessionStatus(project: string, sessionName: string, reason: "done" | "asking"): Promise<void> {
+	// --- Engine note store (session name → vault file) ---
+
+	private sessionNoteFile(sessionName: string): TFile | null {
+		const project = projectFromSessionName(sessionName, this.settings.projects);
+		if (!project) return null;
 		const config = this.settings.projects[project];
-		if (!config) return;
-		const notePath = sessionNotePath(config.vaultFolder, sessionName);
-		const file = this.app.vault.getAbstractFileByPath(notePath);
-		if (!file || !(file instanceof TFile)) return;
+		if (!config) return null;
+		const file = this.app.vault.getAbstractFileByPath(sessionNotePath(config.vaultFolder, sessionName));
+		return file instanceof TFile ? file : null;
+	}
+
+	private async readSessionNote(sessionName: string): Promise<SessionNote | null> {
+		const file = this.sessionNoteFile(sessionName);
+		if (!file) return null;
 		const content = await this.app.vault.read(file);
-		const note = parseSessionNote(content, sessionName);
-		note.status = reason === "asking" ? "waiting_for_user" : "idle";
+		return parseSessionNote(content, sessionName);
+	}
+
+	private async writeSessionNote(sessionName: string, note: SessionNote): Promise<void> {
+		const file = this.sessionNoteFile(sessionName);
+		if (!file) return;
 		await this.app.vault.modify(file, serializeSessionNote(note));
+	}
+
+	private playSound(): void {
+		const { execFile } = require("child_process") as typeof import("child_process");
+		execFile("afplay", ["/System/Library/Sounds/Glass.aiff"], () => {});
+	}
+
+	private notifyUser(message: string): void {
+		new Notice(message);
+		try {
+			new Notification("Claude Orchestrator", { body: message });
+		} catch { /* Notification API may not be available */ }
+		this.playSound();
 	}
 
 	private refreshSessionManager() {

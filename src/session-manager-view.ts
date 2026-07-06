@@ -645,10 +645,10 @@ export class SessionManagerView extends ItemView {
 			previewEl.textContent = session.preview;
 		}
 
-		// Send next / Countdown (below meta/preview, per design reference)
-		if (session.hasPanel && session.queueCount > 0) {
-			const match = findTerminalLeafBySession(this.app.workspace, session.name);
-			const countdown = match?.view.getCountdownRemaining() ?? 0;
+		// Send next / Countdown — driven by the queue engine, so it works
+		// even when no terminal panel is open for the session.
+		if (session.queueCount > 0) {
+			const countdown = this.plugin.queueEngine.getCountdownRemaining(session.name);
 
 			if (countdown > 0) {
 				const cdEl = card.createDiv({ cls: "co-sm-card-countdown" });
@@ -656,7 +656,7 @@ export class SessionManagerView extends ItemView {
 				cdEl.title = "Click to cancel";
 				cdEl.addEventListener("click", (e) => {
 					e.stopPropagation();
-					match?.view.cancelCountdown();
+					this.plugin.queueEngine.cancelCountdown(session.name);
 				});
 				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
 				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: countdownText(countdown) });
@@ -687,8 +687,7 @@ export class SessionManagerView extends ItemView {
 
 	private updateCountdownButtons(): void {
 		for (const [sessionName, el] of this.sendBtns) {
-			const match = findTerminalLeafBySession(this.app.workspace, sessionName);
-			const remaining = match?.view.getCountdownRemaining() ?? 0;
+			const remaining = this.plugin.queueEngine.getCountdownRemaining(sessionName);
 			const parent = el.parentElement;
 			if (!parent) continue;
 
@@ -703,7 +702,7 @@ export class SessionManagerView extends ItemView {
 				cdEl.title = "Click to cancel";
 				cdEl.addEventListener("click", (e) => {
 					e.stopPropagation();
-					match?.view.cancelCountdown();
+					this.plugin.queueEngine.cancelCountdown(sessionName);
 				});
 				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
 				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: countdownText(remaining) });
@@ -964,11 +963,14 @@ export class SessionManagerView extends ItemView {
 	}
 
 	private async sendNextForSession(sessionName: string) {
+		// Headless: the engine sends via tmux whether or not a panel is open.
 		const match = findTerminalLeafBySession(this.app.workspace, sessionName);
 		if (match) {
-			await match.view.sendNext();
-			setTimeout(() => { void this.refresh(); }, 300);
+			await match.view.sendNext(); // includes terminal scroll-to-bottom
+		} else {
+			await this.plugin.queueEngine.sendNext(sessionName);
 		}
+		setTimeout(() => { void this.refresh(); }, 300);
 	}
 
 	private async attachSession(session: SessionInfo) {
@@ -1241,6 +1243,7 @@ export class SessionManagerView extends ItemView {
 	}
 
 	private async killSession(sessionName: string, noteAction?: "archive" | "delete") {
+		this.plugin.queueEngine.cancelCountdown(sessionName);
 		this.closeSessionTab(sessionName);
 		await execTmux(["kill-session", "-t", sessionName]).catch(() => {});
 		if (noteAction) {

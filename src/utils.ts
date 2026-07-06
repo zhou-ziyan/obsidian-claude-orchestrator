@@ -361,10 +361,25 @@ export function autoSendAction(
 
 export const AUTO_SEND_COUNTDOWN_MS = 3000;
 
-export function resolveClaudeIdle(prevIdle: boolean, noteStatus: string, externalModify: boolean): boolean {
-	const noteIdle = noteStatus === "idle";
-	if (externalModify && !prevIdle && noteIdle) return false;
-	return noteIdle;
+/**
+ * Reverse-map a vault file path to the tmux session it is the note for.
+ * Returns null for archives, non-markdown files, nested paths, and paths
+ * outside every registered project's sessions directory.
+ */
+export function sessionNameFromNotePath(
+	path: string,
+	projects: ProjectRegistry,
+): string | null {
+	if (!path.endsWith(".md")) return null;
+	for (const config of Object.values(projects)) {
+		const dir = sessionDirPath(config.vaultFolder) + "/";
+		if (!path.startsWith(dir)) continue;
+		const rest = path.slice(dir.length);
+		if (rest.includes("/")) continue;
+		if (rest.startsWith("archive-")) continue;
+		return rest.slice(0, -3);
+	}
+	return null;
 }
 
 function isQueueMode(s: string): s is QueueMode {

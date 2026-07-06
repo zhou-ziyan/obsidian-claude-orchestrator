@@ -22,7 +22,9 @@
 			"ES5",
 			"ES6",
 			"ES7"
-		]
+		],
+		"noEmit": true,
+		"allowImportingTsExtensions": true
 	},
 	"include": [
 		"src/**/*.ts"

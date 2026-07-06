@@ -16,6 +16,7 @@ export default tseslint.config(
 						'eslint.config.js',
 						'manifest.json',
 						'tests/utils.test.ts',
+					'tests/queue-engine.test.ts',
 					]
 				},
 				tsconfigRootDir: import.meta.dirname,
