@@ -751,13 +751,68 @@ export function cancelCopyModeArgs(sessionName: string): string[] {
 	return ["send-keys", "-t", sessionName, "-X", "cancel"];
 }
 
-export function tmuxScrollArgs(sessionName: string, lines: number): { copyModeArgs: string[]; scrollArgs: string[] } {
-	const direction = lines < 0 ? "scroll-up" : "scroll-down";
-	const count = Math.abs(lines);
+/**
+ * Full arg list for attach-or-create of a project session. `mouse on` makes
+ * tmux request mouse reporting from xterm, so wheel events travel through the
+ * PTY and tmux scrolls its own history (entering/leaving copy-mode itself) —
+ * no external tmux processes per wheel tick. The `;`-chained set-options also
+ * run when `-A` attaches to a pre-existing session.
+ */
+export function buildTmuxSessionArgs(sessionName: string, vaultName: string): string[] {
+	return ["new-session", "-A", "-s", sessionName,
+		";", "set-option", "status", "off",
+		";", "set-option", "mouse", "on",
+		";", "set-option", "@co_vault", vaultName];
+}
+
+export interface TerminalPageKeyResult {
+	suppress: boolean;
+	action: { target: "tmux" | "local"; direction: "up" | "down" } | null;
+}
+
+/**
+ * Routing for PageUp/PageDown. xterm's local scrollback is empty while tmux
+ * holds the alternate screen, so tmux sessions page via copy-mode instead.
+ * `suppress` covers keyup/keypress too so xterm never writes the raw escape
+ * sequence to the PTY, while `action` fires only once per press (keydown).
+ */
+export function terminalPageKey(
+	key: string,
+	eventType: string,
+	hasTmuxSession: boolean,
+): TerminalPageKeyResult {
+	if (key !== "PageUp" && key !== "PageDown") return { suppress: false, action: null };
+	if (eventType !== "keydown") return { suppress: true, action: null };
 	return {
-		copyModeArgs: ["copy-mode", "-e", "-t", sessionName],
-		scrollArgs: ["send-keys", "-t", sessionName, "-X", "-N", String(count), direction],
+		suppress: true,
+		action: {
+			target: hasTmuxSession ? "tmux" : "local",
+			direction: key === "PageUp" ? "up" : "down",
+		},
 	};
+}
+
+export function tmuxPageArgs(sessionName: string, direction: "up" | "down"): string[] {
+	if (direction === "up") {
+		// copy-mode -u pages up whether or not the pane is already in copy-mode;
+		// -e auto-exits copy-mode when a later page-down reaches the bottom.
+		return ["copy-mode", "-eu", "-t", sessionName];
+	}
+	return ["send-keys", "-t", sessionName, "-X", "page-down"];
+}
+
+/**
+ * OSC 52 payload is `<selection>;<base64>`. tmux emits it when copy-mode
+ * copies (set-clipboard external), letting drag-select land on the system
+ * clipboard. Returns null for queries (`?`) and malformed payloads.
+ */
+export function parseOsc52Clipboard(data: string): string | null {
+	const semi = data.indexOf(";");
+	if (semi === -1) return null;
+	const payload = data.slice(semi + 1);
+	if (payload === "" || payload === "?") return null;
+	if (payload.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(payload)) return null;
+	return Buffer.from(payload, "base64").toString("utf8");
 }
 
 export function buildQuickReplyTmuxArgs(
@@ -1319,32 +1374,6 @@ export function ensureStopHookConfig(
 		updated: true,
 		content: JSON.stringify(settings, null, 2),
 	};
-}
-
-export function handleTerminalScrollKey(
-	key: string,
-	scrollPages: (n: number) => void,
-): boolean {
-	if (key === "PageUp") { scrollPages(-1); return false; }
-	if (key === "PageDown") { scrollPages(+1); return false; }
-	return true;
-}
-
-export const WHEEL_LINES_PER_PAGE = 10;
-
-export function wheelDeltaToLines(deltaY: number, deltaMode: number): number {
-	if (deltaMode === 1) return deltaY;
-	if (deltaMode === 2) return deltaY * WHEEL_LINES_PER_PAGE;
-	const lines = Math.trunc(deltaY / 20);
-	return lines === 0 ? (deltaY > 0 ? 1 : deltaY < 0 ? -1 : 0) : lines;
-}
-
-// In alt-screen mode (tmux running Claude Code TUI), xterm.js converts wheel
-// to ↑/↓ escape sequences and writes them to the PTY — Claude Code reads that
-// as input-history navigation. Pass this to attachCustomWheelEventHandler so
-// our host-level handler (routing to tmux copy-mode) can run instead.
-export function suppressXtermAltScreenWheel(): boolean {
-	return false;
 }
 
 export type AcKeyAction = "accept" | "close" | "next" | "prev" | null;

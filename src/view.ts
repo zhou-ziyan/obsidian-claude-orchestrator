@@ -17,7 +17,10 @@ import {
 	buildQuickReplyTmuxArgs,
 	quickReplyLabel,
 	cancelCopyModeArgs,
-	tmuxScrollArgs,
+	buildTmuxSessionArgs,
+	terminalPageKey,
+	tmuxPageArgs,
+	parseOsc52Clipboard,
 	queueModeLabel,
 	fetchPtyUsage,
 	getPtyStatus,
@@ -29,8 +32,6 @@ import {
 	execTmux,
 	filterSlashCommands,
 	stripTimestamp,
-	handleTerminalScrollKey,
-	wheelDeltaToLines,
 	classifyAcKey,
 	escapeLeadingBang,
 	projectFromSessionName,
@@ -682,7 +683,8 @@ export class TerminalView extends ItemView {
 			}
 			if (e.key === "PageUp" || e.key === "PageDown") {
 				e.preventDefault();
-				this.term?.scrollPages(e.key === "PageUp" ? -1 : 1);
+				const { action } = terminalPageKey(e.key, "keydown", this.sessionName !== null);
+				if (action) this.pageTerminal(action);
 				return;
 			}
 			if (e.key === "ArrowUp" && !e.shiftKey) {
@@ -713,19 +715,23 @@ export class TerminalView extends ItemView {
 		});
 		setTimeout(() => this.fitAndResize(), 300);
 
-		this.term.attachCustomKeyEventHandler((ev) =>
-			handleTerminalScrollKey(ev.key, (n) => this.term?.scrollPages(n)),
-		);
-		this.term.attachCustomWheelEventHandler((ev: WheelEvent) => {
-			ev.preventDefault();
-			const lines = wheelDeltaToLines(ev.deltaY, ev.deltaMode);
-			if (lines !== 0 && this.sessionName) {
-				const { copyModeArgs, scrollArgs } = tmuxScrollArgs(this.sessionName, lines);
-				void execTmux(copyModeArgs)
-					.catch(() => {})
-					.then(() => execTmux(scrollArgs).catch(() => {}));
+		// Wheel events are NOT intercepted: tmux runs with `mouse on`, so it
+		// requests mouse reporting and xterm encodes the wheel as SGR mouse
+		// sequences straight down the PTY — tmux scrolls its own history and
+		// manages copy-mode itself. Plain-shell sessions fall back to xterm's
+		// local scrollback, also handled natively.
+		this.term.attachCustomKeyEventHandler((ev) => {
+			const { suppress, action } = terminalPageKey(ev.key, ev.type, this.sessionName !== null);
+			if (action) this.pageTerminal(action);
+			return !suppress;
+		});
+
+		this.term.parser.registerOscHandler(52, (data) => {
+			const text = parseOsc52Clipboard(data);
+			if (text !== null) {
+				void navigator.clipboard.writeText(text).catch(() => {});
 			}
-			return false;
+			return true;
 		});
 
 		this.term.textarea?.addEventListener("focus", () => {
@@ -763,6 +769,14 @@ export class TerminalView extends ItemView {
 		if (this.stateSeenPreOpen) {
 			void this.spawnShell();
 			void this.loadSessionNote(this.lifecycle.gen);
+		}
+	}
+
+	private pageTerminal(action: { target: "tmux" | "local"; direction: "up" | "down" }): void {
+		if (action.target === "tmux" && this.sessionName) {
+			void execTmux(tmuxPageArgs(this.sessionName, action.direction)).catch(() => {});
+		} else {
+			this.term?.scrollPages(action.direction === "up" ? -1 : 1);
 		}
 	}
 
@@ -834,10 +848,7 @@ export class TerminalView extends ItemView {
 		let args: string[];
 		if (this.sessionName) {
 			file = findTmuxBinary();
-			const vaultName = this.app.vault.getName();
-			args = ["new-session", "-A", "-s", this.sessionName,
-				";", "set-option", "status", "off",
-				";", "set-option", "@co_vault", vaultName];
+			args = buildTmuxSessionArgs(this.sessionName, this.app.vault.getName());
 		} else {
 			file = shell;
 			args = [];
