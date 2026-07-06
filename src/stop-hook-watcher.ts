@@ -1,7 +1,7 @@
-import { readFileSync, unlinkSync, mkdirSync, readdirSync } from "fs";
+import { readFileSync, unlinkSync, mkdirSync, readdirSync, statSync } from "fs";
 import { watch, type FSWatcher } from "fs";
 import { join } from "path";
-import { parseStopSignal, projectFromSessionName, STOP_SIGNAL_DIR } from "./utils";
+import { parseStopSignal, stopSignalDisposition, isStaleSignalFile, STOP_SIGNAL_DIR } from "./utils";
 import type { StopSignal, ProjectRegistry } from "./utils";
 
 export type StopSignalHandler = (signal: StopSignal, project: string) => void;
@@ -17,9 +17,11 @@ export class StopHookWatcher {
 	private pollTimer: ReturnType<typeof setInterval> | null = null;
 	private handlers: StopSignalHandler[] = [];
 	private projects: () => ProjectRegistry;
+	private vaultId: () => string;
 
-	constructor(getProjects: () => ProjectRegistry) {
+	constructor(getProjects: () => ProjectRegistry, getVaultId: () => string) {
 		this.projects = getProjects;
+		this.vaultId = getVaultId;
 	}
 
 	start(): void {
@@ -69,6 +71,10 @@ export class StopHookWatcher {
 		}
 	}
 
+	// The signal dir is shared by all vaults: never delete before knowing the
+	// file is ours (or provably nobody's). Files ignored here belong to
+	// another vault's plugin instance; if that instance is gone, the TTL
+	// check reaps them.
 	private processFile(filePath: string): void {
 		let content: string;
 		try {
@@ -77,20 +83,30 @@ export class StopHookWatcher {
 			return;
 		}
 
+		const signal = parseStopSignal(content);
+		const { action, project } = stopSignalDisposition(signal, this.vaultId(), this.projects());
+
+		if (action === "ignore") {
+			try {
+				if (isStaleSignalFile(statSync(filePath).mtimeMs, Date.now())) {
+					unlinkSync(filePath);
+				}
+			} catch { /* already deleted */ }
+			return;
+		}
+
 		try {
 			unlinkSync(filePath);
 		} catch {
-			// already deleted
+			// already deleted — another consumer got here first; don't
+			// double-dispatch.
+			return;
 		}
 
-		const signal = parseStopSignal(content);
-		if (!signal) return;
-
-		const project = projectFromSessionName(signal.tmuxSession, this.projects());
-		if (!project) return;
-
-		for (const handler of this.handlers) {
-			handler(signal, project);
+		if (action === "consume" && signal && project) {
+			for (const handler of this.handlers) {
+				handler(signal, project);
+			}
 		}
 	}
 }

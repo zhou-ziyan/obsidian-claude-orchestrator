@@ -180,7 +180,10 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 		// Stop hook watcher — the engine owns the pipeline; views only get
 		// notified for UI touches (ask highlight).
-		this.stopHookWatcher = new StopHookWatcher(() => this.settings.projects);
+		this.stopHookWatcher = new StopHookWatcher(
+			() => this.settings.projects,
+			() => this.app.vault.getName(),
+		);
 		this.stopHookWatcher.onSignal((signal) => {
 			const reason = signal.stopReason ?? "done";
 			void this.queueEngine.onStopSignal(signal.tmuxSession, reason);

@@ -1242,6 +1242,9 @@ export interface StopSignal {
 	cwd: string | null;
 	timestamp: number;
 	stopReason: StopReason | null;
+	/** Vault name the session belongs to (from tmux @co_vault); null on
+	 * signals written by older hook scripts. */
+	vault: string | null;
 }
 
 export function parseStopSignal(json: string): StopSignal | null {
@@ -1262,7 +1265,44 @@ export function parseStopSignal(json: string): StopSignal | null {
 		cwd: typeof data.cwd === "string" ? data.cwd : null,
 		timestamp: data.timestamp,
 		stopReason: isStopReason(rawReason) ? rawReason : null,
+		vault: typeof data.vault === "string" && data.vault !== "" ? data.vault : null,
 	};
+}
+
+/** Signals that no vault claims are cleaned up after this TTL. */
+export const STOP_SIGNAL_TTL_MS = 5 * 60 * 1000;
+
+export function isStaleSignalFile(mtimeMs: number, nowMs: number): boolean {
+	return nowMs - mtimeMs > STOP_SIGNAL_TTL_MS;
+}
+
+export interface StopSignalDisposition {
+	action: "consume" | "ignore" | "discard";
+	project: string | null;
+}
+
+/**
+ * Decide what a vault's watcher should do with a signal file. The signal
+ * directory is shared by all vaults, so a watcher must never delete a file
+ * another vault's plugin may still need:
+ * - consume: ours (vault tag matches, or legacy untagged with a known
+ *   project) — dispatch and delete.
+ * - ignore: someone else's (other vault tag, or untagged with no project
+ *   match here) — leave the file for its owner; TTL cleanup catches strays.
+ * - discard: garbage or provably unclaimable — delete without dispatching.
+ */
+export function stopSignalDisposition(
+	signal: StopSignal | null,
+	myVault: string,
+	projects: ProjectRegistry,
+): StopSignalDisposition {
+	if (!signal) return { action: "discard", project: null };
+	if (signal.vault && signal.vault !== myVault) return { action: "ignore", project: null };
+	const project = projectFromSessionName(signal.tmuxSession, projects);
+	if (project) return { action: "consume", project };
+	return signal.vault === myVault
+		? { action: "discard", project: null }
+		: { action: "ignore", project: null };
 }
 
 // --- Version bump ---

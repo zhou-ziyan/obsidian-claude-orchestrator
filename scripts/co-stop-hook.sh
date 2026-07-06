@@ -12,6 +12,9 @@ mkdir -p "$SIGNAL_DIR"
 INPUT=$(cat)
 
 TMUX_SESSION=$(tmux display-message -p '#S' 2>/dev/null || echo "unknown")
+# Vault tag set by the plugin at session create/attach — lets each vault's
+# watcher consume only its own signals in the shared signal dir.
+CO_VAULT=$(tmux display-message -p '#{@co_vault}' 2>/dev/null || echo "")
 TIMESTAMP=$(date +%s)
 
 SIGNAL=$(printf '%s' "$INPUT" | /usr/bin/python3 -c "
@@ -20,6 +23,7 @@ import sys, json, re, os
 data = json.load(sys.stdin)
 data['tmux_session'] = '$TMUX_SESSION'
 data['timestamp'] = $TIMESTAMP
+data['vault'] = '$CO_VAULT'
 
 stop_reason = 'done'
 tp = data.get('transcript_path', '')
