@@ -5057,7 +5057,7 @@ describe("isStaleSignalFile", () => {
 // ---------------------------------------------------------------------------
 
 describe("ensureNotificationHookConfig", () => {
-	const scriptPath = "/Users/z/.obsidian/plugins/claude-orchestrator/scripts/co-notification-hook.sh";
+	const scriptPath = "/Users/z/Vault With Spaces/plugins/claude-orchestrator/scripts/co-notification-hook.sh";
 
 	it("registers the Notification hook in empty settings", () => {
 		const result = ensureNotificationHookConfig("{}", scriptPath);

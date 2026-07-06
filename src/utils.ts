@@ -1510,8 +1510,10 @@ export function shellQuoteSingle(path: string): string {
 	return `'${path.replace(/'/g, "'\\''")}'`;
 }
 
-export function ensureStopHookConfig(
+function ensureClaudeHookConfig(
 	settingsJson: string,
+	hookEvent: string,
+	scriptBaseName: string,
 	scriptPath: string,
 ): { updated: boolean; content: string } {
 	let settings: Record<string, unknown>;
@@ -1523,11 +1525,11 @@ export function ensureStopHookConfig(
 
 	const expectedCommand = shellQuoteSingle(scriptPath);
 	const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
-	const stopMatchers = (hooks.Stop ?? []) as ClaudeHookMatcher[];
+	const matchers = (hooks[hookEvent] ?? []) as ClaudeHookMatcher[];
 
-	const existing = stopMatchers
+	const existing = matchers
 		.flatMap((m) => m.hooks ?? [])
-		.find((h) => h.command?.includes("co-stop-hook.sh"));
+		.find((h) => h.command?.includes(scriptBaseName));
 
 	if (existing) {
 		if (existing.command === expectedCommand) {
@@ -1535,12 +1537,12 @@ export function ensureStopHookConfig(
 		}
 		// Wrong command (unquoted path, stale path, etc.) — repair in place.
 		existing.command = expectedCommand;
-		hooks.Stop = stopMatchers;
+		hooks[hookEvent] = matchers;
 		settings.hooks = hooks;
 		return { updated: true, content: JSON.stringify(settings, null, 2) };
 	}
 
-	stopMatchers.push({
+	matchers.push({
 		matcher: "*",
 		hooks: [{
 			type: "command",
@@ -1549,13 +1551,31 @@ export function ensureStopHookConfig(
 		}],
 	});
 
-	hooks.Stop = stopMatchers;
+	hooks[hookEvent] = matchers;
 	settings.hooks = hooks;
 
 	return {
 		updated: true,
 		content: JSON.stringify(settings, null, 2),
 	};
+}
+
+export function ensureStopHookConfig(
+	settingsJson: string,
+	scriptPath: string,
+): { updated: boolean; content: string } {
+	return ensureClaudeHookConfig(settingsJson, "Stop", "co-stop-hook.sh", scriptPath);
+}
+
+/**
+ * Notification hook: permission requests are a structured, reliable
+ * "Claude is asking" signal (vs. guessing from transcript regexes).
+ */
+export function ensureNotificationHookConfig(
+	settingsJson: string,
+	scriptPath: string,
+): { updated: boolean; content: string } {
+	return ensureClaudeHookConfig(settingsJson, "Notification", "co-notification-hook.sh", scriptPath);
 }
 
 export type AcKeyAction = "accept" | "close" | "next" | "prev" | null;

@@ -1,7 +1,7 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, ensureStopHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, loadSlashCommands, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux } from "./utils";
+import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, ensureStopHookConfig, ensureNotificationHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, loadSlashCommands, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux } from "./utils";
 import type { ProjectRegistry, QueueMode, SessionNote, SlashCommandEntry, ThemeName } from "./utils";
 import { QUEUE_MODES, queueModeLabel } from "./utils";
 import { QueueEngine } from "./queue-engine";
@@ -559,13 +559,16 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 	}
 
 	private ensureStopHookRegistered(pluginDir: string): void {
-		const scriptPath = join(pluginDir, "scripts", "co-stop-hook.sh");
 		const settingsPath = join(homedir(), ".claude", "settings.json");
 		try {
-			const content = readFileSync(settingsPath, "utf-8");
-			const result = ensureStopHookConfig(content, scriptPath);
-			if (result.updated) {
-				writeFileSync(settingsPath, result.content, "utf-8");
+			let content = readFileSync(settingsPath, "utf-8");
+			let updated = false;
+			const stop = ensureStopHookConfig(content, join(pluginDir, "scripts", "co-stop-hook.sh"));
+			if (stop.updated) { content = stop.content; updated = true; }
+			const notification = ensureNotificationHookConfig(content, join(pluginDir, "scripts", "co-notification-hook.sh"));
+			if (notification.updated) { content = notification.content; updated = true; }
+			if (updated) {
+				writeFileSync(settingsPath, content, "utf-8");
 			}
 		} catch {
 			// Settings file doesn't exist or isn't readable — skip
