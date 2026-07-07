@@ -13,8 +13,9 @@
 		"test:coverage": "c8 --include=src/utils.ts --include=src/queue-engine.ts --reporter=text node --experimental-strip-types --test tests/utils.test.ts tests/queue-engine.test.ts",
 		"lint": "eslint .",
 		"typecheck": "tsc --noEmit",
-		"check": "npm run lint && npm run typecheck && npm run test:coverage",
-		"postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true"
+		"check": "npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e",
+		"postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true",
+		"test:e2e": "node --experimental-strip-types --test tests/e2e-tmux.test.ts"
 	},
 	"author": "Ziyan Zhou <mailofbanban@gmail.com>",
 	"keywords": [
