@@ -994,13 +994,52 @@ export interface TerminalTheme {
 	background: string;
 	foreground: string;
 	cursor?: string;
+	black?: string;
+	red?: string;
+	green?: string;
+	yellow?: string;
+	blue?: string;
+	magenta?: string;
+	cyan?: string;
+	white?: string;
+	brightBlack?: string;
+	brightRed?: string;
+	brightGreen?: string;
+	brightYellow?: string;
+	brightBlue?: string;
+	brightMagenta?: string;
+	brightCyan?: string;
+	brightWhite?: string;
 }
+
+// xterm's default ANSI palette assumes a dark background — ANSI white and
+// bright white are near-#ffffff and vanish on a light background (Claude
+// Code's TUI uses them heavily). Remap the 16 colors for readability on
+// white; values follow VS Code's Light+ terminal palette.
+const LIGHT_ANSI_PALETTE = {
+	black: "#000000",
+	red: "#cd3131",
+	green: "#009400",
+	yellow: "#949800",
+	blue: "#0451a5",
+	magenta: "#bc05bc",
+	cyan: "#0598bc",
+	white: "#555555",
+	brightBlack: "#666666",
+	brightRed: "#cd3131",
+	brightGreen: "#14a814",
+	brightYellow: "#8f9400",
+	brightBlue: "#0451a5",
+	brightMagenta: "#bc05bc",
+	brightCyan: "#0598bc",
+	brightWhite: "#a5a5a5",
+} as const;
 
 export function terminalTheme(theme: ThemeName, isDark = true): TerminalTheme {
 	if (theme === "terminal") return { background: "#06090a", foreground: "#d6d7c9" };
 	return isDark
 		? { background: "#16161a", foreground: "#dcddde" }
-		: { background: "#ffffff", foreground: "#1e1e1e", cursor: "#1e1e1e" };
+		: { background: "#ffffff", foreground: "#1e1e1e", cursor: "#1e1e1e", ...LIGHT_ANSI_PALETTE };
 }
 
 export function migrateThemeName(value: unknown): ThemeName {
