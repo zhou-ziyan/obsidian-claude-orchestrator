@@ -529,6 +529,37 @@ describe("parseTmuxSessionsForProject", () => {
 		const { mostRecent } = parseTmuxSessionsForProject("", "nope");
 		assert.equal(mostRecent, null);
 	});
+
+	it("tracks mostRecent on real tmuxLs output with vault tags", () => {
+		// tmuxLs() format: #{session_name}:#{session_activity}\t#{@co_vault}
+		const output = [
+			"15_Claude_Orchestrator-2:1776317847\tWork",
+			"15_Claude_Orchestrator:1776317713\tWork",
+			"15_Claude_Orchestrator-3:1776317500\tWork",
+		].join("\n");
+		const { names, mostRecent } = parseTmuxSessionsForProject(
+			output,
+			"15_Claude_Orchestrator",
+		);
+		assert.deepEqual(names, [
+			"15_Claude_Orchestrator",
+			"15_Claude_Orchestrator-2",
+			"15_Claude_Orchestrator-3",
+		]);
+		assert.equal(mostRecent, "15_Claude_Orchestrator-2");
+	});
+
+	it("tracks mostRecent when the vault tag is empty", () => {
+		const output = [
+			"15_Claude_Orchestrator-2:1776317847\t",
+			"15_Claude_Orchestrator:1776317713\t",
+		].join("\n");
+		const { mostRecent } = parseTmuxSessionsForProject(
+			output,
+			"15_Claude_Orchestrator",
+		);
+		assert.equal(mostRecent, "15_Claude_Orchestrator-2");
+	});
 });
 
 // --- sessionNotePath ---

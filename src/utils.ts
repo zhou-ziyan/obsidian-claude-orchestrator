@@ -116,19 +116,8 @@ export function parseTmuxSessionsForProject(
 	tmuxLsOutput: string,
 	project: string,
 ): { names: string[]; mostRecent: string | null } {
-	const re = new RegExp(`^${escapeRegExp(project)}(-\\d+)?:`);
-	const sessions: { name: string; activity: number }[] = [];
-	for (const line of tmuxLsOutput.split("\n")) {
-		const match = line.match(re);
-		if (match) {
-			const parts = line.split(":");
-			const name = parts[0] ?? "";
-			const lastPart = parts[parts.length - 1]?.trim();
-			const activity =
-				lastPart && /^\d+$/.test(lastPart) ? Number(lastPart) : 0;
-			sessions.push({ name, activity });
-		}
-	}
+	const re = new RegExp(`^${escapeRegExp(project)}(-\\d+)?$`);
+	const sessions = parseAllTmuxSessions(tmuxLsOutput).filter((s) => re.test(s.name));
 	// Sort alphabetically for stable tab order
 	sessions.sort((a, b) => a.name.localeCompare(b.name));
 	// Find most recently active
