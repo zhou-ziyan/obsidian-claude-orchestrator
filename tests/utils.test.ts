@@ -5100,3 +5100,28 @@ describe("ensureNotificationHookConfig", () => {
 		assert.equal(ensureNotificationHookConfig("not json", scriptPath).updated, false);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// terminalTheme light-mode ANSI palette (white-on-white fix)
+// ---------------------------------------------------------------------------
+
+describe("terminalTheme light-mode ANSI palette", () => {
+	it("defines a readable ANSI palette on light background", () => {
+		const t = terminalTheme("obsidian", false);
+		// xterm's default palette assumes a dark background: ANSI white/bright
+		// white render invisibly on #ffffff. Light mode must remap them dark.
+		assert.equal(t.white, "#555555");
+		assert.equal(t.brightWhite, "#a5a5a5");
+		for (const key of ["black", "red", "green", "yellow", "blue", "magenta", "cyan",
+			"brightBlack", "brightRed", "brightGreen", "brightYellow", "brightBlue",
+			"brightMagenta", "brightCyan"] as const) {
+			assert.ok(t[key], `${key} defined for light background`);
+		}
+	});
+
+	it("keeps xterm's default dark-background palette in dark mode", () => {
+		assert.equal(terminalTheme("obsidian", true).white, undefined);
+		assert.equal(terminalTheme("terminal", true).white, undefined);
+		assert.equal(terminalTheme("terminal", false).white, undefined);
+	});
+});
