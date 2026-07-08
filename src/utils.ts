@@ -312,24 +312,11 @@ export type QueueMode = "manual" | "listen" | "auto";
 
 export const QUEUE_MODES: readonly QueueMode[] = ["manual", "listen", "auto"] as const;
 
-export function nextQueueMode(current: QueueMode): QueueMode {
-	const idx = QUEUE_MODES.indexOf(current);
-	return QUEUE_MODES[(idx + 1) % QUEUE_MODES.length]!;
-}
-
 export function queueModeLabel(mode: QueueMode): string {
 	switch (mode) {
 		case "manual": return "Manual";
 		case "listen": return "Listen";
 		case "auto": return "Auto";
-	}
-}
-
-export function queueModeTooltip(mode: QueueMode): string {
-	switch (mode) {
-		case "manual": return "Manual: click Send next to send\nClick to switch → Listen";
-		case "listen": return "Listen: will notify when Claude stops\nClick to switch → Auto";
-		case "auto": return "Auto: auto-send next after Claude stops\nClick to switch → Manual";
 	}
 }
 
@@ -347,8 +334,6 @@ export function autoSendAction(
 	if (mode === "listen") return "notify";
 	return "none";
 }
-
-export const AUTO_SEND_COUNTDOWN_MS = 3000;
 
 /**
  * Reverse-map a vault file path to the tmux session it is the note for.
@@ -1127,16 +1112,34 @@ export function computeDisplayText(project: string | null, sessionName: string |
 	return project;
 }
 
-// --- PTY usage (dashboard) ---
+// --- PTY usage ---
 
+// Display levels (session manager footer bar).
 export const PTY_THRESHOLD_WARNING = 0.7;
 export const PTY_THRESHOLD_CRITICAL = 0.9;
+// Pre-spawn gating (warn just below the hard limit, block at it).
+export const PTY_WARNING_THRESHOLD = 0.9;
+export const PTY_DEFAULT_MAX = 511;
+
+export interface PtyUsage {
+	used: number;
+	max: number;
+}
 
 export type PtyLevel = "ok" | "warning" | "critical";
+export type PtyStatus = "ok" | "warning" | "exhausted";
 
 export function parsePtyMax(sysctlOutput: string): number {
 	const n = parseInt(sysctlOutput.trim(), 10);
 	return isNaN(n) ? 0 : n;
+}
+
+export function ptyMaxWithDefault(parsedMax: number): number {
+	return parsedMax > 0 ? parsedMax : PTY_DEFAULT_MAX;
+}
+
+export function countPtyEntries(devEntries: string[]): number {
+	return devEntries.filter((name) => name.startsWith("ttys")).length;
 }
 
 export function ptyLevel(used: number, max: number): PtyLevel {
@@ -1146,47 +1149,6 @@ export function ptyLevel(used: number, max: number): PtyLevel {
 	if (ratio >= PTY_THRESHOLD_WARNING) return "warning";
 	return "ok";
 }
-
-export function countPtyEntries(devEntries: string[]): number {
-	return devEntries.filter((name) => name.startsWith("ttys")).length;
-}
-
-export function getPtyUsage(): Promise<{ used: number; max: number }> {
-	// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- child_process from require
-	const { execFile } = require("child_process");
-	// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- fs from require
-	const fs = require("fs");
-
-	return new Promise((resolve) => {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- execFile is untyped from require
-		execFile(
-			"sysctl",
-			["-n", "kern.tty.ptmx_max"],
-			(err: Error | null, stdout: string) => {
-				const max = err ? 0 : parsePtyMax(stdout);
-				try {
-					// eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- untyped fs
-					const entries = fs.readdirSync("/dev") as string[];
-					resolve({ used: countPtyEntries(entries), max });
-				} catch {
-					resolve({ used: 0, max });
-				}
-			},
-		);
-	});
-}
-
-// --- PTY budget (pre-spawn check) ---
-
-export const PTY_WARNING_THRESHOLD = 0.9;
-export const PTY_DEFAULT_MAX = 511;
-
-export interface PtyUsage {
-	used: number;
-	max: number;
-}
-
-export type PtyStatus = "ok" | "warning" | "exhausted";
 
 export function getPtyStatus(usage: PtyUsage): PtyStatus {
 	if (usage.used >= usage.max) return "exhausted";
@@ -1205,32 +1167,24 @@ export function ptyStatusMessage(usage: PtyUsage, status: PtyStatus): string {
 	}
 }
 
-export function parsePtyUsed(wcOutput: string): number {
-	const n = parseInt(wcOutput.trim(), 10);
-	return Number.isFinite(n) && n >= 0 ? n : 0;
-}
-
 export function fetchPtyUsage(): Promise<PtyUsage> {
-	// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- child_process from require
-	const cp = require("child_process");
-	const run = (cmd: string): Promise<string> =>
-		new Promise((resolve) => {
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-			cp.exec(cmd, (_err: Error | null, stdout: string) => {
-				resolve(stdout ?? "");
-			});
-		});
-	return Promise.all([
-		run("sysctl -n kern.tty.ptmx_max"),
-		run("ls /dev/ttys* 2>/dev/null | wc -l"),
-	]).then(([maxOut, usedOut]) => ({
-		used: parsePtyUsed(usedOut),
-		max: ptyMaxWithDefault(parsePtyMax(maxOut)),
-	}));
-}
+	const { execFile } = require("child_process") as typeof import("child_process");
+	const { readdirSync } = require("fs") as typeof import("fs");
 
-export function ptyMaxWithDefault(parsedMax: number): number {
-	return parsedMax > 0 ? parsedMax : PTY_DEFAULT_MAX;
+	return new Promise((resolve) => {
+		execFile(
+			"sysctl",
+			["-n", "kern.tty.ptmx_max"],
+			(err, stdout) => {
+				const max = ptyMaxWithDefault(err ? 0 : parsePtyMax(stdout));
+				try {
+					resolve({ used: countPtyEntries(readdirSync("/dev")), max });
+				} catch {
+					resolve({ used: 0, max });
+				}
+			},
+		);
+	});
 }
 
 // --- Idle session detection ---
@@ -1333,14 +1287,6 @@ export function stopSignalDisposition(
 		: { action: "ignore", project: null };
 }
 
-// --- Version bump ---
-
-export function bumpPatchVersion(version: string): string {
-	const parts = version.split(".").map(Number);
-	parts[2] = (parts[2] ?? 0) + 1;
-	return parts.join(".");
-}
-
 // --- Queue image parsing ---
 
 export interface QueueItemSegment {
@@ -1429,8 +1375,6 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandEntry[] = [
 	{ command: "/model", description: "Switch AI model" },
 	{ command: "/review", description: "Review a pull request" },
 ];
-
-export const SLASH_COMMANDS: readonly string[] = BUILTIN_SLASH_COMMANDS.map((e) => e.command);
 
 export function parseSkillMd(content: string): { name: string; description: string } | null {
 	if (!content || !content.startsWith("---")) return null;
@@ -1614,24 +1558,6 @@ export function classifyAcKey(key: string, shiftKey: boolean): AcKeyAction {
 	if (key === "Escape") return "close";
 	if ((key === "Enter" || key === "Tab" || key === "ArrowRight") && !shiftKey) return "accept";
 	return null;
-}
-
-/**
- * Collect all session note file paths for every registered project.
- * Returns vault-relative paths like "01_Projects/Foo/sessions/Foo-1.md".
- */
-export function allSessionNotePaths(
-	projects: ProjectRegistry,
-	sessionNames: string[],
-): string[] {
-	const paths: string[] = [];
-	for (const config of Object.values(projects)) {
-		const dir = sessionDirPath(config.vaultFolder);
-		for (const name of sessionNames) {
-			paths.push(`${dir}/${name}.md`);
-		}
-	}
-	return paths;
 }
 
 export function pickRecoverySession(

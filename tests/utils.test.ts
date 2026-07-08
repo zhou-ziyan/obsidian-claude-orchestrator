@@ -37,9 +37,7 @@ import {
 	computeTerminalFit,
 	TERMINAL_MIN_FIT_WIDTH,
 	TERMINAL_MIN_FIT_HEIGHT,
-	nextQueueMode,
 	queueModeLabel,
-	queueModeTooltip,
 	QUEUE_MODES,
 	parsePtyMax,
 	ptyLevel,
@@ -55,20 +53,16 @@ import {
 	stopSignalFileName,
 	getPtyStatus,
 	ptyStatusMessage,
-	parsePtyUsed,
 	PTY_WARNING_THRESHOLD,
 	PTY_DEFAULT_MAX,
 	extractSessionPreview,
-	bumpPatchVersion,
 	parseQueueItemSegments,
 	classifyStopReason,
 	extractLastAssistantText,
 	autoSendAction,
-	AUTO_SEND_COUNTDOWN_MS,
 	ensureStopHookConfig,
 	ensureNotificationHookConfig,
 	parseQuickReplyKeys,
-	SLASH_COMMANDS,
 	filterSlashCommands,
 	applySortOrder,
 	parseSkillMd,
@@ -78,7 +72,6 @@ import {
 	tmuxPageArgs,
 	parseOsc52Clipboard,
 	classifyAcKey,
-	allSessionNotePaths,
 	escapeLeadingBang,
 	pickRecoverySession,
 	sessionStatusDisplay,
@@ -1858,13 +1851,6 @@ describe("cancelCopyModeArgs", () => {
 
 // --- QueueMode helpers ---
 
-describe("nextQueueMode", () => {
-	it("cycles manual → listen → auto → manual", () => {
-		assert.equal(nextQueueMode("manual"), "listen");
-		assert.equal(nextQueueMode("listen"), "auto");
-		assert.equal(nextQueueMode("auto"), "manual");
-	});
-});
 
 describe("queueModeLabel", () => {
 	it("returns human-readable labels", () => {
@@ -1874,16 +1860,6 @@ describe("queueModeLabel", () => {
 	});
 });
 
-describe("queueModeTooltip", () => {
-	it("includes mode description and next mode hint", () => {
-		assert.ok(queueModeTooltip("manual").includes("Manual"));
-		assert.ok(queueModeTooltip("manual").includes("Listen"));
-		assert.ok(queueModeTooltip("listen").includes("Listen"));
-		assert.ok(queueModeTooltip("listen").includes("Auto"));
-		assert.ok(queueModeTooltip("auto").includes("Auto"));
-		assert.ok(queueModeTooltip("auto").includes("Manual"));
-	});
-});
 
 describe("QUEUE_MODES", () => {
 	it("contains all three modes", () => {
@@ -2249,31 +2225,6 @@ describe("ptyStatusMessage", () => {
 	});
 });
 
-describe("parsePtyUsed", () => {
-	it("parses valid wc output", () => {
-		assert.equal(parsePtyUsed("  42\n"), 42);
-	});
-
-	it("parses zero", () => {
-		assert.equal(parsePtyUsed("0\n"), 0);
-	});
-
-	it("returns 0 for empty string", () => {
-		assert.equal(parsePtyUsed(""), 0);
-	});
-
-	it("returns 0 for non-numeric output", () => {
-		assert.equal(parsePtyUsed("error"), 0);
-	});
-
-	it("returns 0 for negative number", () => {
-		assert.equal(parsePtyUsed("-1"), 0);
-	});
-
-	it("parses large numbers", () => {
-		assert.equal(parsePtyUsed("511"), 511);
-	});
-});
 
 describe("PTY_WARNING_THRESHOLD", () => {
 	it("is 0.9", () => {
@@ -2556,27 +2507,6 @@ describe("createDefaultSessionNote notes", () => {
 // bumpPatchVersion
 // ---------------------------------------------------------------------------
 
-describe("bumpPatchVersion", () => {
-	it("bumps patch from 0.0.1 to 0.0.2", () => {
-		assert.equal(bumpPatchVersion("0.0.1"), "0.0.2");
-	});
-
-	it("bumps patch from 1.2.3 to 1.2.4", () => {
-		assert.equal(bumpPatchVersion("1.2.3"), "1.2.4");
-	});
-
-	it("bumps patch from 0.0.9 to 0.0.10", () => {
-		assert.equal(bumpPatchVersion("0.0.9"), "0.0.10");
-	});
-
-	it("bumps patch from 1.0.0 to 1.0.1", () => {
-		assert.equal(bumpPatchVersion("1.0.0"), "1.0.1");
-	});
-
-	it("handles large patch numbers", () => {
-		assert.equal(bumpPatchVersion("0.1.99"), "0.1.100");
-	});
-});
 
 // ---------------------------------------------------------------------------
 // parseQueueItemSegments
@@ -2873,11 +2803,6 @@ describe("autoSendAction", () => {
 	});
 });
 
-describe("AUTO_SEND_COUNTDOWN_MS", () => {
-	it("is 3000ms", () => {
-		assert.equal(AUTO_SEND_COUNTDOWN_MS, 3000);
-	});
-});
 
 
 // --- SessionNote displayName ---
@@ -3110,14 +3035,6 @@ describe("BUILTIN_SLASH_COMMANDS", () => {
 	});
 });
 
-describe("SLASH_COMMANDS (backward compat)", () => {
-	it("is a string array of command names from builtins", () => {
-		assert.ok(SLASH_COMMANDS.length > 0);
-		for (const cmd of SLASH_COMMANDS) {
-			assert.ok(cmd.startsWith("/"));
-		}
-	});
-});
 
 describe("parseSkillMd", () => {
 	it("parses name and description from SKILL.md frontmatter", () => {
@@ -3422,27 +3339,6 @@ describe("classifyAcKey", () => {
 
 // --- allSessionNotePaths ---
 
-describe("allSessionNotePaths", () => {
-	it("builds paths for all project-session combinations", () => {
-		const projects: ProjectRegistry = {
-			"ProjectA": { vaultFolder: "01_Projects/ProjectA" },
-		};
-		const names = ["ProjectA-1", "ProjectA-2"];
-		const paths = allSessionNotePaths(projects, names);
-		assert.deepStrictEqual(paths, [
-			"01_Projects/ProjectA/sessions/ProjectA-1.md",
-			"01_Projects/ProjectA/sessions/ProjectA-2.md",
-		]);
-	});
-
-	it("returns empty array for empty inputs", () => {
-		assert.deepStrictEqual(allSessionNotePaths({}, []), []);
-		assert.deepStrictEqual(
-			allSessionNotePaths({ "A": { vaultFolder: "x" } }, []),
-			[],
-		);
-	});
-});
 
 // --- parseOsc52Clipboard ---
 

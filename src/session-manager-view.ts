@@ -17,7 +17,7 @@ import {
 	updateProjectConfig,
 	removeProject,
 	normalizeVaultFolder,
-	getPtyUsage,
+	fetchPtyUsage,
 	ptyLevel,
 	isSessionIdle,
 	execTmux,
@@ -257,7 +257,7 @@ export class SessionManagerView extends ItemView {
 		// 1. Get all tmux sessions + PTY usage in parallel
 		const [tmuxOutput, ptyUsage] = await Promise.all([
 			tmuxLs(),
-			getPtyUsage(),
+			fetchPtyUsage(),
 		]);
 		const allSessions = parseAllTmuxSessions(tmuxOutput);
 
