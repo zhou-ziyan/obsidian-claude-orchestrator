@@ -1,14 +1,13 @@
 import {
 	autoSendAction,
-	buildQuickReplyTmuxArgs,
-	cancelCopyModeArgs,
 	deriveStatusFromStop,
-	escapeLeadingBang,
 	markLastHistoryDone,
 	notifyQueueMessage,
 	prepareQueueTaskText,
-} from "./utils.ts";
-import type { SessionNote, StopReason } from "./utils.ts";
+} from "./queue-policy.ts";
+import { buildQuickReplyTmuxArgs, cancelCopyModeArgs, escapeLeadingBang } from "./tmux.ts";
+import type { SessionNote } from "./session-note.ts";
+import type { StopReason } from "./stop-signal.ts";
 
 /**
  * Note persistence abstraction. The production implementation resolves the
