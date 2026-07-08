@@ -82,7 +82,17 @@ function loadNodePty(pluginDir: string): typeof import("node-pty") {
 	return require(path.join(ptyRoot, "lib", "index.js"));
 }
 
-// extractTimestamp imported from utils
+/** Keep a textarea's height matched to its content as the user types.
+ * Returns the resize function for callers that need to trigger it manually
+ * (e.g. after programmatic value changes). */
+function attachAutoResize(input: HTMLTextAreaElement): () => void {
+	const autoResize = () => {
+		input.style.height = "auto";
+		input.style.height = `${input.scrollHeight}px`;
+	};
+	input.addEventListener("input", autoResize);
+	return autoResize;
+}
 
 export class TerminalView extends ItemView {
 	private term: Terminal | null = null;
@@ -202,10 +212,15 @@ export class TerminalView extends ItemView {
 
 	updateSessionName(newName: string): void {
 		this.sessionName = newName;
+		this.refreshTabHeader();
+		void this.loadSessionNote();
+	}
+
+	/** Refresh the tab title after display text changes. */
+	private refreshTabHeader(): void {
 		/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Obsidian internal API */
 		(this.leaf as any).updateHeader?.();
 		/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
-		void this.loadSessionNote();
 	}
 
 	focusTerminal(): void {
@@ -224,9 +239,7 @@ export class TerminalView extends ItemView {
 		const { gen, needsSave } = this.lifecycle.beginSwitch(project, sn);
 		this.project = project;
 		this.sessionName = sn;
-		/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Obsidian internal API for tab title refresh */
-		(this.leaf as any).updateHeader?.();
-		/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+		this.refreshTabHeader();
 		if (this.xtermReady) {
 			void (async () => {
 				if (needsSave) await this.saveSessionNote();
@@ -342,17 +355,36 @@ export class TerminalView extends ItemView {
 		this.historyPanel.createDiv({ cls: "co-history-content" });
 
 		// Resize handle between history and terminal
-		const historyResize = container.createDiv({ cls: "co-resize-handle" });
+		this.createResizeHandle(container, {
+			sign: 1,
+			min: HISTORY_ITEM_MIN_HEIGHT,
+			max: 300,
+			fallback: 120,
+			getEl: () => this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null,
+			setHeight: (el, px) => { el.style.maxHeight = `${px}px`; },
+		});
+	}
+
+	/** Drag-to-resize strip shared by the history and queue panels. `sign`
+	 * is the drag direction that grows the panel: +1 when it sits above the
+	 * terminal (drag down), -1 when below (drag up). */
+	private createResizeHandle(container: HTMLElement, opts: {
+		sign: 1 | -1;
+		min: number;
+		max: number;
+		fallback: number;
+		getEl: () => HTMLElement | null;
+		setHeight: (el: HTMLElement, px: number) => void;
+	}): void {
+		const handle = container.createDiv({ cls: "co-resize-handle" });
 		let startY = 0;
 		let startHeight = 0;
 
 		const onMouseMove = (e: MouseEvent) => {
-			const delta = e.clientY - startY;
-			const newHeight = Math.max(HISTORY_ITEM_MIN_HEIGHT, Math.min(300, startHeight + delta));
-			const content = this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null;
-			if (content) {
-				content.style.maxHeight = `${newHeight}px`;
-			}
+			const delta = (e.clientY - startY) * opts.sign;
+			const newHeight = Math.max(opts.min, Math.min(opts.max, startHeight + delta));
+			const el = opts.getEl();
+			if (el) opts.setHeight(el, newHeight);
 			this.fitTerminal();
 			this.debouncedFit();
 		};
@@ -365,11 +397,10 @@ export class TerminalView extends ItemView {
 			this.fitAndResize();
 		};
 
-		historyResize.addEventListener("mousedown", (e) => {
+		handle.addEventListener("mousedown", (e) => {
 			e.preventDefault();
 			startY = e.clientY;
-			const content = this.historyPanel?.querySelector(".co-history-content") as HTMLElement | null;
-			startHeight = content?.offsetHeight ?? 120;
+			startHeight = opts.getEl()?.offsetHeight ?? opts.fallback;
 			document.body.style.cursor = "row-resize";
 			document.body.style.userSelect = "none";
 			document.addEventListener("mousemove", onMouseMove);
@@ -392,36 +423,13 @@ export class TerminalView extends ItemView {
 
 	private createQueuePanel(container: HTMLElement): void {
 		// Resize handle between terminal and queue
-		const resizeHandle = container.createDiv({ cls: "co-resize-handle" });
-		let startY = 0;
-		let startHeight = 0;
-
-		const onMouseMove = (e: MouseEvent) => {
-			const delta = startY - e.clientY;
-			const newHeight = Math.max(80, Math.min(400, startHeight + delta));
-			if (this.queuePanel) {
-				this.queuePanel.style.height = `${newHeight}px`;
-			}
-			this.fitTerminal();
-			this.debouncedFit();
-		};
-
-		const onMouseUp = () => {
-			document.removeEventListener("mousemove", onMouseMove);
-			document.removeEventListener("mouseup", onMouseUp);
-			document.body.style.cursor = "";
-			document.body.style.userSelect = "";
-			this.fitAndResize();
-		};
-
-		resizeHandle.addEventListener("mousedown", (e) => {
-			e.preventDefault();
-			startY = e.clientY;
-			startHeight = this.queuePanel?.offsetHeight ?? 150;
-			document.body.style.cursor = "row-resize";
-			document.body.style.userSelect = "none";
-			document.addEventListener("mousemove", onMouseMove);
-			document.addEventListener("mouseup", onMouseUp);
+		this.createResizeHandle(container, {
+			sign: -1,
+			min: 80,
+			max: 400,
+			fallback: 150,
+			getEl: () => this.queuePanel,
+			setHeight: (el, px) => { el.style.height = `${px}px`; },
 		});
 
 		// Queue panel
@@ -521,11 +529,7 @@ export class TerminalView extends ItemView {
 			cls: "co-queue-input",
 		});
 		input.rows = 1;
-		const autoResize = () => {
-			input.style.height = "auto";
-			input.style.height = `${input.scrollHeight}px`;
-		};
-		input.addEventListener("input", autoResize);
+		const autoResize = attachAutoResize(input);
 		input.addEventListener("paste", (e) => {
 			const files = e.clipboardData?.files;
 			if (files && files.length > 0) {
@@ -838,9 +842,7 @@ export class TerminalView extends ItemView {
 				const recovered = projectFromSessionName(this.sessionName, projects);
 				if (recovered) {
 					this.project = recovered;
-					/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Obsidian internal API */
-					(this.leaf as any).updateHeader?.();
-					/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+					this.refreshTabHeader();
 					void this.loadSessionNote();
 				}
 			}
@@ -919,9 +921,7 @@ export class TerminalView extends ItemView {
 			const { gen } = this.lifecycle.beginSwitch(match.project, match.sessionName);
 			this.project = match.project;
 			this.sessionName = match.sessionName;
-			/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Obsidian internal API */
-			(this.leaf as any).updateHeader?.();
-			/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+			this.refreshTabHeader();
 			void this.loadSessionNote(gen);
 		} catch {
 			// tmux not available — keep plain shell
@@ -985,9 +985,7 @@ export class TerminalView extends ItemView {
 		this.renderHistory();
 		this.renderQueue();
 		this.updateModeBtn();
-		/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Obsidian internal API */
-		(this.leaf as any).updateHeader?.();
-		/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+		this.refreshTabHeader();
 	}
 
 	private async saveSessionNote(): Promise<void> {
@@ -1184,11 +1182,7 @@ export class TerminalView extends ItemView {
 			});
 			input.value = editableText;
 			input.rows = 1;
-			const autoResize = () => {
-				input.style.height = "auto";
-				input.style.height = `${input.scrollHeight}px`;
-			};
-			input.addEventListener("input", autoResize);
+			const autoResize = attachAutoResize(input);
 			input.addEventListener("paste", () => {
 				requestAnimationFrame(autoResize);
 			});

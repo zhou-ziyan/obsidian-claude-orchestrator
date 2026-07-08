@@ -649,29 +649,10 @@ export class SessionManagerView extends ItemView {
 		// even when no terminal panel is open for the session.
 		if (session.queueCount > 0) {
 			const countdown = this.plugin.queueEngine.getCountdownRemaining(session.name);
-
 			if (countdown > 0) {
-				const cdEl = card.createDiv({ cls: "co-sm-card-countdown" });
-				cdEl.style.cursor = "pointer";
-				cdEl.title = "Click to cancel";
-				cdEl.addEventListener("click", (e) => {
-					e.stopPropagation();
-					this.plugin.queueEngine.cancelCountdown(session.name);
-				});
-				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
-				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: countdownText(countdown) });
-				this.sendBtns.set(session.name, cdEl);
+				this.buildCountdownEl(card, session.name, countdown);
 			} else {
-				const sendBtn = card.createEl("button", { cls: "co-sm-card-send" });
-				const sendIconSpan = sendBtn.createSpan({ cls: "co-sm-card-send-icon" });
-				setIcon(sendIconSpan, "play");
-				sendBtn.createSpan({ text: "Send next" });
-				sendBtn.title = "Send next queue item";
-				sendBtn.addEventListener("click", (e) => {
-					e.stopPropagation();
-					void this.sendNextForSession(session.name);
-				});
-				this.sendBtns.set(session.name, sendBtn);
+				this.buildSendBtn(card, session.name);
 			}
 		}
 
@@ -683,6 +664,32 @@ export class SessionManagerView extends ItemView {
 			}
 		});
 
+	}
+
+	private buildCountdownEl(parent: HTMLElement, sessionName: string, remaining: number): void {
+		const cdEl = parent.createDiv({ cls: "co-sm-card-countdown" });
+		cdEl.style.cursor = "pointer";
+		cdEl.title = "Click to cancel";
+		cdEl.addEventListener("click", (e) => {
+			e.stopPropagation();
+			this.plugin.queueEngine.cancelCountdown(sessionName);
+		});
+		cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
+		cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: countdownText(remaining) });
+		this.sendBtns.set(sessionName, cdEl);
+	}
+
+	private buildSendBtn(parent: HTMLElement, sessionName: string): void {
+		const sendBtn = parent.createEl("button", { cls: "co-sm-card-send" });
+		const sendIconSpan = sendBtn.createSpan({ cls: "co-sm-card-send-icon" });
+		setIcon(sendIconSpan, "play");
+		sendBtn.createSpan({ text: "Send next" });
+		sendBtn.title = "Send next queue item";
+		sendBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			void this.sendNextForSession(sessionName);
+		});
+		this.sendBtns.set(sessionName, sendBtn);
 	}
 
 	private updateCountdownButtons(): void {
@@ -697,28 +704,10 @@ export class SessionManagerView extends ItemView {
 				if (label) label.textContent = countdownText(remaining);
 			} else if (remaining > 0 && !isCd) {
 				el.remove();
-				const cdEl = parent.createDiv({ cls: "co-sm-card-countdown" });
-				cdEl.style.cursor = "pointer";
-				cdEl.title = "Click to cancel";
-				cdEl.addEventListener("click", (e) => {
-					e.stopPropagation();
-					this.plugin.queueEngine.cancelCountdown(sessionName);
-				});
-				cdEl.createSpan({ cls: "co-sm-card-countdown-dot" });
-				cdEl.createSpan({ cls: "co-sm-card-countdown-text", text: countdownText(remaining) });
-				this.sendBtns.set(sessionName, cdEl);
+				this.buildCountdownEl(parent, sessionName, remaining);
 			} else if (remaining <= 0 && isCd) {
 				el.remove();
-				const sendBtn = parent.createEl("button", { cls: "co-sm-card-send" });
-				const sendIconSpan2 = sendBtn.createSpan({ cls: "co-sm-card-send-icon" });
-				setIcon(sendIconSpan2, "play");
-				sendBtn.createSpan({ text: "Send next" });
-				sendBtn.title = "Send next queue item";
-				sendBtn.addEventListener("click", (e) => {
-					e.stopPropagation();
-					void this.sendNextForSession(sessionName);
-				});
-				this.sendBtns.set(sessionName, sendBtn);
+				this.buildSendBtn(parent, sessionName);
 			}
 		}
 	}
@@ -874,6 +863,10 @@ export class SessionManagerView extends ItemView {
 			void this.refresh();
 		};
 
+		// Keep focus in the input while clicking the buttons — otherwise the
+		// input's blur handler saves before the Cancel click can run.
+		confirmBtn?.addEventListener("mousedown", (e) => { e.preventDefault(); });
+		cancelBtn?.addEventListener("mousedown", (e) => { e.preventDefault(); });
 		confirmBtn?.addEventListener("click", (e) => { e.stopPropagation(); save(); });
 		cancelBtn?.addEventListener("click", (e) => { e.stopPropagation(); cancel(); });
 		input.addEventListener("keydown", (e) => {
