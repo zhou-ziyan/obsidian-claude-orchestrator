@@ -5657,6 +5657,19 @@ describe("materializeHookScripts", () => {
 		assert.ok(result.errors[0]!.includes("co-stop-hook.sh"));
 	});
 
+	it("still reports something readable when a port throws a non-Error", () => {
+		// The messages end up in a Notice. A port that rejects with a string
+		// (or anything else) must not degrade that into "[object Object]" —
+		// a user staring at a stuck panel needs the actual reason.
+		const fs = makeFakeFs().fs;
+		// Throwing a non-Error is the whole point here: a misbehaving port.
+		// eslint-disable-next-line @typescript-eslint/only-throw-error
+		fs.writeFile = () => { throw "disk is read-only"; };
+		const result = materializeHookScripts(FAKE_HOME, fs);
+		assert.equal(result.paths["co-stop-hook.sh"], null);
+		assert.ok(result.errors.some((e) => e.includes("disk is read-only")));
+	});
+
 	it("returns null when the written script is not executable afterwards", () => {
 		const { fs } = makeFakeFs({}, { [`isExecutableFile:${STOP_PATH}`]: "not executable" });
 		const result = materializeHookScripts(FAKE_HOME, fs);

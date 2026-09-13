@@ -28,8 +28,6 @@ export { HOOK_SCRIPT_SOURCES };
  */
 export const HOOK_SCRIPTS_HOME_DIR = ".claude-orchestrator";
 export const HOOK_SCRIPTS_SUBDIR = "scripts";
-export const STOP_HOOK_SCRIPT_NAME = "co-stop-hook.sh";
-export const NOTIFICATION_HOOK_SCRIPT_NAME = "co-notification-hook.sh";
 /** rwxr-xr-x — the hook is spawned by Claude Code, not sourced. */
 export const HOOK_SCRIPT_MODE = 0o755;
 
