@@ -20,6 +20,7 @@ function makeNote(over: Partial<SessionNote> = {}): SessionNote {
 		queueMode: "manual",
 		displayName: "",
 		summary: "",
+		engine: "", model: "",
 		notes: "",
 		history: [],
 		queue: [],
@@ -233,5 +234,82 @@ describe("QueueEngine round-trip with real note markdown", () => {
 		const saved = h.notes.get("P-1")!;
 		assert.equal(saved.queue.length, 0, "countdown of 0 sends immediately");
 		assert.equal(saved.history.length, 2);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Engine capability gating — an engine with no reliable completion signal
+// must never drive the queue on its own.
+// ---------------------------------------------------------------------------
+
+describe("QueueEngine engine capability", () => {
+	it("auto mode still auto-sends for Claude", async (t) => {
+		timers(t).enable({ apis: ["setInterval"] });
+		const h = makeHarness(makeNote({ engine: "claude", queueMode: "auto", queue: ["next task"] }), { countdownSeconds: 1 });
+		await h.engine.onStopSignal("P-1", "done");
+		timers(t).tick(1000);
+		await h.engine.flush();
+		assert.equal(h.notes.get("P-1")!.queue.length, 0);
+	});
+
+	it("auto mode still auto-sends for a legacy note with no engine field", async (t) => {
+		timers(t).enable({ apis: ["setInterval"] });
+		const h = makeHarness(makeNote({ queueMode: "auto", queue: ["next task"] }), { countdownSeconds: 1 });
+		await h.engine.onStopSignal("P-1", "done");
+		timers(t).tick(1000);
+		await h.engine.flush();
+		assert.equal(h.notes.get("P-1")!.queue.length, 0);
+	});
+
+	it("never auto-sends when the note names an engine we cannot drive", async (t) => {
+		timers(t).enable({ apis: ["setInterval"] });
+		const h = makeHarness(makeNote({ engine: "gpt-5-turbo", queueMode: "auto", queue: ["next task"] }), { countdownSeconds: 1 });
+		await h.engine.onStopSignal("P-1", "done");
+		assert.equal(h.engine.getCountdownRemaining("P-1"), 0, "no countdown started");
+		timers(t).tick(5000);
+		await h.engine.flush();
+		assert.equal(h.notes.get("P-1")!.queue.length, 1, "queue item still waiting");
+		assert.equal(h.execs.length, 0, "nothing typed into tmux");
+	});
+
+	it("does not even notify in listen mode for an undrivable engine", async () => {
+		const h = makeHarness(makeNote({ engine: "gpt-5-turbo", queueMode: "listen", queue: ["x"] }));
+		await h.engine.onStopSignal("P-1", "done");
+		assert.equal(h.notifications.length, 0);
+	});
+
+	it("still records status and history for an undrivable engine", async () => {
+		const h = makeHarness(makeNote({
+			engine: "gpt-5-turbo", queueMode: "auto",
+			history: [{ text: "task A", completed: false }],
+		}));
+		await h.engine.onStopSignal("P-1", "done");
+		const saved = h.notes.get("P-1")!;
+		assert.equal(saved.status, "idle");
+		assert.equal(saved.history[0]!.completed, true);
+	});
+
+	it("still sends on an explicit manual sendNext for an undrivable engine", async () => {
+		const h = makeHarness(makeNote({ engine: "gpt-5-turbo", queueMode: "manual", queue: ["do it"] }));
+		await h.engine.sendNext("P-1");
+		assert.equal(h.notes.get("P-1")!.queue.length, 0);
+		assert.ok(h.execs.some((a) => a.join(" ").includes("do it")));
+	});
+
+	it("ignores a note edit that would auto-send for an undrivable engine", async () => {
+		const h = makeHarness(makeNote({ engine: "gpt-5-turbo", status: "idle", queueMode: "auto", queue: ["x"] }));
+		await h.engine.onNoteChanged("P-1");
+		assert.equal(h.engine.getCountdownRemaining("P-1"), 0);
+		assert.equal(h.execs.length, 0);
+	});
+
+	it("still auto-sends on a note edit for Claude", async (t) => {
+		timers(t).enable({ apis: ["setInterval"] });
+		const h = makeHarness(makeNote({ engine: "claude", status: "idle", queueMode: "auto", queue: ["x"] }), { countdownSeconds: 1 });
+		await h.engine.onNoteChanged("P-1");
+		assert.equal(h.engine.getCountdownRemaining("P-1"), 1);
+		timers(t).tick(1000);
+		await h.engine.flush();
+		assert.equal(h.notes.get("P-1")!.queue.length, 0);
 	});
 });
