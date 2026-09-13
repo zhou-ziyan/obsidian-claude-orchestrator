@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -65,6 +65,11 @@ import {
 	autoSendAction,
 	ensureStopHookConfig,
 	ensureNotificationHookConfig,
+	shellQuoteSingle,
+	materializeHookScripts,
+	hookScriptsDir,
+	HOOK_SCRIPT_SOURCES,
+	HOOK_SCRIPT_MODE,
 	parseQuickReplyKeys,
 	filterSlashCommands,
 	applySortOrder,
@@ -114,7 +119,7 @@ import {
 	resolveSessionEngineRef,
 	engineQueueModes,
 } from "../src/utils.ts";
-import type { ProjectRegistry, SessionNote, SessionGroup, HistoryItem, SlashCommandEntry, StopSignal } from "../src/utils.ts";
+import type { ProjectRegistry, SessionNote, SessionGroup, HistoryItem, SlashCommandEntry, StopSignal, HookScriptFs } from "../src/utils.ts";
 
 const TEST_PROJECTS: ProjectRegistry = {
 	"15_Claude_Orchestrator": { vaultFolder: "01_Projects/15_Claude_Orchestrator" },
@@ -5515,5 +5520,236 @@ describe("project default engine", () => {
 		const ref = resolveSessionEngineRef(null, reg.P?.defaultEngine, "claude");
 		assert.equal(ref.status, "unavailable");
 		assert.deepStrictEqual(engineQueueModes(ref), ["manual"]);
+// Hook script materialization
+//
+// Release channels (BRAT, release zip) install only main.js / manifest.json /
+// styles.css, so `<pluginDir>/scripts/` never exists on a released install and
+// the plugin used to register a hook path that could not run. The bundle now
+// carries the script text and writes it out at load time.
+// ---------------------------------------------------------------------------
+
+interface FakeFsCall {
+	op: string;
+	path: string;
+	content?: string;
+	mode?: number;
+}
+
+function makeFakeFs(
+	seed: Record<string, string> = {},
+	throwOn: Record<string, string> = {},
+): { fs: HookScriptFs; calls: FakeFsCall[]; files: Record<string, string> } {
+	const files: Record<string, string> = { ...seed };
+	const dirs = new Set<string>();
+	const calls: FakeFsCall[] = [];
+	const maybeThrow = (op: string, path: string) => {
+		const key = `${op}:${path}`;
+		if (throwOn[key]) throw new Error(throwOn[key]);
+		if (throwOn[op]) throw new Error(throwOn[op]);
+	};
+	const fs: HookScriptFs = {
+		ensureDir(dir) {
+			calls.push({ op: "ensureDir", path: dir });
+			maybeThrow("ensureDir", dir);
+			dirs.add(dir);
+		},
+		readFile(path) {
+			calls.push({ op: "readFile", path });
+			return Object.prototype.hasOwnProperty.call(files, path) ? files[path]! : null;
+		},
+		writeFile(path, content) {
+			calls.push({ op: "writeFile", path, content });
+			maybeThrow("writeFile", path);
+			files[path] = content;
+		},
+		chmod(path, mode) {
+			calls.push({ op: "chmod", path, mode });
+			maybeThrow("chmod", path);
+		},
+		isExecutableFile(path) {
+			calls.push({ op: "isExecutableFile", path });
+			if (throwOn[`isExecutableFile:${path}`]) return false;
+			return Object.prototype.hasOwnProperty.call(files, path);
+		},
+	};
+	return { fs, calls, files };
+}
+
+// Scripts land in one fixed, vault-independent directory so that every vault
+// registers the exact same command string in the shared ~/.claude/settings.json.
+const FAKE_HOME = "/Users/someone";
+const SCRIPTS_DIR = `${FAKE_HOME}/.claude-orchestrator/scripts`;
+const STOP_PATH = `${SCRIPTS_DIR}/co-stop-hook.sh`;
+const NOTIFY_PATH = `${SCRIPTS_DIR}/co-notification-hook.sh`;
+
+describe("materializeHookScripts", () => {
+	it("writes both scripts into the fixed scripts dir, creating it if absent", () => {
+		const { fs, calls, files } = makeFakeFs();
+		const result = materializeHookScripts(FAKE_HOME, fs);
+
+		assert.equal(result.stopHookPath, STOP_PATH);
+		assert.equal(result.notificationHookPath, NOTIFY_PATH);
+		assert.deepEqual(result.errors, []);
+		assert.equal(files[STOP_PATH], HOOK_SCRIPT_SOURCES["co-stop-hook.sh"]);
+		assert.equal(files[NOTIFY_PATH], HOOK_SCRIPT_SOURCES["co-notification-hook.sh"]);
+		assert.ok(calls.some((c) => c.op === "ensureDir" && c.path === SCRIPTS_DIR));
+	});
+
+	it("marks both scripts executable", () => {
+		const { fs, calls } = makeFakeFs();
+		materializeHookScripts(FAKE_HOME, fs);
+		const chmods = calls.filter((c) => c.op === "chmod");
+		assert.equal(chmods.length, 2);
+		for (const c of chmods) assert.equal(c.mode, HOOK_SCRIPT_MODE);
+	});
+
+	it("does not rewrite a script whose content already matches", () => {
+		const { fs, calls } = makeFakeFs({
+			[STOP_PATH]: HOOK_SCRIPT_SOURCES["co-stop-hook.sh"]!,
+			[NOTIFY_PATH]: HOOK_SCRIPT_SOURCES["co-notification-hook.sh"]!,
+		});
+		const result = materializeHookScripts(FAKE_HOME, fs);
+		assert.equal(calls.filter((c) => c.op === "writeFile").length, 0);
+		assert.equal(result.stopHookPath, STOP_PATH);
+		assert.equal(result.notificationHookPath, NOTIFY_PATH);
+	});
+
+	it("rewrites a script left over from an older plugin version", () => {
+		const { fs, calls, files } = makeFakeFs({ [STOP_PATH]: "#!/bin/sh\n# ancient\n" });
+		materializeHookScripts(FAKE_HOME, fs);
+		assert.ok(calls.some((c) => c.op === "writeFile" && c.path === STOP_PATH));
+		assert.equal(files[STOP_PATH], HOOK_SCRIPT_SOURCES["co-stop-hook.sh"]);
+	});
+
+	it("reports no paths and writes nothing when the scripts dir cannot be created", () => {
+		const { fs, calls } = makeFakeFs({}, { ensureDir: "EACCES" });
+		const result = materializeHookScripts(FAKE_HOME, fs);
+		assert.equal(result.stopHookPath, null);
+		assert.equal(result.notificationHookPath, null);
+		assert.ok(result.errors.length > 0);
+		assert.equal(calls.filter((c) => c.op === "writeFile").length, 0);
+	});
+
+	it("isolates a single failing script — the other one still materializes", () => {
+		const { fs } = makeFakeFs({}, { [`writeFile:${STOP_PATH}`]: "ENOSPC" });
+		const result = materializeHookScripts(FAKE_HOME, fs);
+		assert.equal(result.stopHookPath, null);
+		assert.equal(result.notificationHookPath, NOTIFY_PATH);
+		assert.equal(result.errors.length, 1);
+		assert.ok(result.errors[0]!.includes("co-stop-hook.sh"));
+	});
+
+	it("returns null when the written script is not executable afterwards", () => {
+		const { fs } = makeFakeFs({}, { [`isExecutableFile:${STOP_PATH}`]: "not executable" });
+		const result = materializeHookScripts(FAKE_HOME, fs);
+		assert.equal(result.stopHookPath, null);
+		assert.equal(result.notificationHookPath, NOTIFY_PATH);
+		assert.ok(result.errors.length > 0);
+	});
+});
+
+describe("hook script sources stay in sync with scripts/", () => {
+	// The bundled copy is generated from scripts/*.sh. If someone edits one
+	// side only, the shipped hook silently diverges from the reviewed one.
+	for (const name of ["co-stop-hook.sh", "co-notification-hook.sh"]) {
+		it(`${name} matches the committed inline copy`, () => {
+			const onDisk = readFileSync(join(process.cwd(), "scripts", name), "utf-8");
+			assert.equal(
+				HOOK_SCRIPT_SOURCES[name],
+				onDisk,
+				`${name} drifted — run \`npm run gen:hooks\` and commit the result`,
+			);
+		});
+	}
+
+	it("ships exactly the scripts the plugin registers hooks for", () => {
+		assert.deepEqual(
+			Object.keys(HOOK_SCRIPT_SOURCES).sort(),
+			["co-notification-hook.sh", "co-stop-hook.sh"],
+		);
+	});
+});
+
+describe("hook scripts live at one vault-independent path", () => {
+	it("derives the same directory regardless of which vault is loading", () => {
+		assert.equal(hookScriptsDir(FAKE_HOME), SCRIPTS_DIR);
+		assert.equal(hookScriptsDir("/Users/someone/"), SCRIPTS_DIR);
+	});
+
+	it("a second vault loading afterwards writes nothing — no settings churn", () => {
+		// Both vaults ship this version, so both materialize to the same path
+		// and compute the same command. The second load must be a no-op rather
+		// than rewriting the shared settings file every time a vault opens.
+		const first = ensureStopHookConfig("{}", STOP_PATH);
+		assert.equal(first.updated, true);
+
+		const second = ensureStopHookConfig(first.content, STOP_PATH);
+		assert.equal(second.updated, false);
+		assert.equal(second.content, first.content);
+
+		const firstNotify = ensureNotificationHookConfig(first.content, NOTIFY_PATH);
+		assert.equal(firstNotify.updated, true);
+		assert.equal(ensureNotificationHookConfig(firstNotify.content, NOTIFY_PATH).updated, false);
+	});
+
+	it("converges an entry left by an older version under the plugin directory", () => {
+		// Pre-fix versions registered the copy inside their own plugin folder,
+		// wherever the vault's config directory happened to be.
+		const legacyDir = "/vault/config-dir/plugins/claude-orchestrator/scripts";
+		const legacy = JSON.stringify({
+			hooks: {
+				Stop: [{
+					matcher: "*",
+					hooks: [{
+						type: "command",
+						command: shellQuoteSingle(`${legacyDir}/co-stop-hook.sh`),
+						timeout: 10,
+					}],
+				}],
+			},
+		});
+		const result = ensureStopHookConfig(legacy, STOP_PATH);
+		assert.equal(result.updated, true);
+		assert.ok(result.content.includes(shellQuoteSingle(STOP_PATH)));
+		assert.ok(!result.content.includes(legacyDir));
+		// and having converged, it stays put
+		assert.equal(ensureStopHookConfig(result.content, STOP_PATH).updated, false);
+	});
+});
+
+describe("hook registration refuses a path that is not available", () => {
+	const GOOD = "/other-home/.claude-orchestrator/scripts/co-stop-hook.sh";
+
+	it("ensureStopHookConfig does nothing when the script is unavailable", () => {
+		const result = ensureStopHookConfig("{}", null);
+		assert.equal(result.updated, false);
+		assert.equal(result.content, "{}");
+	});
+
+	it("ensureNotificationHookConfig does nothing when the script is unavailable", () => {
+		const result = ensureNotificationHookConfig("{}", null);
+		assert.equal(result.updated, false);
+		assert.equal(result.content, "{}");
+	});
+
+	it("never overwrites another vault's working path with an unavailable one", () => {
+		// Vault A registered a script that exists. Vault B loads but cannot
+		// materialize its own copy — it must leave A's entry alone rather than
+		// silently breaking completion detection for both vaults.
+		const settings = ensureStopHookConfig("{}", GOOD).content;
+		const result = ensureStopHookConfig(settings, null);
+		assert.equal(result.updated, false);
+		assert.equal(result.content, settings);
+		assert.ok(result.content.includes(GOOD));
+	});
+
+	it("still repairs a stale entry once a real path is available", () => {
+		const stale = JSON.stringify({
+			hooks: { Stop: [{ matcher: "*", hooks: [{ type: "command", command: "/old/co-stop-hook.sh" }] }] },
+		});
+		const result = ensureStopHookConfig(stale, GOOD);
+		assert.equal(result.updated, true);
+		assert.ok(result.content.includes(shellQuoteSingle(GOOD)));
+		assert.ok(!result.content.includes("/old/co-stop-hook.sh"));
 	});
 });
