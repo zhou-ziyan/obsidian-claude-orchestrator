@@ -120,6 +120,8 @@ import {
 	StopSignalLedger,
 	resolveSessionEngineRef,
 	engineQueueModes,
+	CARD_DRAG_IGNORE_SELECTOR,
+	selectorCoversTag,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote, SessionGroup, HistoryItem, SlashCommandEntry, StopSignal, HookScriptFs } from "../src/utils.ts";
 
@@ -5835,5 +5837,50 @@ describe("hook registration refuses a path that is not available", () => {
 		assert.equal(result.updated, true);
 		assert.ok(result.content.includes(shellQuoteSingle(GOOD)));
 		assert.ok(!result.content.includes("/old/co-stop-hook.sh"));
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Session card drag guard
+// ---------------------------------------------------------------------------
+
+describe("CARD_DRAG_IGNORE_SELECTOR", () => {
+	// Cards are dragged with raw mouse events, so mousedown calls
+	// preventDefault(). Any control inside a card that owns its own mouse
+	// interaction must be exempt, or it silently stops responding — a native
+	// <select> simply never opens its dropdown.
+	const interactive = ["button", "input", "select", "textarea", "a"];
+
+	for (const tag of interactive) {
+		it(`exempts <${tag}> from the drag handler`, () => {
+			assert.equal(selectorCoversTag(CARD_DRAG_IGNORE_SELECTOR, tag), true);
+		});
+	}
+
+	it("still exempts the card action area", () => {
+		assert.ok(CARD_DRAG_IGNORE_SELECTOR.includes(".co-sm-card-actions"));
+	});
+
+	it("does not exempt the card body itself, so dragging still works", () => {
+		assert.equal(selectorCoversTag(CARD_DRAG_IGNORE_SELECTOR, "div"), false);
+		assert.equal(selectorCoversTag(CARD_DRAG_IGNORE_SELECTOR, "span"), false);
+	});
+});
+
+describe("selectorCoversTag", () => {
+	it("matches a bare tag among a comma list", () => {
+		assert.equal(selectorCoversTag("button, input", "input"), true);
+	});
+
+	it("ignores surrounding whitespace", () => {
+		assert.equal(selectorCoversTag("  button ,  select  ", "select"), true);
+	});
+
+	it("does not treat a class selector as a tag", () => {
+		assert.equal(selectorCoversTag(".select", "select"), false);
+	});
+
+	it("does not match a prefix of a longer tag", () => {
+		assert.equal(selectorCoversTag("textarea", "text"), false);
 	});
 });

@@ -39,6 +39,7 @@ import {
 	countdownText,
 	summarizeSessionNote,
 	computeRelinkTarget,
+	CARD_DRAG_IGNORE_SELECTOR,
 	nowStamp,
 	ENGINE_IDS,
 	DEFAULT_ENGINE_ID,
@@ -784,7 +785,7 @@ export class SessionManagerView extends ItemView {
 		const row = panel.createDiv({ cls: "co-sm-settings-row" });
 		row.createSpan({ cls: "co-sm-settings-label", text: "Engine:" });
 
-		const select = row.createEl("select", { cls: "co-sm-settings-select" });
+		const select = row.createEl("select", { cls: "co-sm-settings-select co-select" });
 		for (const id of ENGINE_IDS) {
 			const def = getEngineDefinition(id);
 			if (!def) continue;
@@ -1057,7 +1058,7 @@ export class SessionManagerView extends ItemView {
 		};
 
 		card.addEventListener("mousedown", (e) => {
-			if ((e.target as HTMLElement).closest("button, input, .co-sm-card-actions")) return;
+			if ((e.target as HTMLElement).closest(CARD_DRAG_IGNORE_SELECTOR)) return;
 			e.preventDefault();
 			startY = e.clientY;
 			document.addEventListener("mousemove", onMouseMove);
@@ -1407,7 +1408,7 @@ export class SessionManagerView extends ItemView {
 
 		const engineRow = form.createDiv({ cls: "co-sm-form-row" });
 		engineRow.createSpan({ cls: "co-sm-form-label", text: "Engine" });
-		const engineSelect = engineRow.createEl("select", { cls: "co-sm-form-input" });
+		const engineSelect = engineRow.createEl("select", { cls: "co-sm-form-input co-select" });
 		engineSelect.createEl("option", { value: "", text: "Use global default" });
 		for (const id of ENGINE_IDS) {
 			const def = getEngineDefinition(id);

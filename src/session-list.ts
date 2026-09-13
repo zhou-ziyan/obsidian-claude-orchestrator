@@ -221,3 +221,21 @@ export function splitActiveInactive(
 	}
 	return { active, inactive };
 }
+
+/**
+ * Elements inside a session card that own their own mouse interaction.
+ *
+ * Cards are reordered with raw mouse events rather than the HTML5 drag API,
+ * so their mousedown handler calls preventDefault(). Anything listed here is
+ * exempt; anything missing silently stops responding to the mouse — a native
+ * <select> never opens its dropdown at all, with no error to go on.
+ *
+ * Add to this list whenever a new kind of control is rendered inside a card.
+ */
+export const CARD_DRAG_IGNORE_SELECTOR =
+	"button, input, select, textarea, a, label, .co-sm-card-actions";
+
+/** True when `selector` contains `tag` as a bare element selector. */
+export function selectorCoversTag(selector: string, tag: string): boolean {
+	return selector.split(",").map((part) => part.trim()).includes(tag);
+}
