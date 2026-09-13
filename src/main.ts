@@ -1,7 +1,7 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, ensureStopHookConfig, ensureNotificationHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, loadSlashCommands, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux } from "./utils";
+import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, ensureEngineHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, availableEngineIds, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, DEFAULT_ENGINE_ID } from "./utils";
 import type { ProjectRegistry, QueueMode, SessionNote, SlashCommandEntry, ThemeName } from "./utils";
 import { QUEUE_MODES, queueModeLabel } from "./utils";
 import { QueueEngine } from "./queue-engine";
@@ -44,7 +44,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		await this.autoDiscoverProjects();
 
 		const pluginDir = this.resolvePluginDir();
-		this.ensureStopHookRegistered(pluginDir);
+		this.ensureEngineHooksRegistered(pluginDir);
 
 		// Headless queue engine — owns the stop-signal → status/history →
 		// auto-send pipeline for every managed session, panel or not.
@@ -198,18 +198,20 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		this.queueEngine.dispose();
 	}
 
+	// Slash completion is engine-scoped: the engine definition decides both
+	// the builtin command list and where skills live on disk.
 	private loadSlashCommands(): void {
-		const skillDirs = [join(homedir(), ".claude", "skills")];
+		const roots = [homedir()];
 		const adapter = this.app.vault.adapter;
 		if (adapter instanceof FileSystemAdapter) {
-			skillDirs.push(join(adapter.getBasePath(), ".claude", "skills"));
+			roots.push(adapter.getBasePath());
 		}
 		for (const config of Object.values(this.settings.projects)) {
 			if (config.workingDirectory) {
-				skillDirs.push(join(config.workingDirectory, ".claude", "skills"));
+				roots.push(config.workingDirectory);
 			}
 		}
-		this.slashCommands = loadSlashCommands(skillDirs);
+		this.slashCommands = loadSlashCommandsFor(resolveEngineRef(DEFAULT_ENGINE_ID), roots);
 	}
 
 	async loadSettings() {
@@ -558,20 +560,29 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		}
 	}
 
-	private ensureStopHookRegistered(pluginDir: string): void {
-		const settingsPath = join(homedir(), ".claude", "settings.json");
-		try {
-			let content = readFileSync(settingsPath, "utf-8");
-			let updated = false;
-			const stop = ensureStopHookConfig(content, join(pluginDir, "scripts", "co-stop-hook.sh"));
-			if (stop.updated) { content = stop.content; updated = true; }
-			const notification = ensureNotificationHookConfig(content, join(pluginDir, "scripts", "co-notification-hook.sh"));
-			if (notification.updated) { content = notification.content; updated = true; }
-			if (updated) {
-				writeFileSync(settingsPath, content, "utf-8");
+	// Completion hooks come from each engine definition rather than a
+	// hard-coded ~/.claude/settings.json, so adding an engine that reports
+	// turn completion needs no change here.
+	private ensureEngineHooksRegistered(pluginDir: string): void {
+		const scriptsDir = join(pluginDir, "scripts");
+		for (const id of availableEngineIds()) {
+			const ref = resolveEngineRef(id);
+			const settingsPath = engineSettingsPath(ref, homedir());
+			const registrations = engineHookRegistrations(ref, scriptsDir);
+			if (!settingsPath || registrations.length === 0) continue;
+			try {
+				let content = readFileSync(settingsPath, "utf-8");
+				let updated = false;
+				for (const reg of registrations) {
+					const result = ensureEngineHookConfig(content, reg.event, reg.scriptName, reg.scriptPath);
+					if (result.updated) { content = result.content; updated = true; }
+				}
+				if (updated) {
+					writeFileSync(settingsPath, content, "utf-8");
+				}
+			} catch {
+				// Settings file doesn't exist or isn't readable — skip
 			}
-		} catch {
-			// Settings file doesn't exist or isn't readable — skip
 		}
 	}
 

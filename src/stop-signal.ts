@@ -155,7 +155,12 @@ export function shellQuoteSingle(path: string): string {
 	return `'${path.replace(/'/g, "'\\''")}'`;
 }
 
-function ensureClaudeHookConfig(
+/**
+ * Register one hook command in an engine's settings.json, repairing a
+ * stale/unquoted entry in place. Engine-agnostic: the caller supplies the
+ * event name and script, which come from the engine definition.
+ */
+export function ensureEngineHookConfig(
 	settingsJson: string,
 	hookEvent: string,
 	scriptBaseName: string,
@@ -209,7 +214,7 @@ export function ensureStopHookConfig(
 	settingsJson: string,
 	scriptPath: string,
 ): { updated: boolean; content: string } {
-	return ensureClaudeHookConfig(settingsJson, "Stop", "co-stop-hook.sh", scriptPath);
+	return ensureEngineHookConfig(settingsJson, "Stop", "co-stop-hook.sh", scriptPath);
 }
 
 /**
@@ -225,5 +230,5 @@ export function ensureNotificationHookConfig(
 	settingsJson: string,
 	scriptPath: string,
 ): { updated: boolean; content: string } {
-	return ensureClaudeHookConfig(settingsJson, "Notification", "co-notification-hook.sh", scriptPath);
+	return ensureEngineHookConfig(settingsJson, "Notification", "co-notification-hook.sh", scriptPath);
 }

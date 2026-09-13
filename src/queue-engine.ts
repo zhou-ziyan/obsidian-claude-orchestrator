@@ -6,7 +6,8 @@ import {
 	prepareQueueTaskText,
 } from "./queue-policy.ts";
 import { buildQuickReplyTmuxArgs, cancelCopyModeArgs, escapeLeadingBang } from "./tmux.ts";
-import type { SessionNote } from "./session-note.ts";
+import { effectiveQueueMode, resolveEngineRef } from "./engines.ts";
+import type { QueueMode, SessionNote } from "./session-note.ts";
 import type { StopReason } from "./stop-signal.ts";
 
 /**
@@ -109,7 +110,7 @@ export class QueueEngine {
 		markLastHistoryDone(note.history, reason);
 		await this.writeNote(sessionName, note);
 
-		const action = autoSendAction(note.queueMode, reason, note.queue.length);
+		const action = autoSendAction(this.queueModeFor(note), reason, note.queue.length);
 		if (action === "send") {
 			this.startCountdown(sessionName);
 		} else if (action === "notify") {
@@ -136,12 +137,19 @@ export class QueueEngine {
 		}
 		if (!this.idle.get(sessionName)) return;
 
-		const action = autoSendAction(note.queueMode, null, note.queue.length);
+		const action = autoSendAction(this.queueModeFor(note), null, note.queue.length);
 		if (action === "send") {
 			this.startCountdown(sessionName);
 		} else if (action === "notify") {
 			this.notifier.notify(notifyQueueMessage("Claude idle", note.queue.length));
 		}
+	}
+
+	/** The note's queue mode, clamped to what its engine can honor. An
+	 * engine with no completion signal never drives the queue on its own —
+	 * explicit sendNext still works. */
+	private queueModeFor(note: SessionNote): QueueMode {
+		return effectiveQueueMode(resolveEngineRef(note.engine), note.queueMode);
 	}
 
 	async sendNext(sessionName: string): Promise<void> {
