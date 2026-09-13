@@ -1,15 +1,14 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, ensureEngineHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, StopSignalLedger, availableEngineIds, engineCreatesHookFile, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, resolveSessionEngineRef, isEngineId, ENGINE_IDS, getEngineDefinition, DEFAULT_ENGINE_ID } from "./utils";
-import type { EngineId, ProjectRegistry, QueueMode, SessionNote, SlashCommandEntry, StopReason, ThemeName } from "./utils";
+import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, ensureEngineHookConfig, materializeHookScripts, hookScriptsDir, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, StopSignalLedger, availableEngineIds, engineCreatesHookFile, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, resolveSessionEngineRef, isEngineId, ENGINE_IDS, getEngineDefinition, DEFAULT_ENGINE_ID } from "./utils";
+import type { EngineId, HookScriptFs, ProjectRegistry, QueueMode, SessionNote, SlashCommandEntry, StopReason, ThemeName } from "./utils";
 import { QUEUE_MODES, queueModeLabel } from "./utils";
 import { QueueEngine } from "./queue-engine";
 import { StopHookWatcher } from "./stop-hook-watcher";
 import { findTerminalLeafBySession, findTerminalLeafByProject, collectOpenSessionNames } from "./workspace-helpers";
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { accessSync, chmodSync, constants as fsConstants, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { dirname } from "path";
-import { join } from "path";
 import { homedir } from "os";
 
 export interface OrchestratorSettings {
@@ -37,6 +36,35 @@ const DEFAULT_SETTINGS: OrchestratorSettings = {
 	defaultEngine: DEFAULT_ENGINE_ID,
 };
 
+/** Node-backed {@link HookScriptFs} used outside tests. */
+const nodeHookScriptFs: HookScriptFs = {
+	ensureDir(dir) {
+		mkdirSync(dir, { recursive: true });
+	},
+	readFile(path) {
+		try {
+			return readFileSync(path, "utf-8");
+		} catch {
+			return null;
+		}
+	},
+	writeFile(path, content) {
+		writeFileSync(path, content, "utf-8");
+	},
+	chmod(path, mode) {
+		chmodSync(path, mode);
+	},
+	isExecutableFile(path) {
+		try {
+			if (!statSync(path).isFile()) return false;
+			accessSync(path, fsConstants.X_OK);
+			return true;
+		} catch {
+			return false;
+		}
+	},
+};
+
 export default class ClaudeOrchestratorPlugin extends Plugin {
 	settings: OrchestratorSettings = DEFAULT_SETTINGS;
 	queueEngine!: QueueEngine;
@@ -51,7 +79,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		await this.autoDiscoverProjects();
 
 		const pluginDir = this.resolvePluginDir();
-		this.ensureEngineHooksRegistered(pluginDir);
+		this.ensureEngineHooksRegistered();
 
 		// Headless queue engine — owns the stop-signal → status/history →
 		// auto-send pipeline for every managed session, panel or not.
@@ -575,15 +603,45 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		}
 	}
 
-	// Completion hooks come from each engine definition rather than a
-	// hard-coded ~/.claude/settings.json, so adding an engine that reports
-	// turn completion needs no change here.
-	private ensureEngineHooksRegistered(pluginDir: string): void {
-		const scriptsDir = join(pluginDir, "scripts");
+	/**
+	 * Install the bundled hook scripts, then register them in each engine's
+	 * settings file.
+	 *
+	 * Two things are going on:
+	 * - The scripts are written at load time rather than shipped as files.
+	 *   BRAT and the release zip install only main.js / manifest.json /
+	 *   styles.css, so a scripts/ directory next to the plugin only ever
+	 *   existed on a dev checkout, and released installs registered hooks
+	 *   pointing at files that could not run. They go to one fixed directory
+	 *   rather than under the plugin so every vault registers an identical
+	 *   command instead of rewriting the shared settings file over its
+	 *   neighbours. See src/hook-scripts.ts.
+	 * - Which hooks to register comes from each engine definition rather than
+	 *   a hard-coded ~/.claude/settings.json, so adding an engine that reports
+	 *   turn completion needs no change here.
+	 */
+	private ensureEngineHooksRegistered(): void {
+		const home = homedir();
+		const { paths, errors } = materializeHookScripts(home, nodeHookScriptFs);
+
+		if (errors.length > 0) {
+			// Visible, not silent: without a runnable script the plugin cannot
+			// tell when a session finishes, and the panel just looks stuck.
+			new Notice(
+				`Claude Orchestrator could not install its hook scripts:\n${errors.join("\n")}`,
+				10000,
+			);
+		}
+
+		const scriptsDir = hookScriptsDir(home);
 		for (const id of availableEngineIds()) {
 			const ref = resolveEngineRef(id);
-			const settingsPath = engineSettingsPath(ref, homedir());
-			const registrations = engineHookRegistrations(ref, scriptsDir);
+			const settingsPath = engineSettingsPath(ref, home);
+			// Only scripts we actually installed: registering a path that does
+			// not exist would replace a working entry with a broken one, and
+			// the settings file is shared with every other vault.
+			const registrations = engineHookRegistrations(ref, scriptsDir)
+				.filter((reg) => paths[reg.scriptName]);
 			if (!settingsPath || registrations.length === 0) continue;
 			try {
 				let content: string;
@@ -596,7 +654,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 				}
 				let updated = false;
 				for (const reg of registrations) {
-					const result = ensureEngineHookConfig(content, reg.event, reg.scriptName, reg.scriptPath);
+					const result = ensureEngineHookConfig(content, reg.event, reg.scriptName, paths[reg.scriptName] ?? null);
 					if (result.updated) { content = result.content; updated = true; }
 				}
 				if (updated) {

@@ -130,8 +130,6 @@ export class StopSignalLedger {
 }
 
 /** Signals that no vault claims are cleaned up after this TTL. */
-
-/** Signals that no vault claims are cleaned up after this TTL. */
 export const STOP_SIGNAL_TTL_MS = 5 * 60 * 1000;
 
 export function isStaleSignalFile(mtimeMs: number, nowMs: number): boolean {
@@ -142,17 +140,6 @@ export interface StopSignalDisposition {
 	action: "consume" | "ignore" | "discard";
 	project: string | null;
 }
-
-/**
- * Decide what a vault's watcher should do with a signal file. The signal
- * directory is shared by all vaults, so a watcher must never delete a file
- * another vault's plugin may still need:
- * - consume: ours (vault tag matches, or legacy untagged with a known
- *   project) — dispatch and delete.
- * - ignore: someone else's (other vault tag, or untagged with no project
- *   match here) — leave the file for its owner; TTL cleanup catches strays.
- * - discard: garbage or provably unclaimable — delete without dispatching.
- */
 
 /**
  * Decide what a vault's watcher should do with a signal file. The signal
@@ -224,10 +211,6 @@ interface ClaudeHookMatcher {
 // Single-quote a path for /bin/sh -c. Required because the registered command
 // is run via shell, and unquoted paths with spaces (e.g. iCloud's "Mobile
 // Documents/") get word-split into "command not found".
-
-// Single-quote a path for /bin/sh -c. Required because the registered command
-// is run via shell, and unquoted paths with spaces (e.g. iCloud's "Mobile
-// Documents/") get word-split into "command not found".
 export function shellQuoteSingle(path: string): string {
 	return `'${path.replace(/'/g, "'\\''")}'`;
 }
@@ -236,13 +219,21 @@ export function shellQuoteSingle(path: string): string {
  * Register one hook command in an engine's settings.json, repairing a
  * stale/unquoted entry in place. Engine-agnostic: the caller supplies the
  * event name and script, which come from the engine definition.
+ *
+ * `scriptPath` is null when the plugin could not make its own copy of that
+ * script runnable. An engine's settings file is shared by every vault, so
+ * registering a path that does not exist would silently replace a working
+ * entry another vault wrote and break completion detection for both. In that
+ * case, leave the file exactly as it is.
  */
 export function ensureEngineHookConfig(
 	settingsJson: string,
 	hookEvent: string,
 	scriptBaseName: string,
-	scriptPath: string,
+	scriptPath: string | null,
 ): { updated: boolean; content: string } {
+	if (!scriptPath) return { updated: false, content: settingsJson };
+
 	let settings: Record<string, unknown>;
 	try {
 		settings = JSON.parse(settingsJson) as Record<string, unknown>;
@@ -289,7 +280,7 @@ export function ensureEngineHookConfig(
 
 export function ensureStopHookConfig(
 	settingsJson: string,
-	scriptPath: string,
+	scriptPath: string | null,
 ): { updated: boolean; content: string } {
 	return ensureEngineHookConfig(settingsJson, "Stop", "co-stop-hook.sh", scriptPath);
 }
@@ -298,14 +289,9 @@ export function ensureStopHookConfig(
  * Notification hook: permission requests are a structured, reliable
  * "Claude is asking" signal (vs. guessing from transcript regexes).
  */
-
-/**
- * Notification hook: permission requests are a structured, reliable
- * "Claude is asking" signal (vs. guessing from transcript regexes).
- */
 export function ensureNotificationHookConfig(
 	settingsJson: string,
-	scriptPath: string,
+	scriptPath: string | null,
 ): { updated: boolean; content: string } {
 	return ensureEngineHookConfig(settingsJson, "Notification", "co-notification-hook.sh", scriptPath);
 }

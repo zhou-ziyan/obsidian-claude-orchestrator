@@ -6,6 +6,7 @@ export * from "./projects.ts";
 export * from "./tmux.ts";
 export * from "./pty.ts";
 export * from "./stop-signal.ts";
+export * from "./hook-scripts.ts";
 export * from "./slash-commands.ts";
 export * from "./session-note.ts";
 export * from "./queue-policy.ts";
