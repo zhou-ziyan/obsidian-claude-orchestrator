@@ -236,13 +236,21 @@ export function shellQuoteSingle(path: string): string {
  * Register one hook command in an engine's settings.json, repairing a
  * stale/unquoted entry in place. Engine-agnostic: the caller supplies the
  * event name and script, which come from the engine definition.
+ *
+ * `scriptPath` is null when the plugin could not make its own copy of that
+ * script runnable. An engine's settings file is shared by every vault, so
+ * registering a path that does not exist would silently replace a working
+ * entry another vault wrote and break completion detection for both. In that
+ * case, leave the file exactly as it is.
  */
 export function ensureEngineHookConfig(
 	settingsJson: string,
 	hookEvent: string,
 	scriptBaseName: string,
-	scriptPath: string,
+	scriptPath: string | null,
 ): { updated: boolean; content: string } {
+	if (!scriptPath) return { updated: false, content: settingsJson };
+
 	let settings: Record<string, unknown>;
 	try {
 		settings = JSON.parse(settingsJson) as Record<string, unknown>;
@@ -289,7 +297,7 @@ export function ensureEngineHookConfig(
 
 export function ensureStopHookConfig(
 	settingsJson: string,
-	scriptPath: string,
+	scriptPath: string | null,
 ): { updated: boolean; content: string } {
 	return ensureEngineHookConfig(settingsJson, "Stop", "co-stop-hook.sh", scriptPath);
 }
@@ -305,7 +313,7 @@ export function ensureStopHookConfig(
  */
 export function ensureNotificationHookConfig(
 	settingsJson: string,
-	scriptPath: string,
+	scriptPath: string | null,
 ): { updated: boolean; content: string } {
 	return ensureEngineHookConfig(settingsJson, "Notification", "co-notification-hook.sh", scriptPath);
 }

@@ -5520,12 +5520,16 @@ describe("project default engine", () => {
 		const ref = resolveSessionEngineRef(null, reg.P?.defaultEngine, "claude");
 		assert.equal(ref.status, "unavailable");
 		assert.deepStrictEqual(engineQueueModes(ref), ["manual"]);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // Hook script materialization
 //
 // Release channels (BRAT, release zip) install only main.js / manifest.json /
-// styles.css, so `<pluginDir>/scripts/` never exists on a released install and
-// the plugin used to register a hook path that could not run. The bundle now
-// carries the script text and writes it out at load time.
+// styles.css, so a scripts/ directory next to the plugin never exists on a
+// released install and the plugin used to register a hook path that could not
+// run. The bundle now carries the script text and writes it out at load time.
 // ---------------------------------------------------------------------------
 
 interface FakeFsCall {
@@ -5587,8 +5591,8 @@ describe("materializeHookScripts", () => {
 		const { fs, calls, files } = makeFakeFs();
 		const result = materializeHookScripts(FAKE_HOME, fs);
 
-		assert.equal(result.stopHookPath, STOP_PATH);
-		assert.equal(result.notificationHookPath, NOTIFY_PATH);
+		assert.equal(result.paths["co-stop-hook.sh"], STOP_PATH);
+		assert.equal(result.paths["co-notification-hook.sh"], NOTIFY_PATH);
 		assert.deepEqual(result.errors, []);
 		assert.equal(files[STOP_PATH], HOOK_SCRIPT_SOURCES["co-stop-hook.sh"]);
 		assert.equal(files[NOTIFY_PATH], HOOK_SCRIPT_SOURCES["co-notification-hook.sh"]);
@@ -5610,8 +5614,8 @@ describe("materializeHookScripts", () => {
 		});
 		const result = materializeHookScripts(FAKE_HOME, fs);
 		assert.equal(calls.filter((c) => c.op === "writeFile").length, 0);
-		assert.equal(result.stopHookPath, STOP_PATH);
-		assert.equal(result.notificationHookPath, NOTIFY_PATH);
+		assert.equal(result.paths["co-stop-hook.sh"], STOP_PATH);
+		assert.equal(result.paths["co-notification-hook.sh"], NOTIFY_PATH);
 	});
 
 	it("rewrites a script left over from an older plugin version", () => {
@@ -5624,8 +5628,11 @@ describe("materializeHookScripts", () => {
 	it("reports no paths and writes nothing when the scripts dir cannot be created", () => {
 		const { fs, calls } = makeFakeFs({}, { ensureDir: "EACCES" });
 		const result = materializeHookScripts(FAKE_HOME, fs);
-		assert.equal(result.stopHookPath, null);
-		assert.equal(result.notificationHookPath, null);
+		// Every bundled script reports null, not just the two Claude ones.
+		assert.ok(Object.keys(result.paths).length > 0);
+		for (const [name, path] of Object.entries(result.paths)) {
+			assert.equal(path, null, `${name} should not have a path`);
+		}
 		assert.ok(result.errors.length > 0);
 		assert.equal(calls.filter((c) => c.op === "writeFile").length, 0);
 	});
@@ -5633,8 +5640,8 @@ describe("materializeHookScripts", () => {
 	it("isolates a single failing script — the other one still materializes", () => {
 		const { fs } = makeFakeFs({}, { [`writeFile:${STOP_PATH}`]: "ENOSPC" });
 		const result = materializeHookScripts(FAKE_HOME, fs);
-		assert.equal(result.stopHookPath, null);
-		assert.equal(result.notificationHookPath, NOTIFY_PATH);
+		assert.equal(result.paths["co-stop-hook.sh"], null);
+		assert.equal(result.paths["co-notification-hook.sh"], NOTIFY_PATH);
 		assert.equal(result.errors.length, 1);
 		assert.ok(result.errors[0]!.includes("co-stop-hook.sh"));
 	});
@@ -5642,8 +5649,8 @@ describe("materializeHookScripts", () => {
 	it("returns null when the written script is not executable afterwards", () => {
 		const { fs } = makeFakeFs({}, { [`isExecutableFile:${STOP_PATH}`]: "not executable" });
 		const result = materializeHookScripts(FAKE_HOME, fs);
-		assert.equal(result.stopHookPath, null);
-		assert.equal(result.notificationHookPath, NOTIFY_PATH);
+		assert.equal(result.paths["co-stop-hook.sh"], null);
+		assert.equal(result.paths["co-notification-hook.sh"], NOTIFY_PATH);
 		assert.ok(result.errors.length > 0);
 	});
 });
