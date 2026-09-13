@@ -2,7 +2,12 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
 	CLAUDE_ENGINE,
+	CODEX_ENGINE,
 	DEFAULT_ENGINE_ID,
+	engineCommandLine,
+	engineCreatesHookFile,
+	engineSettingsPath,
+	loadSlashCommandsFor,
 	ENGINE_IDS,
 	availableEngineIds,
 	effectiveQueueMode,
@@ -178,8 +183,8 @@ describe("CLAUDE_ENGINE definition", () => {
 		assert.notEqual(hooks, null);
 		assert.deepStrictEqual(hooks!.settingsSegments, [".claude", "settings.json"]);
 		assert.deepStrictEqual(hooks!.entries, [
-			{ event: "Stop", script: "co-stop-hook.sh" },
-			{ event: "Notification", script: "co-notification-hook.sh" },
+			{ role: "turn-end", event: "Stop", script: "co-stop-hook.sh" },
+			{ role: "waiting-for-input", event: "Notification", script: "co-notification-hook.sh" },
 		]);
 	});
 });
@@ -278,6 +283,24 @@ describe("engineSkillDirs", () => {
 // Registry shape — guards against a half-registered engine
 // ---------------------------------------------------------------------------
 
+describe("hook roles are engine-independent", () => {
+	it("every registered engine that reports completion names a turn-end hook", () => {
+		for (const id of availableEngineIds()) {
+			const def = getEngineDefinition(id)!;
+			if (def.completionSignal !== "hook") continue;
+			const roles = (def.hooks?.entries ?? []).map((e) => e.role);
+			assert.ok(roles.includes("turn-end"), `${id} names a turn-end hook`);
+		}
+	});
+
+	it("no engine reuses one role twice", () => {
+		for (const id of availableEngineIds()) {
+			const roles = (getEngineDefinition(id)!.hooks?.entries ?? []).map((e) => e.role);
+			assert.equal(new Set(roles).size, roles.length, `${id} has distinct roles`);
+		}
+	});
+});
+
 describe("engine registry integrity", () => {
 	it("every registered definition is self-consistent", () => {
 		for (const id of availableEngineIds()) {
@@ -297,5 +320,152 @@ describe("engine registry integrity", () => {
 			const def = getEngineDefinition(id);
 			assert.ok(def === null || def.id === id);
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Codex definition — every value here traces to CodexProbe's measured
+// evidence (codex-cli 0.154.0-alpha.6.2), not to guesswork.
+// ---------------------------------------------------------------------------
+
+describe("CODEX_ENGINE definition", () => {
+	it("is registered, so notes naming codex resolve to a real definition", () => {
+		assert.equal(getEngineDefinition("codex"), CODEX_ENGINE);
+		assert.equal(CODEX_ENGINE.id, "codex");
+		assert.equal(resolveEngineRef("codex").status, "known");
+	});
+
+	it("reports a hook-based completion signal — Codex has structured hooks", () => {
+		assert.equal(CODEX_ENGINE.completionSignal, "hook");
+		assert.equal(engineSupportsAutoSend(resolveEngineRef("codex")), true);
+	});
+
+	it("maps the waiting-for-input role onto PermissionRequest, not Notification", () => {
+		// Codex has no Notification event; PermissionRequest is the equivalent.
+		const entries = CODEX_ENGINE.hooks?.entries ?? [];
+		const waiting = entries.find((e) => e.role === "waiting-for-input");
+		assert.equal(waiting?.event, "PermissionRequest");
+		assert.ok(!entries.some((e) => e.event === "Notification"));
+	});
+
+	it("registers Stop for turn-end and Interrupt for an aborted turn", () => {
+		const byRole = new Map((CODEX_ENGINE.hooks?.entries ?? []).map((e) => [e.role, e.event]));
+		assert.equal(byRole.get("turn-end"), "Stop");
+		assert.equal(byRole.get("interrupted"), "Interrupt");
+	});
+
+	it("writes hooks to ~/.codex/hooks.json, not Claude's settings.json", () => {
+		assert.deepStrictEqual(CODEX_ENGINE.hooks?.settingsSegments, [".codex", "hooks.json"]);
+		assert.equal(engineSettingsPath(resolveEngineRef("codex"), "/Users/tester"), "/Users/tester/.codex/hooks.json");
+	});
+
+	it("uses Codex-specific hook scripts — its payload shape differs from Claude's", () => {
+		const scripts = (CODEX_ENGINE.hooks?.entries ?? []).map((e) => e.script);
+		for (const s of scripts) {
+			assert.ok(s.startsWith("co-codex-"), `${s} is Codex-specific`);
+		}
+	});
+
+	it("claims no slash commands — none are verified for the Codex TUI", () => {
+		assert.deepStrictEqual([...CODEX_ENGINE.builtinSlashCommands], []);
+		assert.deepStrictEqual(engineSkillDirs(resolveEngineRef("codex"), ["/Users/tester"]), []);
+		assert.deepStrictEqual(loadSlashCommandsFor(resolveEngineRef("codex"), ["/Users/tester"]), []);
+	});
+});
+
+describe("Codex launch and resume commands", () => {
+	it("launches the interactive TUI bare by default", () => {
+		assert.deepStrictEqual(CODEX_ENGINE.buildLaunchCommand(), { command: "codex", args: [] });
+	});
+
+	it("passes a model through -m", () => {
+		assert.deepStrictEqual(
+			CODEX_ENGINE.buildLaunchCommand({ model: "gpt-6-astra" }),
+			{ command: "codex", args: ["-m", "gpt-6-astra"] },
+		);
+	});
+
+	it("never emits exec-only flags on the TUI path", () => {
+		// --skip-git-repo-check is exec-only; the TUI rejects it outright.
+		const all = [
+			...CODEX_ENGINE.buildLaunchCommand({ model: "x" }).args,
+			...(CODEX_ENGINE.buildResumeCommand({ conversationId: "y" })?.args ?? []),
+		];
+		assert.ok(!all.includes("--skip-git-repo-check"));
+	});
+
+	it("resumes a specific conversation by session id", () => {
+		assert.deepStrictEqual(
+			CODEX_ENGINE.buildResumeCommand({ conversationId: "01a09a21-ec1d-7c92-a71e-2a01a6ffed90" }),
+			{ command: "codex", args: ["resume", "01a09a21-ec1d-7c92-a71e-2a01a6ffed90"] },
+		);
+	});
+
+	it("resumes the most recent conversation with --last when no id is known", () => {
+		assert.deepStrictEqual(CODEX_ENGINE.buildResumeCommand(), { command: "codex", args: ["resume", "--last"] });
+	});
+
+	it("combines resume with a model override", () => {
+		assert.deepStrictEqual(
+			CODEX_ENGINE.buildResumeCommand({ conversationId: "abc", model: "gpt-6-astra" }),
+			{ command: "codex", args: ["resume", "abc", "-m", "gpt-6-astra"] },
+		);
+	});
+
+	it("honors an explicitly resolved binary — the shell function is not on PATH", () => {
+		const app = "/Applications/ChatGPT.app/Contents/Resources/codex";
+		assert.deepStrictEqual(
+			CODEX_ENGINE.buildLaunchCommand({ binary: app }),
+			{ command: app, args: [] },
+		);
+		assert.equal(CODEX_ENGINE.buildResumeCommand({ binary: app })?.command, app);
+	});
+});
+
+describe("resolveEngineBinary for Codex", () => {
+	const home = "/Users/tester";
+	const APP = "/Applications/ChatGPT.app/Contents/Resources/codex";
+
+	it("prefers a real PATH-style install over the ChatGPT.app bundle", () => {
+		const found = resolveEngineBinary(CODEX_ENGINE, home, (p) => p === "/opt/homebrew/bin/codex" || p === APP);
+		assert.equal(found, "/opt/homebrew/bin/codex");
+	});
+
+	it("falls back to the ChatGPT.app bundle when nothing else is installed", () => {
+		assert.equal(resolveEngineBinary(CODEX_ENGINE, home, (p) => p === APP), APP);
+	});
+
+	it("falls back to the bare name when the app bundle has moved", () => {
+		assert.equal(resolveEngineBinary(CODEX_ENGINE, home, () => false), "codex");
+	});
+});
+
+describe("engine launch commands render as a shell line", () => {
+	it("joins command and args for typing into an interactive shell", () => {
+		assert.equal(engineCommandLine(CLAUDE_ENGINE.buildLaunchCommand({ model: "opus" })), "claude --model opus");
+		assert.equal(engineCommandLine(CODEX_ENGINE.buildResumeCommand({ conversationId: "abc" })), "codex resume abc");
+	});
+
+	it("quotes a binary path containing spaces", () => {
+		const cmd = engineCommandLine(CODEX_ENGINE.buildLaunchCommand({ binary: "/Applications/My App/codex" }));
+		assert.equal(cmd, "'/Applications/My App/codex'");
+	});
+
+	it("returns an empty string for a null command", () => {
+		assert.equal(engineCommandLine(null), "");
+	});
+});
+
+describe("engineCreatesHookFile", () => {
+	it("creates Codex's dedicated hooks.json when absent", () => {
+		assert.equal(engineCreatesHookFile(resolveEngineRef("codex")), true);
+	});
+
+	it("never conjures Claude's shared settings.json", () => {
+		assert.equal(engineCreatesHookFile(resolveEngineRef("claude")), false);
+	});
+
+	it("is false for an unavailable engine", () => {
+		assert.equal(engineCreatesHookFile(resolveEngineRef("gpt-5-turbo")), false);
 	});
 });

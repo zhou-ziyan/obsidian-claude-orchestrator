@@ -19,6 +19,7 @@ export default tseslint.config(
 					'tests/queue-engine.test.ts',
 					'tests/engines.test.ts',
 					'tests/e2e-tmux.test.ts',
+					'tests/e2e-dual-engine.test.ts',
 					]
 				},
 				tsconfigRootDir: import.meta.dirname,

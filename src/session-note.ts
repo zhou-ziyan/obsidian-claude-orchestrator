@@ -16,7 +16,7 @@ export function nowStamp(): string {
 	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export type SessionStatus = "idle" | "running" | "waiting_for_user";
+export type SessionStatus = "idle" | "running" | "waiting_for_user" | "error";
 
 export type QueueMode = "manual" | "listen" | "auto";
 
@@ -419,7 +419,7 @@ function stripLeadingCheckboxes(content: string): string {
 }
 
 function isSessionStatus(s: string): s is SessionStatus {
-	return s === "idle" || s === "running" || s === "waiting_for_user";
+	return s === "idle" || s === "running" || s === "waiting_for_user" || s === "error";
 }
 
 /**

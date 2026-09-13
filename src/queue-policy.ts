@@ -15,7 +15,8 @@ export function autoSendAction(
 	queueLength: number,
 ): AutoSendAction {
 	if (mode === "manual") return "none";
-	if (stopReason === "asking") return "none";
+	// Neither an approval prompt nor an aborted turn is a completion.
+	if (stopReason === "asking" || stopReason === "error") return "none";
 	if (queueLength === 0) return "none";
 	if (mode === "auto") return "send";
 	if (mode === "listen") return "notify";
@@ -40,9 +41,15 @@ export function shouldAutoSendAfterEdit(queueLength: number): boolean {
 export function deriveStatusFromStop(
 	stopReason: StopReason | null,
 ): { claudeIdle: boolean; status: SessionStatus } {
-	const claudeIdle = stopReason !== "asking";
-	const status: SessionStatus = stopReason === "asking" ? "waiting_for_user" : "idle";
-	return { claudeIdle, status };
+	if (stopReason === "asking") return { claudeIdle: false, status: "waiting_for_user" };
+	// An aborted turn still leaves the agent idle — Codex fires Interrupt
+	// *instead of* Stop, never both, so treating error as "still running"
+	// would strand the session with no completion signal ever coming. The
+	// queue is held back by autoSendAction on this signal rather than by
+	// pretending a turn is in flight; a later note edit may resume, which is
+	// what the user adding new work after an interrupt actually wants.
+	if (stopReason === "error") return { claudeIdle: true, status: "error" };
+	return { claudeIdle: true, status: "idle" };
 }
 
 export function markLastHistoryDone(

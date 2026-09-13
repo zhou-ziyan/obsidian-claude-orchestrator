@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Claude Code Notification hook — writes an "asking" signal for the
-# Orchestrator plugin when Claude requests permission.
+# Codex Interrupt hook — writes an "error" signal.
 #
-# Only permission-style notifications are forwarded: the generic
-# "waiting for your input" idle notification fires 60s after any stop
-# and would mislabel a normally idle session as waiting_for_user.
+# An interrupted turn is not a completed turn: the plugin must not advance
+# the queue, and must not mark the in-flight task done. The user pressed the
+# interrupt key, so they are at the keyboard — auto-send stays disarmed
+# until a genuine Stop arrives.
+#
+# Codex clamps Interrupt hook timeouts to 3 seconds, so this stays minimal.
 
 set -euo pipefail
 
@@ -22,15 +24,19 @@ TIMESTAMP=$(date +%s)
 SIGNAL=$(printf '%s' "$INPUT" | /usr/bin/python3 -c "
 import sys, json
 
-data = json.load(sys.stdin)
-message = str(data.get('message', ''))
-if 'permission' not in message.lower():
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    # Garbage in must not become a confident turn-end out.
+    sys.exit(0)
+if not isinstance(data, dict):
     sys.exit(0)
 
 data['tmux_session'] = '$TMUX_SESSION'
 data['timestamp'] = $TIMESTAMP
 data['vault'] = '$CO_VAULT'
-data['stop_reason'] = 'asking'
+data['provider'] = 'codex'
+data['stop_reason'] = 'error'
 json.dump(data, sys.stdout)
 ")
 
@@ -38,8 +44,6 @@ if [ -z "$SIGNAL" ]; then
     exit 0
 fi
 
-# Atomic write (see co-stop-hook.sh). The -notify suffix keeps a Stop
-# signal in the same second from being overwritten.
-SIGNAL_FILE="$SIGNAL_DIR/${TIMESTAMP}-${TMUX_SESSION}-notify.json"
+SIGNAL_FILE="$SIGNAL_DIR/${TIMESTAMP}-${TMUX_SESSION}-codex-int.json"
 echo "$SIGNAL" > "$SIGNAL_FILE.tmp"
 mv "$SIGNAL_FILE.tmp" "$SIGNAL_FILE"

@@ -38,6 +38,10 @@ export interface QueueEngineOptions {
 	sendKeyDelayMs?: number;
 }
 
+/** How far a send got, so a failure can be recovered without re-running
+ * work the agent has already received. */
+type SendOutcome = "sent" | "text-failed" | "enter-failed";
+
 interface Countdown {
 	remaining: number;
 	timer: ReturnType<typeof setInterval>;
@@ -157,13 +161,34 @@ export class QueueEngine {
 		const note = await this.store.read(sessionName);
 		if (!note || note.queue.length === 0) return;
 
+		const previousStatus = note.status;
 		this.idle.set(sessionName, false);
 		note.status = "running";
 		const task = note.queue.shift()!;
 		note.history.push({ text: task, completed: false });
 		await this.writeNote(sessionName, note);
 
-		await this.sendLiteral(sessionName, prepareQueueTaskText(task), true);
+		const outcome = await this.sendLiteral(sessionName, prepareQueueTaskText(task), true);
+		if (outcome === "text-failed") {
+			// Nothing reached the agent, so the task is still owed. Put it back
+			// at the head of the queue and drop the history entry — otherwise
+			// the item is silently lost with no way to retry it.
+			const current = await this.store.read(sessionName);
+			if (current) {
+				const last = current.history[current.history.length - 1];
+				if (last && !last.completed && last.text === task) current.history.pop();
+				current.queue.unshift(task);
+				current.status = previousStatus === "running" ? "idle" : previousStatus;
+				await this.writeNote(sessionName, current);
+			}
+			this.idle.set(sessionName, previousStatus !== "running");
+			this.notifier.notify("Send failed — task returned to the queue");
+		} else if (outcome === "enter-failed") {
+			// The prompt text is already sitting in the agent's input box.
+			// Re-queueing it would type it twice, so keep it in history and
+			// tell the user the one keystroke that is missing.
+			this.notifier.notify("Send incomplete — press Enter in the terminal to submit");
+		}
 		this.onUpdate(sessionName);
 	}
 
@@ -215,13 +240,22 @@ export class QueueEngine {
 		this.onUpdate(sessionName);
 	}
 
-	private async sendLiteral(sessionName: string, text: string, withEnter: boolean): Promise<void> {
+	private async sendLiteral(sessionName: string, text: string, withEnter: boolean): Promise<SendOutcome> {
 		await this.exec(cancelCopyModeArgs(sessionName)).catch(() => {});
-		await this.exec(["send-keys", "-l", "-t", sessionName, "--", text]);
+		try {
+			await this.exec(["send-keys", "-l", "-t", sessionName, "--", text]);
+		} catch {
+			return "text-failed";
+		}
 		if (withEnter) {
 			await this.delay();
-			await this.exec(["send-keys", "-t", sessionName, "Enter"]);
+			try {
+				await this.exec(["send-keys", "-t", sessionName, "Enter"]);
+			} catch {
+				return "enter-failed";
+			}
 		}
+		return "sent";
 	}
 
 	private async writeNote(sessionName: string, note: SessionNote): Promise<void> {

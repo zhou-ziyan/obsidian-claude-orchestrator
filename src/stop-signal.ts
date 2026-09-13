@@ -12,10 +12,18 @@ export function stopSignalFileName(tmuxSession: string, timestamp: number): stri
 	return `${timestamp}-${tmuxSession}.json`;
 }
 
-export type StopReason = "done" | "asking";
+/**
+ * Normalized turn outcome, shared by every engine:
+ * - `done`    — the turn finished; the queue may advance.
+ * - `asking`  — the agent is blocked on the user (Claude `Notification`,
+ *               Codex `PermissionRequest`).
+ * - `error`   — the turn was aborted (Codex `Interrupt`). Not a completion:
+ *               the queue must not advance and nothing is marked done.
+ */
+export type StopReason = "done" | "asking" | "error";
 
 function isStopReason(s: string): s is StopReason {
-	return s === "done" || s === "asking";
+	return s === "done" || s === "asking" || s === "error";
 }
 
 export interface StopSignal {
@@ -28,6 +36,11 @@ export interface StopSignal {
 	/** Vault name the session belongs to (from tmux @co_vault); null on
 	 * signals written by older hook scripts. */
 	vault: string | null;
+	/** Engine that emitted this signal. Signals from the original hook
+	 * scripts carry no provider field and are Claude's by construction. */
+	provider: string;
+	/** Per-turn id. Codex supplies one; Claude does not. */
+	turnId: string | null;
 }
 
 export function parseStopSignal(json: string): StopSignal | null {
@@ -49,7 +62,71 @@ export function parseStopSignal(json: string): StopSignal | null {
 		timestamp: data.timestamp,
 		stopReason: isStopReason(rawReason) ? rawReason : null,
 		vault: typeof data.vault === "string" && data.vault !== "" ? data.vault : null,
+		provider: typeof data.provider === "string" && data.provider !== "" ? data.provider : "claude",
+		turnId: typeof data.turn_id === "string" && data.turn_id !== "" ? data.turn_id : null,
 	};
+}
+
+/**
+ * Identity of one turn-level event. Codex session ids are UUIDv7 and
+ * Claude's are UUIDv4 — both plain 36-character UUID literals, so the two
+ * namespaces can only be separated by the explicit provider field, never by
+ * sniffing the id's shape.
+ */
+export function stopSignalKey(signal: StopSignal): string {
+	return [
+		signal.provider,
+		signal.tmuxSession,
+		signal.sessionId ?? "",
+		signal.turnId ?? "",
+		signal.stopReason ?? "",
+		String(signal.timestamp),
+	].join("|");
+}
+
+const DEFAULT_LEDGER_SIZE = 200;
+
+/**
+ * Guards the signal pipeline against redelivery and out-of-order arrival.
+ * The signal directory is polled as well as watched, and hooks can fire
+ * more than once, so a turn-end must be actioned exactly once — otherwise
+ * one stop advances the queue twice.
+ *
+ * Lateness is tracked per (provider, tmux session): a signal older than one
+ * already processed for that pair is dropped, while an unrelated session or
+ * the other engine on the same session is unaffected.
+ */
+export class StopSignalLedger {
+	private seen = new Set<string>();
+	private order: string[] = [];
+	private latest = new Map<string, number>();
+	private maxEntries: number;
+
+	constructor(maxEntries: number = DEFAULT_LEDGER_SIZE) {
+		this.maxEntries = Math.max(1, maxEntries);
+	}
+
+	get size(): number {
+		return this.seen.size;
+	}
+
+	accept(signal: StopSignal): boolean {
+		const key = stopSignalKey(signal);
+		if (this.seen.has(key)) return false;
+
+		const lane = `${signal.provider}|${signal.tmuxSession}`;
+		const newest = this.latest.get(lane);
+		if (newest !== undefined && signal.timestamp < newest) return false;
+
+		this.seen.add(key);
+		this.order.push(key);
+		this.latest.set(lane, Math.max(newest ?? 0, signal.timestamp));
+		while (this.order.length > this.maxEntries) {
+			const evicted = this.order.shift();
+			if (evicted !== undefined) this.seen.delete(evicted);
+		}
+		return true;
+	}
 }
 
 /** Signals that no vault claims are cleaned up after this TTL. */

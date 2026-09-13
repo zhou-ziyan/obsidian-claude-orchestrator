@@ -257,6 +257,7 @@
     --s-done:         #8fbf6a;
     --s-idle:         #c9b870;
     --s-ask:          #e8a858;
+    --s-error:        #d4695f;
     --s-ask-halo:     rgba(232,168,88,0.22);
     --s-danger:       #d87070;
     --s-danger-hover: #e88080;
@@ -321,6 +322,7 @@
     --s-done:         #70ba70;
     --s-idle:         #c5a350;
     --s-ask:          #e6a33d;
+    --s-error:        #d96a5e;
     --s-ask-halo:     rgba(230,163,61,0.25);
     --s-danger:       #e06c6c;
     --s-danger-hover: #ef7b7b;
@@ -386,6 +388,7 @@
     --s-done:         #2e8b2e;
     --s-idle:         #9a7b1a;
     --s-ask:          #c47a00;
+    --s-error:        #b3382c;
     --s-ask-halo:     rgba(196,122,0,0.18);
     --s-danger:       #cc3333;
     --s-danger-hover: #dd4444;
@@ -1279,6 +1282,9 @@
 .co-sm-status-dot[data-s="waiting_for_user"] {
     background: var(--s-ask);
     animation: co-pulse 1.4s ease-in-out infinite;
+}
+.co-sm-status-dot[data-s="error"] {
+    background: var(--s-error);
 }
 .co-sm-status-dot[data-s="off"] {
     background: var(--co-text-dim);

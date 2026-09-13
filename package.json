@@ -15,7 +15,8 @@
 		"typecheck": "tsc --noEmit",
 		"check": "npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e",
 		"postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true",
-		"test:e2e": "node --experimental-strip-types --test tests/e2e-tmux.test.ts"
+		"test:e2e": "node --experimental-strip-types --test tests/e2e-tmux.test.ts",
+		"test:e2e:codex": "node --experimental-strip-types --test tests/e2e-dual-engine.test.ts"
 	},
 	"author": "Ziyan Zhou <mailofbanban@gmail.com>",
 	"keywords": [

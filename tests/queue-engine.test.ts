@@ -313,3 +313,139 @@ describe("QueueEngine engine capability", () => {
 		assert.equal(h.notes.get("P-1")!.queue.length, 0);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Send failure must leave the task retryable and must not double-execute.
+// ---------------------------------------------------------------------------
+
+function makeFailingHarness(note: SessionNote, failOn: (args: string[]) => boolean): Harness {
+	const h = makeHarness(note);
+	const notes = h.notes;
+	const execs = h.execs;
+	const notifications = h.notifications;
+	const failing: Harness = { ...h, engine: null as unknown as QueueEngine };
+	failing.engine = new QueueEngine({
+		store: {
+			read: (s) => Promise.resolve(notes.has(s) ? structuredClone(notes.get(s)!) : null),
+			write: (s, n) => { notes.set(s, structuredClone(n)); return Promise.resolve(); },
+		},
+		exec: (args) => {
+			execs.push(args);
+			return failOn(args) ? Promise.reject(new Error("tmux: no such session")) : Promise.resolve("");
+		},
+		notifier: {
+			notify: (m) => { notifications.push(m); },
+			soundOnAsking: () => {},
+		},
+		getCountdownSeconds: () => 3,
+		playSoundOnAsking: () => false,
+		sendKeyDelayMs: 0,
+	});
+	return failing;
+}
+
+const isLiteralSend = (args: string[]): boolean => args[0] === "send-keys" && args.includes("-l");
+const isEnterSend = (args: string[]): boolean => args[0] === "send-keys" && args.at(-1) === "Enter";
+
+describe("QueueEngine send failure", () => {
+	it("puts the task back at the head of the queue when the text never reached tmux", async () => {
+		const h = makeFailingHarness(makeNote({ queue: ["first", "second"] }), isLiteralSend);
+		await h.engine.sendNext("P-1");
+		const saved = h.notes.get("P-1")!;
+		assert.deepStrictEqual(saved.queue, ["first", "second"], "queue restored in order");
+		assert.equal(saved.history.length, 0, "no history entry for a task that never ran");
+	});
+
+	it("does not leave the session marked running after a failed send", async () => {
+		const h = makeFailingHarness(makeNote({ status: "idle", queue: ["x"] }), isLiteralSend);
+		await h.engine.sendNext("P-1");
+		assert.notEqual(h.notes.get("P-1")!.status, "running");
+	});
+
+	it("tells the user the send failed instead of failing silently", async () => {
+		const h = makeFailingHarness(makeNote({ queue: ["x"] }), isLiteralSend);
+		await h.engine.sendNext("P-1");
+		assert.equal(h.notifications.length, 1);
+		assert.match(h.notifications[0]!, /fail/i);
+	});
+
+	it("sends the task exactly once on a retry after a failure", async () => {
+		const h = makeFailingHarness(makeNote({ queue: ["only task"] }), isLiteralSend);
+		await h.engine.sendNext("P-1");
+		assert.deepStrictEqual(h.notes.get("P-1")!.queue, ["only task"]);
+		const literalSends = h.execs.filter(isLiteralSend);
+		assert.equal(literalSends.length, 1, "one attempt, not a retry loop");
+	});
+
+	it("keeps the task in history when only the Enter keystroke failed", async () => {
+		// The text is already sitting in the agent's input box: re-queueing it
+		// would type the prompt twice.
+		const h = makeFailingHarness(makeNote({ queue: ["x"] }), isEnterSend);
+		await h.engine.sendNext("P-1");
+		const saved = h.notes.get("P-1")!;
+		assert.deepStrictEqual(saved.queue, []);
+		assert.equal(saved.history.length, 1);
+		assert.match(h.notifications[0]!, /Enter/i);
+	});
+
+	it("does nothing at all on an empty queue", async () => {
+		const h = makeFailingHarness(makeNote({ queue: [] }), isLiteralSend);
+		await h.engine.sendNext("P-1");
+		assert.equal(h.execs.filter(isLiteralSend).length, 0);
+		assert.equal(h.notifications.length, 0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Aborted turns
+// ---------------------------------------------------------------------------
+
+describe("QueueEngine error stop signal", () => {
+	it("marks the session errored and never advances the queue", async (t) => {
+		timers(t).enable({ apis: ["setInterval"] });
+		const h = makeHarness(makeNote({ queueMode: "auto", queue: ["next"], history: [{ text: "current", completed: false }] }));
+		await h.engine.onStopSignal("P-1", "error");
+		const saved = h.notes.get("P-1")!;
+		assert.equal(saved.status, "error");
+		assert.equal(saved.history[0]!.completed, false, "the interrupted task is not marked done");
+		assert.equal(h.engine.getCountdownRemaining("P-1"), 0);
+		timers(t).tick(10000);
+		await h.engine.flush();
+		assert.deepStrictEqual(h.notes.get("P-1")!.queue, ["next"]);
+	});
+
+	it("leaves the session idle so it is not stranded waiting for a Stop", async () => {
+		// Codex fires Interrupt instead of Stop — never both. A session left
+		// marked running after an interrupt would never recover.
+		const h = makeHarness(makeNote({ queueMode: "auto", queue: ["next"] }));
+		await h.engine.onStopSignal("P-1", "error");
+		assert.equal(h.engine.isIdle("P-1"), true);
+	});
+
+	it("holds the queue on the error signal itself, not by faking a running turn", async () => {
+		const h = makeHarness(makeNote({ queueMode: "auto", queue: ["next"] }));
+		await h.engine.onStopSignal("P-1", "error");
+		assert.equal(h.engine.getCountdownRemaining("P-1"), 0);
+		assert.equal(h.execs.length, 0);
+	});
+
+	it("lets the user resume by queueing new work after an interrupt", async (t) => {
+		timers(t).enable({ apis: ["setInterval"] });
+		const h = makeHarness(makeNote({ queueMode: "auto", queue: ["next"] }), { countdownSeconds: 1 });
+		await h.engine.onStopSignal("P-1", "error");
+		await h.engine.onNoteChanged("P-1");
+		timers(t).tick(1000);
+		await h.engine.flush();
+		assert.deepStrictEqual(h.notes.get("P-1")!.queue, [], "a later edit can resume the queue");
+	});
+
+	it("resumes normally once a real turn-end arrives", async (t) => {
+		timers(t).enable({ apis: ["setInterval"] });
+		const h = makeHarness(makeNote({ queueMode: "auto", queue: ["next"] }), { countdownSeconds: 1 });
+		await h.engine.onStopSignal("P-1", "error");
+		await h.engine.onStopSignal("P-1", "done");
+		timers(t).tick(1000);
+		await h.engine.flush();
+		assert.deepStrictEqual(h.notes.get("P-1")!.queue, []);
+	});
+});

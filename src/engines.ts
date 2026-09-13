@@ -39,6 +39,10 @@ export interface EngineLaunchOptions {
 	/** Model name for this session. Never hard-coded — it comes from the
 	 * session note or project config, so new models need no code change. */
 	model?: string;
+	/** Resolved binary path, overriding the engine's default command name.
+	 * Codex ships as a shell function pointing into ChatGPT.app rather than
+	 * a binary on PATH, so the caller resolves it once and passes it here. */
+	binary?: string;
 }
 
 export interface EngineResumeOptions extends EngineLaunchOptions {
@@ -55,7 +59,16 @@ export interface EngineResumeOptions extends EngineLaunchOptions {
  */
 export type EngineCompletionSignal = "hook" | "none";
 
+/**
+ * What a hook tells us, independent of what the engine calls it. Engines
+ * disagree on names for the same thing — Claude Code signals "needs your
+ * input" with `Notification`, Codex with `PermissionRequest` — so consumers
+ * key off the role and the definition supplies the engine-side event name.
+ */
+export type EngineHookRole = "turn-end" | "waiting-for-input" | "interrupted";
+
 export interface EngineHookEntry {
+	role: EngineHookRole;
 	/** Engine-side hook event name. */
 	event: string;
 	/** Script shipped in the plugin's `scripts/` directory. */
@@ -66,6 +79,11 @@ export interface EngineHookConfig {
 	/** Path of the engine's settings file, relative to the user's home. */
 	settingsSegments: readonly string[];
 	entries: readonly EngineHookEntry[];
+	/** Create the file when it is missing. True only for a file dedicated to
+	 * hooks: conjuring a shared settings file the user never made (Claude's
+	 * settings.json) would be presumptuous, but an absent hooks.json just
+	 * means Codex has no hooks yet. */
+	createIfMissing: boolean;
 }
 
 export interface EngineDefinition {
@@ -91,6 +109,21 @@ function modelArgs(model: string | undefined, flag: string): string[] {
 	return trimmed ? [flag, trimmed] : [];
 }
 
+function commandName(fallback: string, opts?: EngineLaunchOptions): string {
+	const binary = opts?.binary?.trim() ?? "";
+	return binary || fallback;
+}
+
+function shellQuote(token: string): string {
+	return /^[A-Za-z0-9_@%+=:,./-]+$/.test(token) ? token : `'${token.replace(/'/g, "'\\''")}'`;
+}
+
+/** Render a command for typing into an interactive shell inside tmux. */
+export function engineCommandLine(cmd: EngineCommand | null): string {
+	if (!cmd) return "";
+	return [cmd.command, ...cmd.args].map(shellQuote).join(" ");
+}
+
 export const CLAUDE_ENGINE: EngineDefinition = {
 	id: "claude",
 	label: "Claude Code",
@@ -101,28 +134,79 @@ export const CLAUDE_ENGINE: EngineDefinition = {
 	completionSignal: "hook",
 	hooks: {
 		settingsSegments: [".claude", "settings.json"],
+		createIfMissing: false,
 		entries: [
-			{ event: "Stop", script: "co-stop-hook.sh" },
-			{ event: "Notification", script: "co-notification-hook.sh" },
+			{ role: "turn-end", event: "Stop", script: "co-stop-hook.sh" },
+			{ role: "waiting-for-input", event: "Notification", script: "co-notification-hook.sh" },
 		],
 	},
 	buildLaunchCommand(opts) {
-		return { command: "claude", args: modelArgs(opts?.model, "--model") };
+		return { command: commandName("claude", opts), args: modelArgs(opts?.model, "--model") };
 	},
 	buildResumeCommand(opts) {
 		const id = opts?.conversationId?.trim() ?? "";
 		const resume = id ? ["--resume", id] : ["--continue"];
-		return { command: "claude", args: [...resume, ...modelArgs(opts?.model, "--model")] };
+		return { command: commandName("claude", opts), args: [...resume, ...modelArgs(opts?.model, "--model")] };
 	},
 };
 
 /**
- * Engines that currently have an implementation. `codex` is a recognized
- * product id with no entry yet — until its adapter lands, notes naming it
- * resolve to `unavailable` rather than silently to Claude.
+ * Codex CLI. Every value below traces to measured evidence from the
+ * CodexProbe task against codex-cli 0.154.0-alpha.6.2, not to guesswork:
+ *
+ * - Hooks live in `$CODEX_HOME/hooks.json` and are structurally identical
+ *   to Claude's `settings.json` hooks node, so auto-send is safe here too.
+ * - Codex has no `Notification` event; `PermissionRequest` is what fires
+ *   while the TUI blocks on an approval prompt.
+ * - The payloads carry `last_assistant_message` directly and a Codex-shaped
+ *   transcript, so the Claude hook scripts cannot be reused verbatim.
+ * - `codex` on this machine is a shell function pointing into ChatGPT.app,
+ *   not a binary on PATH — hence the search paths, with a real package
+ *   install winning over the app bundle.
+ * - The TUI and `exec` take different flag sets (`--skip-git-repo-check` is
+ *   exec-only, `-a` is TUI-only), so only TUI flags appear here.
+ * - No slash-command surface is verified for the TUI, so we claim none
+ *   rather than showing Claude's list under a Codex session.
+ */
+export const CODEX_ENGINE: EngineDefinition = {
+	id: "codex",
+	label: "Codex",
+	binaryNames: ["codex"],
+	binarySearchPaths: [
+		"/opt/homebrew/bin/codex",
+		"/usr/local/bin/codex",
+		"~/.local/bin/codex",
+		"/Applications/ChatGPT.app/Contents/Resources/codex",
+	],
+	skillDirSegments: [],
+	builtinSlashCommands: [],
+	completionSignal: "hook",
+	hooks: {
+		settingsSegments: [".codex", "hooks.json"],
+		createIfMissing: true,
+		entries: [
+			{ role: "turn-end", event: "Stop", script: "co-codex-stop-hook.sh" },
+			{ role: "waiting-for-input", event: "PermissionRequest", script: "co-codex-permission-hook.sh" },
+			{ role: "interrupted", event: "Interrupt", script: "co-codex-interrupt-hook.sh" },
+		],
+	},
+	buildLaunchCommand(opts) {
+		return { command: commandName("codex", opts), args: modelArgs(opts?.model, "-m") };
+	},
+	buildResumeCommand(opts) {
+		const id = opts?.conversationId?.trim() ?? "";
+		const target = id ? [id] : ["--last"];
+		return { command: commandName("codex", opts), args: ["resume", ...target, ...modelArgs(opts?.model, "-m")] };
+	},
+};
+
+/**
+ * Engines that currently have an implementation. An id listed in ENGINE_IDS
+ * but absent here resolves to `unavailable` rather than silently to Claude.
  */
 const ENGINE_DEFINITIONS: Partial<Record<EngineId, EngineDefinition>> = {
 	claude: CLAUDE_ENGINE,
+	codex: CODEX_ENGINE,
 };
 
 export function getEngineDefinition(id: EngineId): EngineDefinition | null {
@@ -213,14 +297,14 @@ export function resolveEngineBinary(
 /** Directories to scan for this engine's skills, one per root. */
 export function engineSkillDirs(ref: EngineRef, roots: string[]): string[] {
 	const definition = ref.definition;
-	if (!definition) return [];
+	if (!definition || definition.skillDirSegments.length === 0) return [];
 	return roots.filter((r) => r !== "").map((root) => joinSegments(root, definition.skillDirSegments));
 }
 
 /** Slash-command completions for this engine: its builtins plus disk skills. */
 export function loadSlashCommandsFor(ref: EngineRef, roots: string[]): SlashCommandEntry[] {
 	const definition = ref.definition;
-	if (!definition) return [];
+	if (!definition || definition.builtinSlashCommands.length === 0) return [];
 	const dirs = engineSkillDirs(ref, roots);
 	if (dirs.length === 0) return mergeWithBuiltinCommands([], definition.builtinSlashCommands);
 	return loadSlashCommands(dirs, definition.builtinSlashCommands);
@@ -233,7 +317,12 @@ export function engineSettingsPath(ref: EngineRef, home: string): string | null 
 	return joinSegments(home, hooks.settingsSegments);
 }
 
+export function engineCreatesHookFile(ref: EngineRef): boolean {
+	return ref.definition?.hooks?.createIfMissing ?? false;
+}
+
 export interface EngineHookRegistration {
+	role: EngineHookRole;
 	event: string;
 	scriptName: string;
 	scriptPath: string;
@@ -245,6 +334,7 @@ export function engineHookRegistrations(ref: EngineRef, scriptsDir: string): Eng
 	const hooks = ref.definition?.hooks;
 	if (!hooks) return [];
 	return hooks.entries.map((entry) => ({
+		role: entry.role,
 		event: entry.event,
 		scriptName: entry.script,
 		scriptPath: joinSegments(scriptsDir, [entry.script]),

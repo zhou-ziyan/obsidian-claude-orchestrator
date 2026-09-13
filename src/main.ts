@@ -1,13 +1,14 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, ensureEngineHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, availableEngineIds, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, DEFAULT_ENGINE_ID } from "./utils";
-import type { ProjectRegistry, QueueMode, SessionNote, SlashCommandEntry, ThemeName } from "./utils";
+import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, ensureEngineHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, StopSignalLedger, availableEngineIds, engineCreatesHookFile, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, DEFAULT_ENGINE_ID } from "./utils";
+import type { ProjectRegistry, QueueMode, SessionNote, SlashCommandEntry, StopReason, ThemeName } from "./utils";
 import { QUEUE_MODES, queueModeLabel } from "./utils";
 import { QueueEngine } from "./queue-engine";
 import { StopHookWatcher } from "./stop-hook-watcher";
 import { findTerminalLeafBySession, findTerminalLeafByProject, collectOpenSessionNames } from "./workspace-helpers";
-import { readFileSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { dirname } from "path";
 import { join } from "path";
 import { homedir } from "os";
 
@@ -38,6 +39,9 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 	queueEngine!: QueueEngine;
 	private slashCommands: SlashCommandEntry[] = [...BUILTIN_SLASH_COMMANDS];
 	private stopHookWatcher: StopHookWatcher | null = null;
+	// Hooks can fire more than once and the signal dir is polled as well as
+	// watched; without this a single turn-end could advance the queue twice.
+	private signalLedger = new StopSignalLedger();
 
 	async onload() {
 		await this.loadSettings();
@@ -185,6 +189,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			() => this.app.vault.getName(),
 		);
 		this.stopHookWatcher.onSignal((signal) => {
+			if (!this.signalLedger.accept(signal)) return;
 			const reason = signal.stopReason ?? "done";
 			void this.queueEngine.onStopSignal(signal.tmuxSession, reason);
 			this.routeStopSignalToView(signal.tmuxSession, reason);
@@ -472,7 +477,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		}
 	}
 
-	private routeStopSignalToView(tmuxSession: string, reason: "done" | "asking"): boolean {
+	private routeStopSignalToView(tmuxSession: string, reason: StopReason): boolean {
 		const match = findTerminalLeafBySession(this.app.workspace, tmuxSession);
 		if (match) {
 			match.view.onStopSignal(reason);
@@ -571,7 +576,14 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			const registrations = engineHookRegistrations(ref, scriptsDir);
 			if (!settingsPath || registrations.length === 0) continue;
 			try {
-				let content = readFileSync(settingsPath, "utf-8");
+				let content: string;
+				try {
+					content = readFileSync(settingsPath, "utf-8");
+				} catch {
+					if (!engineCreatesHookFile(ref)) continue;
+					mkdirSync(dirname(settingsPath), { recursive: true });
+					content = "{}";
+				}
 				let updated = false;
 				for (const reg of registrations) {
 					const result = ensureEngineHookConfig(content, reg.event, reg.scriptName, reg.scriptPath);

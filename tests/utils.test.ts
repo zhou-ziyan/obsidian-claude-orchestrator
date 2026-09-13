@@ -109,8 +109,10 @@ import {
 	engineSettingsPath,
 	ensureEngineHookConfig,
 	loadSlashCommandsFor,
+	stopSignalKey,
+	StopSignalLedger,
 } from "../src/utils.ts";
-import type { ProjectRegistry, SessionNote, SessionGroup, HistoryItem, SlashCommandEntry } from "../src/utils.ts";
+import type { ProjectRegistry, SessionNote, SessionGroup, HistoryItem, SlashCommandEntry, StopSignal } from "../src/utils.ts";
 
 const TEST_PROJECTS: ProjectRegistry = {
 	"15_Claude_Orchestrator": { vaultFolder: "01_Projects/15_Claude_Orchestrator" },
@@ -5237,8 +5239,8 @@ describe("engineHookRegistrations", () => {
 	it("maps Claude's hook entries onto the plugin scripts directory", () => {
 		const regs = engineHookRegistrations(resolveEngineRef("claude"), "/plugin/scripts");
 		assert.deepStrictEqual(regs, [
-			{ event: "Stop", scriptName: "co-stop-hook.sh", scriptPath: "/plugin/scripts/co-stop-hook.sh" },
-			{ event: "Notification", scriptName: "co-notification-hook.sh", scriptPath: "/plugin/scripts/co-notification-hook.sh" },
+			{ role: "turn-end", event: "Stop", scriptName: "co-stop-hook.sh", scriptPath: "/plugin/scripts/co-stop-hook.sh" },
+			{ role: "waiting-for-input", event: "Notification", scriptName: "co-notification-hook.sh", scriptPath: "/plugin/scripts/co-notification-hook.sh" },
 		]);
 	});
 
@@ -5335,5 +5337,145 @@ describe("autoSendAction with engine clamping", () => {
 	it("suppresses listen notifications when the engine is unavailable", () => {
 		const mode = effectiveQueueMode(resolveEngineRef("gpt-5-turbo"), "listen");
 		assert.equal(autoSendAction(mode, "done", 2), "none");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Cross-provider signal correlation (Codex adapter)
+// ---------------------------------------------------------------------------
+
+describe("parseStopSignal provider and turn fields", () => {
+	it("reads provider and turn_id when the hook supplies them", () => {
+		const sig = parseStopSignal(JSON.stringify({
+			tmux_session: "P-1", timestamp: 100, provider: "codex",
+			session_id: "01a09a21-ec1d-7c92-a71e-2a01a6ffed90",
+			turn_id: "01a09a22-444d-7490-a7b8-ae57d1f429e0",
+			stop_reason: "done",
+		}));
+		assert.equal(sig?.provider, "codex");
+		assert.equal(sig?.turnId, "01a09a22-444d-7490-a7b8-ae57d1f429e0");
+	});
+
+	it("defaults provider to claude for signals from the original hook scripts", () => {
+		const sig = parseStopSignal(JSON.stringify({ tmux_session: "P-1", timestamp: 100, stop_reason: "done" }));
+		assert.equal(sig?.provider, "claude");
+		assert.equal(sig?.turnId, null);
+	});
+
+	it("accepts the error stop reason", () => {
+		const sig = parseStopSignal(JSON.stringify({ tmux_session: "P-1", timestamp: 1, stop_reason: "error" }));
+		assert.equal(sig?.stopReason, "error");
+	});
+
+	it("keeps an unrecognized stop reason null rather than guessing done", () => {
+		const sig = parseStopSignal(JSON.stringify({ tmux_session: "P-1", timestamp: 1, stop_reason: "whatever" }));
+		assert.equal(sig?.stopReason, null);
+	});
+});
+
+describe("stopSignalKey", () => {
+	const base = { tmuxSession: "P-1", sessionId: "s", transcriptPath: null, cwd: null, timestamp: 5, stopReason: "done" as const, vault: null, turnId: "t" };
+
+	it("separates the two providers even when the UUIDs collide", () => {
+		// Codex session ids are UUIDv7, Claude's UUIDv4 — both 36-char UUID
+		// literals, so the provider field is the only safe discriminator.
+		const claude = stopSignalKey({ ...base, provider: "claude" });
+		const codex = stopSignalKey({ ...base, provider: "codex" });
+		assert.notEqual(claude, codex);
+	});
+
+	it("separates turns within one conversation", () => {
+		assert.notEqual(
+			stopSignalKey({ ...base, provider: "codex", turnId: "t1" }),
+			stopSignalKey({ ...base, provider: "codex", turnId: "t2" }),
+		);
+	});
+
+	it("is stable for a redelivery of the same event", () => {
+		assert.equal(stopSignalKey({ ...base, provider: "codex" }), stopSignalKey({ ...base, provider: "codex" }));
+	});
+});
+
+describe("StopSignalLedger", () => {
+	const sig = (over: Partial<StopSignal> = {}): StopSignal => ({
+		tmuxSession: "P-1", sessionId: "s1", transcriptPath: null, cwd: null,
+		timestamp: 100, stopReason: "done", vault: null, provider: "codex", turnId: "t1", ...over,
+	});
+
+	it("accepts a signal the first time", () => {
+		assert.equal(new StopSignalLedger().accept(sig()), true);
+	});
+
+	it("rejects an exact redelivery", () => {
+		const ledger = new StopSignalLedger();
+		assert.equal(ledger.accept(sig()), true);
+		assert.equal(ledger.accept(sig()), false);
+	});
+
+	it("accepts the next turn of the same conversation", () => {
+		const ledger = new StopSignalLedger();
+		ledger.accept(sig());
+		assert.equal(ledger.accept(sig({ turnId: "t2", timestamp: 101 })), true);
+	});
+
+	it("rejects a late signal that predates one already processed for that session", () => {
+		const ledger = new StopSignalLedger();
+		ledger.accept(sig({ turnId: "t2", timestamp: 200 }));
+		assert.equal(ledger.accept(sig({ turnId: "t1", timestamp: 100 })), false);
+	});
+
+	it("does not let one session's clock suppress another session's signals", () => {
+		const ledger = new StopSignalLedger();
+		ledger.accept(sig({ tmuxSession: "P-1", timestamp: 500 }));
+		assert.equal(ledger.accept(sig({ tmuxSession: "P-2", timestamp: 100 })), true);
+	});
+
+	it("does not let one provider's signal suppress the other's on the same tmux session", () => {
+		const ledger = new StopSignalLedger();
+		assert.equal(ledger.accept(sig({ provider: "claude", timestamp: 100 })), true);
+		assert.equal(ledger.accept(sig({ provider: "codex", timestamp: 100 })), true);
+	});
+
+	it("stays bounded so a long-running vault does not leak keys", () => {
+		const ledger = new StopSignalLedger(4);
+		for (let i = 0; i < 20; i++) ledger.accept(sig({ turnId: `t${i}`, timestamp: 100 + i }));
+		assert.ok(ledger.size <= 4, `size was ${ledger.size}`);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// error status (an interrupted turn is not a finished turn)
+// ---------------------------------------------------------------------------
+
+describe("error session status", () => {
+	it("round-trips through the session note", () => {
+		const md = "---\nsession: s-1\nstatus: error\nqueueMode: auto\n---\n\n## Notes\n\n## History\n\n## Queue\n";
+		const note = parseSessionNote(md, "s-1");
+		assert.equal(note.status, "error");
+		assert.equal(serializeSessionNote(note), md);
+	});
+
+	it("derives an error status that still counts as idle", () => {
+		// Codex fires Interrupt *instead of* Stop, so if error meant "still
+		// running" the session would wait forever for a completion signal
+		// that never comes.
+		const derived = deriveStatusFromStop("error");
+		assert.equal(derived.status, "error");
+		assert.equal(derived.claudeIdle, true, "an interrupted session is not stuck running");
+	});
+
+	it("never advances the queue", () => {
+		assert.equal(autoSendAction("auto", "error", 3), "none");
+		assert.equal(autoSendAction("listen", "error", 3), "none");
+	});
+
+	it("leaves the in-flight history item unchecked", () => {
+		const history: HistoryItem[] = [{ text: "task", completed: false }];
+		assert.equal(markLastHistoryDone(history, "error"), false);
+		assert.equal(history[0]!.completed, false);
+	});
+
+	it("shows a distinct status dot", () => {
+		assert.equal(sessionStatusDisplay(true, "error").dataStatus, "error");
 	});
 });

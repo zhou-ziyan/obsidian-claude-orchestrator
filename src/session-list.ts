@@ -130,7 +130,9 @@ export function sessionStatusDisplay(
 	status: string,
 ): { cls: string; dataStatus: string } {
 	if (!hasPanel) return { cls: "co-sm-status-dot", dataStatus: "off" };
-	const dataStatus = status === "running" ? "running" : status === "waiting_for_user" ? "waiting_for_user" : "idle";
+	const dataStatus = status === "running" ? "running"
+		: status === "waiting_for_user" ? "waiting_for_user"
+			: status === "error" ? "error" : "idle";
 	return { cls: "co-sm-status-dot", dataStatus };
 }
 
