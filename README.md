@@ -1,6 +1,6 @@
 # Claude Orchestrator
 
-Run multiple Claude Code sessions side-by-side inside Obsidian. Queue up tasks, let them auto-send when Claude finishes, and manage everything from a single dashboard — without leaving your notes.
+Run multiple coding-agent sessions side-by-side inside Obsidian. Queue up tasks, let them auto-send when the agent finishes, and manage everything from a single dashboard — without leaving your notes. Works with **Claude Code** and **Codex**, and you pick which one each session runs on.
 
 <img width="1624" height="1061" alt="image" src="https://github.com/user-attachments/assets/58c1ca3f-4982-45e8-bf35-894341115487" />
 
@@ -27,6 +27,13 @@ Connect Claude Code's [Stop hook](https://docs.anthropic.com/en/docs/claude-code
 
 ### Session Manager dashboard
 A sidebar panel showing all your sessions at a glance — grouped by project, with status indicators, queue counts, and activity timestamps. Quick-reply buttons for common responses. Idle detection flags sessions that haven't been active in 24+ hours. Hide sessions you don't need without killing them.
+
+### Two engines, chosen per session
+Each session runs on either **Claude Code** or **Codex**. Pick a default globally, override it per project, or change it on an individual session. Both engines' sessions run side by side, and each card shows which engine it is on.
+
+Switching is deliberately conservative. A session that has already run something is never repurposed or killed — a sibling session opens for the other engine and the original is left intact, because the two engines' conversations are separate and cannot be handed over. Pending queue items move only when you say so, and only once. Conversation context does not move; hand that over in your own notes.
+
+The sidebar also shows each engine's remaining allowance, with the source and read time. Codex is read from its own app-server; Claude Code's CLI exposes no usage source, so it honestly reads **Unavailable** rather than showing a made-up number. A missing reading never renders as 0%, and a stale one is labelled stale.
 
 ### Flexible project setup
 Register any folder as a project — not limited to any particular vault structure. Each project gets its own tmux sessions, task queues, and session notes.
@@ -59,7 +66,13 @@ bash install.sh "<vault>"
 
 ### Auto-send setup (optional)
 
-To enable auto-send, add the Stop hook to your project's `.claude/settings.json`:
+The plugin registers the hooks it needs on load — Claude Code's `Stop` and
+`Notification` in `~/.claude/settings.json`, and Codex's `Stop`,
+`PermissionRequest` and `Interrupt` in `~/.codex/hooks.json`. Codex requires
+you to trust a hook script before it will run it, so approve the prompt the
+first time (and again if the scripts change with a plugin update).
+
+To wire it up by hand instead, add the Stop hook to your project's `.claude/settings.json`:
 
 ```json
 {
@@ -96,8 +109,19 @@ git clone https://github.com/zhou-ziyan/obsidian-claude-orchestrator.git
 cd obsidian-claude-orchestrator
 npm install
 npm run dev       # watch mode
-npm run check     # lint + typecheck + tests
+npm run check     # lint + typecheck + unit tests + tmux e2e
 ```
+
+The dual-engine acceptance tests drive the real Claude and Codex CLIs, so
+they spend real quota and are opt-in rather than part of `npm run check`:
+
+```bash
+CO_E2E_CODEX=1 npm run test:e2e:codex
+```
+
+They need `tmux`, both CLIs installed and signed in, and they run fully
+isolated — a temporary `CODEX_HOME`, a temporary settings file for Claude,
+and a temporary signal directory, so your own config is never touched.
 
 Symlink into your vault for development:
 
