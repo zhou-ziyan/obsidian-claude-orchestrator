@@ -13,6 +13,12 @@ const require = createRequire(import.meta.url);
 // @types/node v16 predates node:test's `after` — type it from the module.
 const { after } = require("node:test") as { after: (fn: () => void) => void };
 
+// Session names must be unique per process: several worktrees run
+// `npm run check` at once, and attachSession() kills its session name on
+// entry and exit — a fixed name lets one run tear down another's server
+// session mid-test, which looks like flaky tmux rather than a collision.
+const RUN_TAG = `${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+
 function detectTmux(): string | null {
 	try {
 		const bin = findTmuxBinary();
@@ -58,7 +64,7 @@ function attachSession(sessionName: string, cols: number, rows: number): PtySess
 }
 
 describe("e2e: native mouse scrolling through the PTY", { skip: !TMUX, concurrency: 1 }, () => {
-	const SESSION = "co-e2e-scroll";
+	const SESSION = `co-e2e-scroll-${RUN_TAG}`;
 	let s: PtySession;
 
 	after(() => { s?.kill(); });
@@ -100,7 +106,7 @@ describe("e2e: native mouse scrolling through the PTY", { skip: !TMUX, concurren
 });
 
 describe("e2e: PTY-driven window sizing", { skip: !TMUX, concurrency: 1 }, () => {
-	const SESSION = "co-e2e-resize";
+	const SESSION = `co-e2e-resize-${RUN_TAG}`;
 	let s: PtySession;
 
 	after(() => { s?.kill(); });
