@@ -16,7 +16,7 @@ export function nowStamp(): string {
 	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export type SessionStatus = "idle" | "running" | "waiting_for_user";
+export type SessionStatus = "idle" | "running" | "waiting_for_user" | "error";
 
 export type QueueMode = "manual" | "listen" | "auto";
 
@@ -71,6 +71,15 @@ export interface SessionNote {
 	queueMode: QueueMode;
 	displayName: string;
 	summary: string;
+	/** Engine (provider) driving this session, e.g. "claude". Empty means
+	 * "not recorded" — see resolveEngineRef: absent defaults to Claude,
+	 * because every note written before dual-engine support was a Claude
+	 * session. Stored separately from `model` so switching model never
+	 * implies switching engine. */
+	engine: string;
+	/** Model name passed to the engine. Free-form: never validated against
+	 * a hard-coded list, so new models need no plugin change. */
+	model: string;
 	notes: string;
 	history: HistoryItem[];
 	queue: string[];
@@ -132,12 +141,19 @@ export function renamedSessionNotePath(
 /**
  * Create default markdown content for a new session note.
  */
-export function createDefaultSessionNote(sessionName: string, queueMode: QueueMode = "manual"): string {
+export function createDefaultSessionNote(
+	sessionName: string,
+	queueMode: QueueMode = "manual",
+	engine = "",
+	model = "",
+): string {
 	return [
 		"---",
 		`session: ${sessionName}`,
 		"status: idle",
 		`queueMode: ${queueMode}`,
+		...(engine ? [`engine: ${engine}`] : []),
+		...(model ? [`model: ${model}`] : []),
 		"---",
 		"",
 		"## Notes",
@@ -160,6 +176,8 @@ export function restoreSessionNote(
 		queueMode,
 		displayName: "",
 		summary: "",
+		engine: archive.engine,
+		model: archive.model,
 		notes: archive.notes,
 		history: archive.history.map((h) => ({ ...h })),
 		queue: [...archive.queue],
@@ -202,6 +220,8 @@ export function parseSessionNote(
 		queueMode: "manual",
 		displayName: "",
 		summary: "",
+		engine: "",
+		model: "",
 		notes: "",
 		history: [],
 		queue: [],
@@ -210,7 +230,7 @@ export function parseSessionNote(
 	const lines = markdown.split("\n");
 	let i = 0;
 
-	const KNOWN_FM_KEYS = new Set(["session", "status", "queueMode", "displayName", "summary"]);
+	const KNOWN_FM_KEYS = new Set(["session", "status", "queueMode", "displayName", "summary", "engine", "model"]);
 	// Plugin-written keys from removed features — consumed and dropped on
 	// save (deliberate migration), unlike user keys which are preserved.
 	const LEGACY_STRIP_FM_KEYS = new Set(["pinnedNote"]);
@@ -234,6 +254,10 @@ export function parseSessionNote(
 					note.displayName = value;
 				if (key === "summary" && value)
 					note.summary = value;
+				if (key === "engine" && value)
+					note.engine = value;
+				if (key === "model" && value)
+					note.model = value;
 			} else if (line !== "" && !LEGACY_STRIP_FM_KEYS.has(key)) {
 				// Unknown frontmatter (tags, aliases, agent-written keys, …) —
 				// preserve verbatim so a plugin save never destroys it.
@@ -395,7 +419,7 @@ function stripLeadingCheckboxes(content: string): string {
 }
 
 function isSessionStatus(s: string): s is SessionStatus {
-	return s === "idle" || s === "running" || s === "waiting_for_user";
+	return s === "idle" || s === "running" || s === "waiting_for_user" || s === "error";
 }
 
 /**
@@ -414,6 +438,8 @@ export function serializeSessionNote(note: SessionNote): string {
 	];
 	if (note.displayName) lines.push(`displayName: ${note.displayName}`);
 	if (note.summary) lines.push(`summary: ${note.summary}`);
+	if (note.engine) lines.push(`engine: ${note.engine}`);
+	if (note.model) lines.push(`model: ${note.model}`);
 	if (note.extraFrontmatter) lines.push(...note.extraFrontmatter);
 	lines.push("---");
 
@@ -599,6 +625,8 @@ export function summarizeSessionNote(note: SessionNote): {
 	displayName: string | null;
 	status: SessionStatus;
 	queueMode: QueueMode;
+	engine: string | null;
+	model: string | null;
 } {
 	return {
 		queueCount: note.queue.length,
@@ -610,5 +638,7 @@ export function summarizeSessionNote(note: SessionNote): {
 		displayName: note.displayName || null,
 		status: note.status,
 		queueMode: note.queueMode,
+		engine: note.engine || null,
+		model: note.model || null,
 	};
 }

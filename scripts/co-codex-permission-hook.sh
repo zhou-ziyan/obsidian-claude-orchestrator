@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Claude Code Notification hook — writes an "asking" signal for the
-# Orchestrator plugin when Claude requests permission.
+# Codex PermissionRequest hook — writes an "asking" signal.
 #
-# Only permission-style notifications are forwarded: the generic
-# "waiting for your input" idle notification fires 60s after any stop
-# and would mislabel a normally idle session as waiting_for_user.
+# Codex has no Notification event; PermissionRequest is what fires while the
+# TUI blocks on an approval prompt. Unlike Claude's Notification hook there
+# is nothing to filter: every PermissionRequest is, by definition, the agent
+# waiting on the user.
 
 set -euo pipefail
 
@@ -22,14 +22,18 @@ TIMESTAMP=$(date +%s)
 SIGNAL=$(printf '%s' "$INPUT" | /usr/bin/python3 -c "
 import sys, json
 
-data = json.load(sys.stdin)
-message = str(data.get('message', ''))
-if 'permission' not in message.lower():
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    # Garbage in must not become a confident turn-end out.
+    sys.exit(0)
+if not isinstance(data, dict):
     sys.exit(0)
 
 data['tmux_session'] = '$TMUX_SESSION'
 data['timestamp'] = $TIMESTAMP
 data['vault'] = '$CO_VAULT'
+data['provider'] = 'codex'
 data['stop_reason'] = 'asking'
 json.dump(data, sys.stdout)
 ")
@@ -38,8 +42,6 @@ if [ -z "$SIGNAL" ]; then
     exit 0
 fi
 
-# Atomic write (see co-stop-hook.sh). The -notify suffix keeps a Stop
-# signal in the same second from being overwritten.
-SIGNAL_FILE="$SIGNAL_DIR/${TIMESTAMP}-${TMUX_SESSION}-notify.json"
+SIGNAL_FILE="$SIGNAL_DIR/${TIMESTAMP}-${TMUX_SESSION}-codex-perm.json"
 echo "$SIGNAL" > "$SIGNAL_FILE.tmp"
 mv "$SIGNAL_FILE.tmp" "$SIGNAL_FILE"

@@ -1,5 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
 	generateSessionName,
 	resolveProjectFromPath,
@@ -100,8 +103,18 @@ import {
 	notifyQueueMessage,
 	prepareQueueTaskText,
 	computeRelinkTarget,
+	resolveEngineRef,
+	effectiveQueueMode,
+	engineHookRegistrations,
+	engineSettingsPath,
+	ensureEngineHookConfig,
+	loadSlashCommandsFor,
+	stopSignalKey,
+	StopSignalLedger,
+	resolveSessionEngineRef,
+	engineQueueModes,
 } from "../src/utils.ts";
-import type { ProjectRegistry, SessionNote, SessionGroup, HistoryItem, SlashCommandEntry } from "../src/utils.ts";
+import type { ProjectRegistry, SessionNote, SessionGroup, HistoryItem, SlashCommandEntry, StopSignal } from "../src/utils.ts";
 
 const TEST_PROJECTS: ProjectRegistry = {
 	"15_Claude_Orchestrator": { vaultFolder: "01_Projects/15_Claude_Orchestrator" },
@@ -671,6 +684,7 @@ describe("restoreSessionNote", () => {
 			queueMode: "auto",
 			displayName: "Old Display",
 			summary: "old summary",
+			engine: "", model: "",
 			notes: "some notes",
 			history: [{ text: "sent task A", completed: true }, { text: "sent task B", completed: false }],
 			queue: ["pending task 1", "pending task 2"],
@@ -691,7 +705,7 @@ describe("restoreSessionNote", () => {
 	it("uses provided queueMode", () => {
 		const archive: SessionNote = {
 			session: "old", status: "idle", queueMode: "auto",
-			displayName: "", summary: "", notes: "", history: [], queue: [],
+			displayName: "", summary: "", engine: "", model: "", notes: "", history: [], queue: [],
 		};
 		const result = restoreSessionNote(archive, "new-1", "auto");
 		assert.equal(result.queueMode, "auto");
@@ -700,7 +714,7 @@ describe("restoreSessionNote", () => {
 	it("does not mutate the archive", () => {
 		const archive: SessionNote = {
 			session: "old", status: "idle", queueMode: "manual",
-			displayName: "", summary: "", notes: "keep me",
+			displayName: "", summary: "", engine: "", model: "", notes: "keep me",
 			history: [{ text: "h1", completed: true }],
 			queue: ["q1"],
 		};
@@ -851,6 +865,7 @@ describe("serializeSessionNote", () => {
 			queueMode: "manual" as const,
 			displayName: "",
 			summary: "",
+			engine: "", model: "",
 			notes: "",
 			history: [
 				{ text: "task A", completed: true },
@@ -870,6 +885,7 @@ describe("serializeSessionNote", () => {
 			queueMode: "manual" as const,
 			displayName: "",
 			summary: "",
+			engine: "", model: "",
 			notes: "",
 			history: [],
 			queue: [],
@@ -886,6 +902,7 @@ describe("serializeSessionNote", () => {
 			queueMode: "manual",
 			displayName: "",
 			summary: "",
+			engine: "", model: "",
 			notes: "",
 			history: [
 				{ text: "[2026-04-19 12:00] fix auth", completed: true },
@@ -3849,6 +3866,7 @@ describe("pinnedNote removal", () => {
 			queueMode: "manual" as const,
 			displayName: "",
 			summary: "",
+			engine: "", model: "",
 			notes: "",
 			history: [],
 			queue: [],
@@ -4338,6 +4356,7 @@ describe("summarizeSessionNote", () => {
 			queueMode: "auto",
 			displayName: "My Session",
 			summary: "",
+			engine: "", model: "",
 			notes: "",
 			history: [{ text: "[2026-04-20 10:00] done task", completed: true }],
 			queue: ["[2026-04-20 14:30] next task"],
@@ -4358,6 +4377,7 @@ describe("summarizeSessionNote", () => {
 			queueMode: "manual",
 			displayName: "",
 			summary: "",
+			engine: "", model: "",
 			notes: "",
 			history: [],
 			queue: [],
@@ -4376,6 +4396,7 @@ describe("summarizeSessionNote", () => {
 			queueMode: "manual",
 			displayName: "",
 			summary: "",
+			engine: "", model: "",
 			notes: "",
 			history: [],
 			queue: ["[2026-04-20 10:00] something"],
@@ -4390,6 +4411,7 @@ describe("summarizeSessionNote", () => {
 			queueMode: "manual",
 			displayName: "",
 			summary: "My custom summary",
+			engine: "", model: "",
 			notes: "",
 			history: [],
 			queue: [],
@@ -5050,5 +5072,448 @@ describe("terminalTheme light-mode ANSI palette", () => {
 		assert.equal(terminalTheme("obsidian", true).white, undefined);
 		assert.equal(terminalTheme("terminal", true).white, undefined);
 		assert.equal(terminalTheme("terminal", false).white, undefined);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Session note engine / model fields (dual-engine)
+// ---------------------------------------------------------------------------
+
+describe("parseSessionNote engine and model", () => {
+	const body = "\n\n## Notes\n\n## History\n\n## Queue\n";
+
+	it("defaults both to empty for a legacy note with no engine field", () => {
+		const note = parseSessionNote("---\nsession: s-1\nstatus: idle\nqueueMode: auto\n---" + body, "s-1");
+		assert.equal(note.engine, "");
+		assert.equal(note.model, "");
+	});
+
+	it("parses an explicit engine and model", () => {
+		const note = parseSessionNote("---\nsession: s-1\nstatus: idle\nengine: claude\nmodel: opus\n---" + body, "s-1");
+		assert.equal(note.engine, "claude");
+		assert.equal(note.model, "opus");
+	});
+
+	it("stores engine and model separately — a model never implies an engine", () => {
+		const note = parseSessionNote("---\nsession: s-1\nstatus: idle\nmodel: gpt-5-codex\n---" + body, "s-1");
+		assert.equal(note.engine, "");
+		assert.equal(note.model, "gpt-5-codex");
+		// No engine recorded → still Claude by default, model is just a label.
+		assert.equal(resolveEngineRef(note.engine).id, "claude");
+	});
+
+	it("keeps an unrecognized engine verbatim instead of dropping or coercing it", () => {
+		const note = parseSessionNote("---\nsession: s-1\nstatus: idle\nengine: gpt-5-turbo\n---" + body, "s-1");
+		assert.equal(note.engine, "gpt-5-turbo");
+		assert.equal(resolveEngineRef(note.engine).status, "unavailable");
+	});
+
+	it("does not leak engine or model into extraFrontmatter", () => {
+		const note = parseSessionNote("---\nsession: s-1\nstatus: idle\nengine: claude\nmodel: opus\n---" + body, "s-1");
+		assert.equal(note.extraFrontmatter, undefined);
+	});
+});
+
+describe("serializeSessionNote engine and model", () => {
+	const base: SessionNote = {
+		session: "s-1", status: "idle", queueMode: "manual", displayName: "", summary: "",
+		engine: "", model: "", notes: "", history: [], queue: [],
+	};
+
+	it("omits both lines when unset — legacy notes round-trip byte-identical", () => {
+		const md = "---\nsession: s-1\nstatus: idle\nqueueMode: manual\n---\n\n## Notes\n\n## History\n\n## Queue\n";
+		const out = serializeSessionNote(parseSessionNote(md, "s-1"));
+		assert.equal(out, md);
+		assert.ok(!out.includes("engine:"));
+		assert.ok(!out.includes("model:"));
+	});
+
+	it("emits engine when set", () => {
+		assert.ok(serializeSessionNote({ ...base, engine: "claude" }).includes("engine: claude"));
+	});
+
+	it("emits model when set", () => {
+		assert.ok(serializeSessionNote({ ...base, model: "opus" }).includes("model: opus"));
+	});
+
+	it("keeps engine and model inside the frontmatter block", () => {
+		const out = serializeSessionNote({ ...base, engine: "claude", model: "opus" });
+		const fmEnd = out.indexOf("---", 3);
+		assert.ok(out.indexOf("engine: claude") < fmEnd);
+		assert.ok(out.indexOf("model: opus") < fmEnd);
+	});
+
+	it("survives a round-trip with engine, model and custom content (stable fixpoint)", () => {
+		const md = [
+			"---", "session: s-1", "status: running", "queueMode: auto",
+			"engine: gpt-5-turbo", "model: whatever", "customKey: x", "---",
+			"", "## Notes", "n", "", "## History", "- [x] h", "", "## Queue", "- q", "",
+		].join("\n");
+		const once = serializeSessionNote(parseSessionNote(md, "s-1"));
+		const twice = serializeSessionNote(parseSessionNote(once, "s-1"));
+		assert.equal(twice, once);
+		assert.ok(once.includes("engine: gpt-5-turbo"));
+		assert.ok(once.includes("customKey: x"));
+	});
+});
+
+describe("createDefaultSessionNote engine and model", () => {
+	it("writes no engine line by default (stays Claude-compatible)", () => {
+		const md = createDefaultSessionNote("s-1");
+		assert.ok(!md.includes("engine:"));
+		assert.ok(!md.includes("model:"));
+	});
+
+	it("records an explicit engine", () => {
+		const md = createDefaultSessionNote("s-1", "manual", "claude");
+		assert.ok(md.includes("engine: claude"));
+		assert.equal(parseSessionNote(md, "s-1").engine, "claude");
+	});
+
+	it("records engine and model together", () => {
+		const md = createDefaultSessionNote("s-1", "auto", "claude", "opus");
+		const note = parseSessionNote(md, "s-1");
+		assert.equal(note.engine, "claude");
+		assert.equal(note.model, "opus");
+		assert.equal(note.queueMode, "auto");
+	});
+});
+
+describe("restoreSessionNote engine and model", () => {
+	it("carries engine and model from the archive to the new session", () => {
+		const archive = parseSessionNote(
+			"---\nsession: old\nstatus: idle\nengine: claude\nmodel: opus\n---\n\n## Notes\n\n## History\n\n## Queue\n- q\n",
+			"old",
+		);
+		const restored = restoreSessionNote(archive, "P-3");
+		assert.equal(restored.engine, "claude");
+		assert.equal(restored.model, "opus");
+		assert.equal(restored.session, "P-3");
+	});
+
+	it("leaves them empty when the archive had none", () => {
+		const archive = parseSessionNote("---\nsession: old\nstatus: idle\n---\n\n## Notes\n\n## History\n\n## Queue\n", "old");
+		const restored = restoreSessionNote(archive, "P-3");
+		assert.equal(restored.engine, "");
+		assert.equal(restored.model, "");
+	});
+});
+
+describe("summarizeSessionNote engine", () => {
+	const base: SessionNote = {
+		session: "s", status: "idle", queueMode: "manual", displayName: "", summary: "",
+		engine: "", model: "", notes: "", history: [], queue: [],
+	};
+
+	it("reports the raw engine value when set", () => {
+		assert.equal(summarizeSessionNote({ ...base, engine: "claude" }).engine, "claude");
+	});
+
+	it("reports null for a legacy note with no engine", () => {
+		assert.equal(summarizeSessionNote(base).engine, null);
+	});
+
+	it("reports the model separately", () => {
+		const s = summarizeSessionNote({ ...base, engine: "claude", model: "opus" });
+		assert.equal(s.model, "opus");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Engine-scoped hook registration (Claude's hooks stop being hard-coded)
+// ---------------------------------------------------------------------------
+
+describe("engineSettingsPath", () => {
+	it("points at ~/.claude/settings.json for Claude", () => {
+		assert.equal(engineSettingsPath(resolveEngineRef("claude"), "/Users/tester"), "/Users/tester/.claude/settings.json");
+	});
+
+	it("uses the same path for a legacy note with no engine", () => {
+		assert.equal(engineSettingsPath(resolveEngineRef(undefined), "/Users/tester"), "/Users/tester/.claude/settings.json");
+	});
+
+	it("returns null for an unavailable engine", () => {
+		assert.equal(engineSettingsPath(resolveEngineRef("gpt-5-turbo"), "/Users/tester"), null);
+	});
+});
+
+describe("engineHookRegistrations", () => {
+	it("maps Claude's hook entries onto the plugin scripts directory", () => {
+		const regs = engineHookRegistrations(resolveEngineRef("claude"), "/plugin/scripts");
+		assert.deepStrictEqual(regs, [
+			{ role: "turn-end", event: "Stop", scriptName: "co-stop-hook.sh", scriptPath: "/plugin/scripts/co-stop-hook.sh" },
+			{ role: "waiting-for-input", event: "Notification", scriptName: "co-notification-hook.sh", scriptPath: "/plugin/scripts/co-notification-hook.sh" },
+		]);
+	});
+
+	it("returns nothing for an unavailable engine", () => {
+		assert.deepStrictEqual(engineHookRegistrations(resolveEngineRef("gpt-5-turbo"), "/plugin/scripts"), []);
+	});
+});
+
+describe("ensureEngineHookConfig", () => {
+	it("matches the Claude-specific wrappers it generalizes", () => {
+		const viaGeneric = ensureEngineHookConfig("{}", "Stop", "co-stop-hook.sh", "/p/co-stop-hook.sh");
+		const viaWrapper = ensureStopHookConfig("{}", "/p/co-stop-hook.sh");
+		assert.deepStrictEqual(viaGeneric, viaWrapper);
+	});
+
+	it("registers an arbitrary hook event", () => {
+		const result = ensureEngineHookConfig("{}", "SessionEnd", "co-end.sh", "/p/co-end.sh");
+		assert.equal(result.updated, true);
+		const parsed = JSON.parse(result.content) as { hooks: Record<string, { hooks: { command: string }[] }[]> };
+		assert.equal(parsed.hooks.SessionEnd?.[0]?.hooks[0]?.command, "'/p/co-end.sh'");
+	});
+
+	it("is idempotent", () => {
+		const once = ensureEngineHookConfig("{}", "Stop", "co-stop-hook.sh", "/p/co-stop-hook.sh");
+		const twice = ensureEngineHookConfig(once.content, "Stop", "co-stop-hook.sh", "/p/co-stop-hook.sh");
+		assert.equal(twice.updated, false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Engine-scoped slash-command loading
+// ---------------------------------------------------------------------------
+
+describe("mergeWithBuiltinCommands with an explicit builtin list", () => {
+	it("merges against the supplied list instead of Claude's", () => {
+		const builtins: SlashCommandEntry[] = [{ command: "/quit", description: "Quit" }];
+		const merged = mergeWithBuiltinCommands([{ command: "/thing", description: "Thing" }], builtins);
+		assert.deepStrictEqual(merged.map((e) => e.command), ["/quit", "/thing"]);
+	});
+
+	it("still defaults to Claude's builtins when no list is given", () => {
+		const merged = mergeWithBuiltinCommands([]);
+		assert.deepStrictEqual(merged.map((e) => e.command).sort(), BUILTIN_SLASH_COMMANDS.map((e) => e.command).sort());
+	});
+});
+
+describe("loadSlashCommandsFor", () => {
+	it("discovers skills under each root's engine skill directory and merges builtins", () => {
+		const root = mkdtempSync(join(tmpdir(), "co-engine-skills-"));
+		try {
+			const skillDir = join(root, ".claude", "skills", "deploy");
+			mkdirSync(skillDir, { recursive: true });
+			writeFileSync(join(skillDir, "SKILL.md"), "---\nname: deploy\ndescription: Ship it\n---\n");
+
+			const cmds = loadSlashCommandsFor(resolveEngineRef("claude"), [root]);
+			const deploy = cmds.find((c) => c.command === "/deploy");
+			assert.deepStrictEqual(deploy, { command: "/deploy", description: "Ship it" });
+			assert.ok(cmds.some((c) => c.command === "/compact"), "Claude builtins still present");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("returns nothing at all for an unavailable engine", () => {
+		assert.deepStrictEqual(loadSlashCommandsFor(resolveEngineRef("gpt-5-turbo"), ["/nowhere"]), []);
+	});
+
+	it("tolerates roots that do not exist", () => {
+		const cmds = loadSlashCommandsFor(resolveEngineRef("claude"), ["/definitely/not/here"]);
+		assert.ok(cmds.length > 0, "falls back to builtins");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// autoSendAction under an engine capability clamp
+// ---------------------------------------------------------------------------
+
+describe("autoSendAction with engine clamping", () => {
+	it("keeps auto-send for Claude", () => {
+		const mode = effectiveQueueMode(resolveEngineRef("claude"), "auto");
+		assert.equal(autoSendAction(mode, "done", 2), "send");
+	});
+
+	it("keeps auto-send for a legacy note with no engine field", () => {
+		const mode = effectiveQueueMode(resolveEngineRef(""), "auto");
+		assert.equal(autoSendAction(mode, "done", 2), "send");
+	});
+
+	it("suppresses auto-send when the engine is unavailable", () => {
+		const mode = effectiveQueueMode(resolveEngineRef("gpt-5-turbo"), "auto");
+		assert.equal(autoSendAction(mode, "done", 2), "none");
+	});
+
+	it("suppresses listen notifications when the engine is unavailable", () => {
+		const mode = effectiveQueueMode(resolveEngineRef("gpt-5-turbo"), "listen");
+		assert.equal(autoSendAction(mode, "done", 2), "none");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Cross-provider signal correlation (Codex adapter)
+// ---------------------------------------------------------------------------
+
+describe("parseStopSignal provider and turn fields", () => {
+	it("reads provider and turn_id when the hook supplies them", () => {
+		const sig = parseStopSignal(JSON.stringify({
+			tmux_session: "P-1", timestamp: 100, provider: "codex",
+			session_id: "01a09a21-ec1d-7c92-a71e-2a01a6ffed90",
+			turn_id: "01a09a22-444d-7490-a7b8-ae57d1f429e0",
+			stop_reason: "done",
+		}));
+		assert.equal(sig?.provider, "codex");
+		assert.equal(sig?.turnId, "01a09a22-444d-7490-a7b8-ae57d1f429e0");
+	});
+
+	it("defaults provider to claude for signals from the original hook scripts", () => {
+		const sig = parseStopSignal(JSON.stringify({ tmux_session: "P-1", timestamp: 100, stop_reason: "done" }));
+		assert.equal(sig?.provider, "claude");
+		assert.equal(sig?.turnId, null);
+	});
+
+	it("accepts the error stop reason", () => {
+		const sig = parseStopSignal(JSON.stringify({ tmux_session: "P-1", timestamp: 1, stop_reason: "error" }));
+		assert.equal(sig?.stopReason, "error");
+	});
+
+	it("keeps an unrecognized stop reason null rather than guessing done", () => {
+		const sig = parseStopSignal(JSON.stringify({ tmux_session: "P-1", timestamp: 1, stop_reason: "whatever" }));
+		assert.equal(sig?.stopReason, null);
+	});
+});
+
+describe("stopSignalKey", () => {
+	const base = { tmuxSession: "P-1", sessionId: "s", transcriptPath: null, cwd: null, timestamp: 5, stopReason: "done" as const, vault: null, turnId: "t" };
+
+	it("separates the two providers even when the UUIDs collide", () => {
+		// Codex session ids are UUIDv7, Claude's UUIDv4 — both 36-char UUID
+		// literals, so the provider field is the only safe discriminator.
+		const claude = stopSignalKey({ ...base, provider: "claude" });
+		const codex = stopSignalKey({ ...base, provider: "codex" });
+		assert.notEqual(claude, codex);
+	});
+
+	it("separates turns within one conversation", () => {
+		assert.notEqual(
+			stopSignalKey({ ...base, provider: "codex", turnId: "t1" }),
+			stopSignalKey({ ...base, provider: "codex", turnId: "t2" }),
+		);
+	});
+
+	it("is stable for a redelivery of the same event", () => {
+		assert.equal(stopSignalKey({ ...base, provider: "codex" }), stopSignalKey({ ...base, provider: "codex" }));
+	});
+});
+
+describe("StopSignalLedger", () => {
+	const sig = (over: Partial<StopSignal> = {}): StopSignal => ({
+		tmuxSession: "P-1", sessionId: "s1", transcriptPath: null, cwd: null,
+		timestamp: 100, stopReason: "done", vault: null, provider: "codex", turnId: "t1", ...over,
+	});
+
+	it("accepts a signal the first time", () => {
+		assert.equal(new StopSignalLedger().accept(sig()), true);
+	});
+
+	it("rejects an exact redelivery", () => {
+		const ledger = new StopSignalLedger();
+		assert.equal(ledger.accept(sig()), true);
+		assert.equal(ledger.accept(sig()), false);
+	});
+
+	it("accepts the next turn of the same conversation", () => {
+		const ledger = new StopSignalLedger();
+		ledger.accept(sig());
+		assert.equal(ledger.accept(sig({ turnId: "t2", timestamp: 101 })), true);
+	});
+
+	it("rejects a late signal that predates one already processed for that session", () => {
+		const ledger = new StopSignalLedger();
+		ledger.accept(sig({ turnId: "t2", timestamp: 200 }));
+		assert.equal(ledger.accept(sig({ turnId: "t1", timestamp: 100 })), false);
+	});
+
+	it("does not let one session's clock suppress another session's signals", () => {
+		const ledger = new StopSignalLedger();
+		ledger.accept(sig({ tmuxSession: "P-1", timestamp: 500 }));
+		assert.equal(ledger.accept(sig({ tmuxSession: "P-2", timestamp: 100 })), true);
+	});
+
+	it("does not let one provider's signal suppress the other's on the same tmux session", () => {
+		const ledger = new StopSignalLedger();
+		assert.equal(ledger.accept(sig({ provider: "claude", timestamp: 100 })), true);
+		assert.equal(ledger.accept(sig({ provider: "codex", timestamp: 100 })), true);
+	});
+
+	it("stays bounded so a long-running vault does not leak keys", () => {
+		const ledger = new StopSignalLedger(4);
+		for (let i = 0; i < 20; i++) ledger.accept(sig({ turnId: `t${i}`, timestamp: 100 + i }));
+		assert.ok(ledger.size <= 4, `size was ${ledger.size}`);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// error status (an interrupted turn is not a finished turn)
+// ---------------------------------------------------------------------------
+
+describe("error session status", () => {
+	it("round-trips through the session note", () => {
+		const md = "---\nsession: s-1\nstatus: error\nqueueMode: auto\n---\n\n## Notes\n\n## History\n\n## Queue\n";
+		const note = parseSessionNote(md, "s-1");
+		assert.equal(note.status, "error");
+		assert.equal(serializeSessionNote(note), md);
+	});
+
+	it("derives an error status that still counts as idle", () => {
+		// Codex fires Interrupt *instead of* Stop, so if error meant "still
+		// running" the session would wait forever for a completion signal
+		// that never comes.
+		const derived = deriveStatusFromStop("error");
+		assert.equal(derived.status, "error");
+		assert.equal(derived.claudeIdle, true, "an interrupted session is not stuck running");
+	});
+
+	it("never advances the queue", () => {
+		assert.equal(autoSendAction("auto", "error", 3), "none");
+		assert.equal(autoSendAction("listen", "error", 3), "none");
+	});
+
+	it("leaves the in-flight history item unchecked", () => {
+		const history: HistoryItem[] = [{ text: "task", completed: false }];
+		assert.equal(markLastHistoryDone(history, "error"), false);
+		assert.equal(history[0]!.completed, false);
+	});
+
+	it("shows a distinct status dot", () => {
+		assert.equal(sessionStatusDisplay(true, "error").dataStatus, "error");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Per-project default engine persistence
+// ---------------------------------------------------------------------------
+
+describe("project default engine", () => {
+	it("survives being added to the registry", () => {
+		const reg = addProject({}, "P", { vaultFolder: "f", defaultEngine: "codex" });
+		assert.equal(reg.P?.defaultEngine, "codex");
+	});
+
+	it("survives an unrelated config edit", () => {
+		let reg = addProject({}, "P", { vaultFolder: "f", defaultEngine: "codex" });
+		reg = updateProjectConfig(reg, "P", { workingDirectory: "/code/p" });
+		assert.equal(reg.P?.defaultEngine, "codex", "editing the code folder must not reset the engine");
+	});
+
+	it("can be cleared back to the global default", () => {
+		let reg = addProject({}, "P", { vaultFolder: "f", defaultEngine: "codex" });
+		reg = updateProjectConfig(reg, "P", { defaultEngine: undefined });
+		assert.equal(reg.P?.defaultEngine, undefined);
+		assert.equal(resolveSessionEngineRef(null, reg.P?.defaultEngine, "claude").id, "claude");
+	});
+
+	it("is absent on projects that never set one", () => {
+		const reg = addProject({}, "P", { vaultFolder: "f" });
+		assert.equal(reg.P?.defaultEngine, undefined);
+	});
+
+	it("does not survive migration as a bogus value — resolution still fails safe", () => {
+		const reg = addProject({}, "P", { vaultFolder: "f", defaultEngine: "not-an-engine" });
+		const ref = resolveSessionEngineRef(null, reg.P?.defaultEngine, "claude");
+		assert.equal(ref.status, "unavailable");
+		assert.deepStrictEqual(engineQueueModes(ref), ["manual"]);
 	});
 });

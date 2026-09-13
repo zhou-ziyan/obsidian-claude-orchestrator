@@ -3,6 +3,9 @@
  * skills discovered on disk.
  */
 
+import { readdirSync, readFileSync } from "fs";
+import { join } from "path";
+
 export interface SlashCommandEntry {
 	command: string;
 	description: string;
@@ -61,19 +64,20 @@ export function filterSlashCommands(input: string, commands?: readonly SlashComm
 	return list.filter((entry) => entry.command.toLowerCase().startsWith(prefix));
 }
 
-export function loadSlashCommands(skillDirs: string[]): SlashCommandEntry[] {
-	const fs = require("fs") as typeof import("fs");
-	const path = require("path") as typeof import("path");
+export function loadSlashCommands(
+	skillDirs: string[],
+	builtins: readonly SlashCommandEntry[] = BUILTIN_SLASH_COMMANDS,
+): SlashCommandEntry[] {
 	const skills: SlashCommandEntry[] = [];
 
 	for (const dir of skillDirs) {
 		let entries: string[];
-		try { entries = fs.readdirSync(dir); } catch { continue; }
+		try { entries = readdirSync(dir); } catch { continue; }
 		for (const name of entries) {
-			const skillDir = path.join(dir, name);
+			const skillDir = join(dir, name);
 			let content: string | undefined;
 			for (const fn of ["SKILL.md", "skill.md"]) {
-				try { content = fs.readFileSync(path.join(skillDir, fn), "utf8"); break; } catch { /* try next */ }
+				try { content = readFileSync(join(skillDir, fn), "utf8"); break; } catch { /* try next */ }
 			}
 			if (!content) continue;
 			const parsed = parseSkillMd(content);
@@ -83,12 +87,15 @@ export function loadSlashCommands(skillDirs: string[]): SlashCommandEntry[] {
 		}
 	}
 
-	return mergeWithBuiltinCommands(skills);
+	return mergeWithBuiltinCommands(skills, builtins);
 }
 
-export function mergeWithBuiltinCommands(skills: SlashCommandEntry[]): SlashCommandEntry[] {
+export function mergeWithBuiltinCommands(
+	skills: SlashCommandEntry[],
+	builtins: readonly SlashCommandEntry[] = BUILTIN_SLASH_COMMANDS,
+): SlashCommandEntry[] {
 	const merged = new Map<string, SlashCommandEntry>();
-	for (const entry of BUILTIN_SLASH_COMMANDS) {
+	for (const entry of builtins) {
 		merged.set(entry.command, entry);
 	}
 	for (const entry of skills) {

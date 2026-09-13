@@ -6,7 +6,9 @@
 
 set -euo pipefail
 
-SIGNAL_DIR="/tmp/co-stop"
+# Overridable so tests can drive the hook without writing into the
+# live signal directory a running plugin is consuming.
+SIGNAL_DIR="${CO_SIGNAL_DIR:-/tmp/co-stop}"
 mkdir -p "$SIGNAL_DIR"
 
 INPUT=$(cat)
