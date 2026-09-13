@@ -1,8 +1,8 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, ensureEngineHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, StopSignalLedger, availableEngineIds, engineCreatesHookFile, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, DEFAULT_ENGINE_ID } from "./utils";
-import type { ProjectRegistry, QueueMode, SessionNote, SlashCommandEntry, StopReason, ThemeName } from "./utils";
+import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, ensureEngineHookConfig, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, StopSignalLedger, availableEngineIds, engineCreatesHookFile, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, resolveSessionEngineRef, isEngineId, ENGINE_IDS, getEngineDefinition, DEFAULT_ENGINE_ID } from "./utils";
+import type { EngineId, ProjectRegistry, QueueMode, SessionNote, SlashCommandEntry, StopReason, ThemeName } from "./utils";
 import { QUEUE_MODES, queueModeLabel } from "./utils";
 import { QueueEngine } from "./queue-engine";
 import { StopHookWatcher } from "./stop-hook-watcher";
@@ -21,6 +21,8 @@ export interface OrchestratorSettings {
 	theme: ThemeName;
 	autoSendCountdownSeconds: number;
 	defaultQueueMode: QueueMode;
+	/** Engine new sessions start on when the project does not override it. */
+	defaultEngine: EngineId;
 }
 
 const DEFAULT_SETTINGS: OrchestratorSettings = {
@@ -32,6 +34,7 @@ const DEFAULT_SETTINGS: OrchestratorSettings = {
 	theme: "obsidian",
 	autoSendCountdownSeconds: 3,
 	defaultQueueMode: "manual",
+	defaultEngine: DEFAULT_ENGINE_ID,
 };
 
 export default class ClaudeOrchestratorPlugin extends Plugin {
@@ -230,6 +233,13 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 	async saveSettings() {
 		await this.saveData(this.settings);
 		this.loadSlashCommands();
+	}
+
+	/** Engine a new session in this project should start on. */
+	defaultEngineForProject(project: string | null): EngineId {
+		const config = project ? this.settings.projects[project] : undefined;
+		const ref = resolveSessionEngineRef(null, config?.defaultEngine, this.settings.defaultEngine);
+		return ref.id ?? DEFAULT_ENGINE_ID;
 	}
 
 	applyThemeToAllViews(): void {
@@ -686,6 +696,23 @@ class OrchestratorSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.defaultQueueMode)
 					.onChange(async (value) => {
 						this.plugin.settings.defaultQueueMode = value as QueueMode;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName("Default engine")
+			.setDesc("Engine new sessions start on, unless a project overrides it.")
+			.addDropdown((dropdown) => {
+				for (const id of ENGINE_IDS) {
+					const def = getEngineDefinition(id);
+					if (def) dropdown.addOption(id, def.label);
+				}
+				dropdown
+					.setValue(this.plugin.settings.defaultEngine)
+					.onChange(async (value) => {
+						if (!isEngineId(value)) return;
+						this.plugin.settings.defaultEngine = value;
 						await this.plugin.saveSettings();
 					});
 			});

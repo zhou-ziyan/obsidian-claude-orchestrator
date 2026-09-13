@@ -8,6 +8,9 @@ export interface ProjectConfig {
 	workingDirectory?: string;
 	mainNote?: string;
 	inactive?: boolean;
+	/** Engine new sessions in this project start on. Absent means fall
+	 * through to the global default (which is Claude). */
+	defaultEngine?: string;
 }
 
 export type ProjectRegistry = Record<string, ProjectConfig>;

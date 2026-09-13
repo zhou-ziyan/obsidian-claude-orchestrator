@@ -18,6 +18,10 @@ export interface SessionInfo {
 	displayName: string | null;
 	status: SessionStatus;
 	queueMode: QueueMode;
+	/** Raw engine recorded on the note; null when the note says nothing
+	 * (which means Claude, but the card should not claim the note said so). */
+	engine: string | null;
+	model: string | null;
 }
 
 export interface SessionGroup {
@@ -70,7 +74,7 @@ export function sessionsMissingNotes(
 export function groupSessionsByProject(
 	allSessions: { name: string; activity: number; vaultId?: string }[],
 	openSessionNames: Set<string>,
-	noteData: Map<string, { queueCount: number; lastActivity: string | null; preview: string | null; displayName: string | null; status: SessionStatus; queueMode: QueueMode }>,
+	noteData: Map<string, { queueCount: number; lastActivity: string | null; preview: string | null; displayName: string | null; status: SessionStatus; queueMode: QueueMode; engine?: string | null; model?: string | null }>,
 	projects: ProjectRegistry,
 	projectsWithNotes?: Set<string>,
 	vaultId?: string,
@@ -92,6 +96,8 @@ export function groupSessionsByProject(
 			displayName: nd?.displayName ?? null,
 			status: nd?.status ?? "idle",
 			queueMode: nd?.queueMode ?? "manual",
+			engine: nd?.engine ?? null,
+			model: nd?.model ?? null,
 		};
 
 		if (project) {

@@ -12,3 +12,4 @@ export * from "./queue-policy.ts";
 export * from "./session-list.ts";
 export * from "./terminal.ts";
 export * from "./engines.ts";
+export * from "./engine-usage.ts";

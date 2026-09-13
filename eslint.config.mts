@@ -18,6 +18,7 @@ export default tseslint.config(
 						'tests/utils.test.ts',
 					'tests/queue-engine.test.ts',
 					'tests/engines.test.ts',
+					'tests/engine-usage.test.ts',
 					'tests/e2e-tmux.test.ts',
 					'tests/e2e-dual-engine.test.ts',
 					]

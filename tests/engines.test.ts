@@ -19,8 +19,12 @@ import {
 	isEngineId,
 	resolveEngineBinary,
 	resolveEngineRef,
+	resolveSessionEngineRef,
+	planEngineSwitch,
+	transferQueue,
 } from "../src/engines.ts";
 import type { EngineDefinition } from "../src/engines.ts";
+import type { SessionNote } from "../src/session-note.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../src/slash-commands.ts";
 
 // ---------------------------------------------------------------------------
@@ -467,5 +471,153 @@ describe("engineCreatesHookFile", () => {
 
 	it("is false for an unavailable engine", () => {
 		assert.equal(engineCreatesHookFile(resolveEngineRef("gpt-5-turbo")), false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Engine selection: note → project default → global default
+// ---------------------------------------------------------------------------
+
+describe("resolveSessionEngineRef", () => {
+	it("prefers the session note's own engine", () => {
+		assert.equal(resolveSessionEngineRef("codex", "claude", "claude").id, "codex");
+	});
+
+	it("falls back to the project default when the note says nothing", () => {
+		const ref = resolveSessionEngineRef("", "codex", "claude");
+		assert.equal(ref.id, "codex");
+		assert.equal(ref.status, "known");
+	});
+
+	it("falls back to the global default when the project says nothing", () => {
+		assert.equal(resolveSessionEngineRef("", undefined, "codex").id, "codex");
+	});
+
+	it("lands on Claude when nothing anywhere is set", () => {
+		const ref = resolveSessionEngineRef(undefined, undefined, undefined);
+		assert.equal(ref.id, "claude");
+		assert.equal(ref.status, "default");
+	});
+
+	it("still fails safe when the note names an engine we cannot drive", () => {
+		const ref = resolveSessionEngineRef("gpt-5-turbo", "claude", "claude");
+		assert.equal(ref.status, "unavailable");
+		assert.equal(ref.definition, null);
+	});
+
+	it("does not let a broken project default hijack an explicit note engine", () => {
+		assert.equal(resolveSessionEngineRef("claude", "nonsense", "claude").id, "claude");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Switching engines
+// ---------------------------------------------------------------------------
+
+function note(over: Partial<SessionNote> = {}): SessionNote {
+	return {
+		session: "P-1", status: "idle", queueMode: "manual", displayName: "", summary: "",
+		engine: "", model: "", notes: "", history: [], queue: [], ...over,
+	};
+}
+
+describe("planEngineSwitch", () => {
+	it("does nothing when the target is already the current engine", () => {
+		const plan = planEngineSwitch(note({ engine: "codex" }), "codex");
+		assert.equal(plan.kind, "noop");
+	});
+
+	it("treats an engine-less legacy note as already Claude", () => {
+		assert.equal(planEngineSwitch(note(), "claude").kind, "noop");
+	});
+
+	it("retargets a fresh session in place — nothing to preserve", () => {
+		const plan = planEngineSwitch(note({ engine: "claude" }), "codex");
+		assert.equal(plan.kind, "retarget");
+		assert.equal(plan.pendingCount, 0);
+	});
+
+	it("opens a sibling session once the current one has run work", () => {
+		const plan = planEngineSwitch(note({ engine: "claude", history: [{ text: "did a thing", completed: true }] }), "codex");
+		assert.equal(plan.kind, "new-session");
+	});
+
+	it("opens a sibling session when a task is still in flight", () => {
+		const plan = planEngineSwitch(note({ engine: "claude", status: "running", history: [{ text: "running", completed: false }] }), "codex");
+		assert.equal(plan.kind, "new-session");
+	});
+
+	it("never kills or reuses the source session", () => {
+		for (const target of ENGINE_IDS) {
+			const plan = planEngineSwitch(note({ engine: "claude", history: [{ text: "x", completed: true }] }), target);
+			assert.equal(plan.killsSource, false, `${target} switch leaves the source alive`);
+		}
+	});
+
+	it("reports how many queued items would need an explicit transfer", () => {
+		const plan = planEngineSwitch(note({ engine: "claude", history: [{ text: "x", completed: true }], queue: ["a", "b"] }), "codex");
+		assert.equal(plan.kind, "new-session");
+		assert.equal(plan.pendingCount, 2);
+	});
+
+	it("refuses to plan a switch to an engine with no definition", () => {
+		const plan = planEngineSwitch(note({ engine: "claude" }), "nonsense");
+		assert.equal(plan.kind, "unsupported");
+	});
+});
+
+describe("transferQueue", () => {
+	const stamp = () => "2026-09-13 04:00";
+
+	it("moves every pending item to the target in order", () => {
+		const from = note({ session: "P-1", engine: "claude", queue: ["a", "b"] });
+		const to = note({ session: "P-2", engine: "codex" });
+		assert.equal(transferQueue(from, to, stamp), 2);
+		assert.deepStrictEqual(to.queue, ["a", "b"]);
+		assert.deepStrictEqual(from.queue, []);
+	});
+
+	it("appends after anything already queued on the target", () => {
+		const from = note({ session: "P-1", queue: ["c"] });
+		const to = note({ session: "P-2", queue: ["a", "b"] });
+		transferQueue(from, to, stamp);
+		assert.deepStrictEqual(to.queue, ["a", "b", "c"]);
+	});
+
+	it("moves each item exactly once — a repeated transfer is a no-op", () => {
+		const from = note({ session: "P-1", queue: ["a"] });
+		const to = note({ session: "P-2" });
+		assert.equal(transferQueue(from, to, stamp), 1);
+		assert.equal(transferQueue(from, to, stamp), 0);
+		assert.deepStrictEqual(to.queue, ["a"], "no duplicate landed on the target");
+	});
+
+	it("leaves an audit line on the source so the handoff is traceable", () => {
+		const from = note({ session: "P-1", queue: ["a", "b"] });
+		const to = note({ session: "P-2", engine: "codex" });
+		transferQueue(from, to, stamp);
+		assert.match(from.notes, /2 queued item\(s\) → P-2/);
+		assert.match(from.notes, /2026-09-13 04:00/);
+	});
+
+	it("writes no audit line when there was nothing to move", () => {
+		const from = note({ session: "P-1", notes: "existing" });
+		const to = note({ session: "P-2" });
+		assert.equal(transferQueue(from, to, stamp), 0);
+		assert.equal(from.notes, "existing");
+	});
+
+	it("never touches history — only pending work moves", () => {
+		const from = note({ session: "P-1", queue: ["a"], history: [{ text: "already ran", completed: true }] });
+		const to = note({ session: "P-2" });
+		transferQueue(from, to, stamp);
+		assert.equal(from.history.length, 1);
+		assert.equal(to.history.length, 0);
+	});
+
+	it("refuses to transfer a note onto itself", () => {
+		const same = note({ session: "P-1", queue: ["a"] });
+		assert.equal(transferQueue(same, same, stamp), 0);
+		assert.deepStrictEqual(same.queue, ["a"]);
 	});
 });

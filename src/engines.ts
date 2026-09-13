@@ -17,7 +17,7 @@
  */
 import { BUILTIN_SLASH_COMMANDS, loadSlashCommands, mergeWithBuiltinCommands } from "./slash-commands.ts";
 import type { SlashCommandEntry } from "./slash-commands.ts";
-import type { QueueMode } from "./session-note.ts";
+import type { QueueMode, SessionNote } from "./session-note.ts";
 
 export type EngineId = "claude" | "codex";
 
@@ -339,4 +339,95 @@ export function engineHookRegistrations(ref: EngineRef, scriptsDir: string): Eng
 		scriptName: entry.script,
 		scriptPath: joinSegments(scriptsDir, [entry.script]),
 	}));
+}
+
+// --- Selecting an engine for a session ---
+
+/**
+ * Where a session's engine comes from, most specific first: the session
+ * note, then the project's default, then the global default. A note that
+ * names an unknown engine still fails safe — a project default must never
+ * override an explicit (even if broken) per-session choice, or a switch
+ * would silently target the wrong CLI.
+ */
+export function resolveSessionEngineRef(
+	noteEngine: string | null | undefined,
+	projectDefault: string | null | undefined,
+	globalDefault: string | null | undefined,
+): EngineRef {
+	const note = (noteEngine ?? "").trim();
+	if (note !== "") return resolveEngineRef(note);
+	const project = (projectDefault ?? "").trim();
+	if (project !== "") return resolveEngineRef(project);
+	return resolveEngineRef(globalDefault ?? undefined);
+}
+
+// --- Switching a session between engines ---
+
+export type EngineSwitchKind = "noop" | "retarget" | "new-session" | "unsupported";
+
+export interface EngineSwitchPlan {
+	kind: EngineSwitchKind;
+	target: EngineId | null;
+	/** Queue items that would need an explicit transfer afterwards. */
+	pendingCount: number;
+	/** Always false. A switch opens a sibling session; it never tears down
+	 * the session the user may still have work running in. */
+	killsSource: false;
+	reason: string;
+}
+
+/**
+ * Decide what switching this session to `target` should do.
+ *
+ * A tmux session is just a shell — the engine is whatever CLI is running
+ * inside it, and the two engines' conversation ids are separate namespaces
+ * that cannot be handed to each other. So once a session has actually run
+ * something, switching means standing up a sibling session for the other
+ * engine and leaving this one intact, rather than pretending the
+ * conversation can move across. Only a session that has done nothing yet is
+ * retargeted in place.
+ */
+export function planEngineSwitch(note: SessionNote, target: string): EngineSwitchPlan {
+	const targetRef = resolveEngineRef(target);
+	const pendingCount = note.queue.length;
+	if (!targetRef.definition || targetRef.id === null) {
+		return { kind: "unsupported", target: targetRef.id, pendingCount, killsSource: false,
+			reason: `No definition for engine "${target}"` };
+	}
+	const current = resolveEngineRef(note.engine);
+	if (current.id === targetRef.id) {
+		return { kind: "noop", target: targetRef.id, pendingCount, killsSource: false,
+			reason: `Already running ${targetRef.definition.label}` };
+	}
+	const hasRun = note.history.length > 0 || note.status === "running";
+	if (!hasRun) {
+		return { kind: "retarget", target: targetRef.id, pendingCount: 0, killsSource: false,
+			reason: "Session has not run anything yet — switching in place" };
+	}
+	return { kind: "new-session", target: targetRef.id, pendingCount, killsSource: false,
+		reason: `Existing work stays in this session; a new ${targetRef.definition.label} session will open alongside it` };
+}
+
+/**
+ * Move pending queue items from one session note to another.
+ *
+ * Only queued work moves: history stays where it ran, and no claim is made
+ * that conversation context carries across. Exactly-once falls out of
+ * draining the source — a repeat call finds an empty queue and moves
+ * nothing, so a double-click cannot duplicate a task. Returns how many
+ * items moved.
+ */
+export function transferQueue(
+	source: SessionNote,
+	target: SessionNote,
+	stamp: () => string,
+): number {
+	if (source === target || source.session === target.session) return 0;
+	const moving = source.queue.splice(0, source.queue.length);
+	if (moving.length === 0) return 0;
+	target.queue.push(...moving);
+	const line = `[${stamp()}] Handed off ${moving.length} queued item(s) → ${target.session}`;
+	source.notes = source.notes ? `${source.notes}\n${line}` : line;
+	return moving.length;
 }

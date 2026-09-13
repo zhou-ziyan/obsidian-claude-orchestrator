@@ -1290,6 +1290,130 @@
     background: var(--co-text-dim);
 }
 
+/* Queue handoff offer after an engine switch */
+.co-sm-transfer-offer {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 4px;
+    padding: 5px 6px;
+    border: 1px dashed var(--s-ask);
+    border-radius: 4px;
+}
+.co-sm-transfer-text {
+    font-size: 11px;
+    color: var(--co-text);
+}
+.co-sm-transfer-note {
+    font-size: 10px;
+    color: var(--co-text-dim);
+}
+.co-sm-transfer-actions {
+    display: flex;
+    gap: 4px;
+}
+
+/* Engine badge (which CLI this session runs) */
+.co-sm-card-engine {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid var(--co-border);
+    color: var(--co-text-dim);
+    white-space: nowrap;
+}
+.co-sm-card-engine[data-engine="claude"] {
+    color: var(--s-running);
+    border-color: var(--s-running);
+}
+.co-sm-card-engine[data-engine="codex"] {
+    color: var(--s-ask);
+    border-color: var(--s-ask);
+}
+.co-sm-card-engine[data-engine="unknown"] {
+    color: var(--s-error);
+    border-color: var(--s-error);
+}
+/* Implied rather than recorded on the note — shown, but not asserted. */
+.co-sm-card-engine[data-implicit="true"] {
+    opacity: 0.6;
+    border-style: dashed;
+}
+
+.co-sm-settings-select {
+    font-size: 11px;
+    padding: 1px 4px;
+    background: var(--co-bg-input);
+    color: var(--co-text);
+    border: 1px solid var(--co-border);
+    border-radius: 3px;
+}
+.co-sm-settings-hint {
+    font-size: 10px;
+    color: var(--co-text-dim);
+    padding: 2px 0 0 0;
+}
+
+/* Engine usage footer */
+.co-sm-usage {
+    padding: 4px 8px;
+    border-top: 1px solid var(--co-border);
+    font-size: 10px;
+}
+.co-sm-usage-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--co-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.co-sm-usage-title {
+    flex: 1;
+}
+.co-sm-usage-reload {
+    width: 18px;
+    height: 18px;
+}
+.co-sm-usage-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 1px 0;
+}
+.co-sm-usage-engine {
+    color: var(--co-text);
+    min-width: 78px;
+}
+.co-sm-usage-value {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+.co-sm-usage-row[data-headroom="ok"] .co-sm-usage-value {
+    color: var(--s-running);
+}
+.co-sm-usage-row[data-headroom="limited"] .co-sm-usage-value {
+    color: var(--s-ask);
+}
+.co-sm-usage-row[data-headroom="exhausted"] .co-sm-usage-value {
+    color: var(--s-error);
+}
+.co-sm-usage-row[data-headroom="unknown"] .co-sm-usage-value {
+    color: var(--co-text-dim);
+    font-weight: 400;
+}
+.co-sm-usage-value[data-stale="true"] {
+    opacity: 0.65;
+}
+.co-sm-usage-detail {
+    color: var(--co-text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* Meta row: mode · queue badge · time */
 .co-sm-card-meta {
     display: flex;

@@ -111,6 +111,8 @@ import {
 	loadSlashCommandsFor,
 	stopSignalKey,
 	StopSignalLedger,
+	resolveSessionEngineRef,
+	engineQueueModes,
 } from "../src/utils.ts";
 import type { ProjectRegistry, SessionNote, SessionGroup, HistoryItem, SlashCommandEntry, StopSignal } from "../src/utils.ts";
 
@@ -5477,5 +5479,41 @@ describe("error session status", () => {
 
 	it("shows a distinct status dot", () => {
 		assert.equal(sessionStatusDisplay(true, "error").dataStatus, "error");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Per-project default engine persistence
+// ---------------------------------------------------------------------------
+
+describe("project default engine", () => {
+	it("survives being added to the registry", () => {
+		const reg = addProject({}, "P", { vaultFolder: "f", defaultEngine: "codex" });
+		assert.equal(reg.P?.defaultEngine, "codex");
+	});
+
+	it("survives an unrelated config edit", () => {
+		let reg = addProject({}, "P", { vaultFolder: "f", defaultEngine: "codex" });
+		reg = updateProjectConfig(reg, "P", { workingDirectory: "/code/p" });
+		assert.equal(reg.P?.defaultEngine, "codex", "editing the code folder must not reset the engine");
+	});
+
+	it("can be cleared back to the global default", () => {
+		let reg = addProject({}, "P", { vaultFolder: "f", defaultEngine: "codex" });
+		reg = updateProjectConfig(reg, "P", { defaultEngine: undefined });
+		assert.equal(reg.P?.defaultEngine, undefined);
+		assert.equal(resolveSessionEngineRef(null, reg.P?.defaultEngine, "claude").id, "claude");
+	});
+
+	it("is absent on projects that never set one", () => {
+		const reg = addProject({}, "P", { vaultFolder: "f" });
+		assert.equal(reg.P?.defaultEngine, undefined);
+	});
+
+	it("does not survive migration as a bogus value — resolution still fails safe", () => {
+		const reg = addProject({}, "P", { vaultFolder: "f", defaultEngine: "not-an-engine" });
+		const ref = resolveSessionEngineRef(null, reg.P?.defaultEngine, "claude");
+		assert.equal(ref.status, "unavailable");
+		assert.deepStrictEqual(engineQueueModes(ref), ["manual"]);
 	});
 });

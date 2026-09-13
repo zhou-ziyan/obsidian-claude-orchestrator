@@ -39,10 +39,28 @@ import {
 	countdownText,
 	summarizeSessionNote,
 	computeRelinkTarget,
+	nowStamp,
+	ENGINE_IDS,
+	DEFAULT_ENGINE_ID,
+	getEngineDefinition,
+	engineDisplayLabel,
+	resolveEngineRef,
+	resolveSessionEngineRef,
+	planEngineSwitch,
+	transferQueue,
+	describeUsageSource,
+	usageHeadroom,
+	claudeUsageUnavailable,
+	fetchCodexUsage,
+	resolveEngineBinary,
+	CODEX_ENGINE,
+	isEngineId,
 } from "./utils";
 import { findTerminalLeafBySession, collectOpenSessionNames } from "./workspace-helpers";
-import type { ProjectConfig, PtyLevel } from "./utils";
+import type { EngineUsage, ProjectConfig, PtyLevel, SessionNote } from "./utils";
 import type ClaudeOrchestratorPlugin from "./main";
+import { existsSync } from "fs";
+import { homedir } from "os";
 
 export const VIEW_TYPE_SESSION_MANAGER = "claude-orchestrator-session-manager";
 
@@ -160,6 +178,12 @@ export class SessionManagerView extends ItemView {
 	private focusedSession: string | null = null;
 	private sendBtns = new Map<string, HTMLElement>();
 	private openSettings = new Set<string>();
+	private usageEl: HTMLElement | null = null;
+	private usage = new Map<string, EngineUsage>();
+	private usageInFlight = false;
+	// A queue handoff offered after an engine switch, awaiting the user's
+	// explicit yes. Keyed by source session so it can only be offered once.
+	private pendingTransfer: { source: string; target: string; count: number } | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClaudeOrchestratorPlugin) {
 		super(leaf);
@@ -209,6 +233,10 @@ export class SessionManagerView extends ItemView {
 
 		// Session list
 		this.listEl = container.createDiv({ cls: "co-sm-list" });
+
+		// Engine usage (footer) — above the PTY meter.
+		this.usageEl = container.createDiv({ cls: "co-sm-usage" });
+		void this.refreshUsage();
 
 		// PTY usage indicator (footer)
 		this.ptyEl = container.createDiv({ cls: "co-sm-pty" });
@@ -289,7 +317,10 @@ export class SessionManagerView extends ItemView {
 				if (!this.app.vault.getAbstractFileByPath(m.dirPath)) {
 					await this.app.vault.createFolder(m.dirPath);
 				}
-				await this.app.vault.create(m.notePath, createDefaultSessionNote(m.sessionName, this.plugin.settings.defaultQueueMode));
+				const engine = this.plugin.defaultEngineForProject(
+					projectFromSessionName(m.sessionName, projects),
+				);
+				await this.app.vault.create(m.notePath, createDefaultSessionNote(m.sessionName, this.plugin.settings.defaultQueueMode, engine));
 			} catch { /* race: another view may have created it */ }
 		}
 
@@ -378,6 +409,62 @@ export class SessionManagerView extends ItemView {
 
 		for (const group of groups) {
 			this.renderGroup(group);
+		}
+	}
+
+	/**
+	 * Read each engine's remaining allowance. Never blocks the UI and never
+	 * invents a number: an engine with no readable source stays "Unavailable"
+	 * and manual switching keeps working regardless.
+	 */
+	private async refreshUsage(): Promise<void> {
+		if (this.usageInFlight) return;
+		this.usageInFlight = true;
+		try {
+			this.usage.set("claude", claudeUsageUnavailable(Date.now()));
+			this.renderUsage();
+			const codexBinary = resolveEngineBinary(CODEX_ENGINE, homedir(), (path) => existsSync(path));
+			this.usage.set("codex", await fetchCodexUsage(codexBinary));
+			this.renderUsage();
+		} finally {
+			this.usageInFlight = false;
+		}
+	}
+
+	private renderUsage(): void {
+		if (!this.usageEl) return;
+		this.usageEl.empty();
+
+		const header = this.usageEl.createDiv({ cls: "co-sm-usage-header" });
+		header.createSpan({ cls: "co-sm-usage-title", text: "Engine usage" });
+		const reloadBtn = header.createEl("button", { cls: "icon-btn co-sm-usage-reload" });
+		setIcon(reloadBtn, "rotate-cw");
+		reloadBtn.title = "Re-read engine usage";
+		reloadBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			void this.refreshUsage();
+		});
+
+		for (const id of ENGINE_IDS) {
+			const def = getEngineDefinition(id);
+			if (!def) continue;
+			const reading = this.usage.get(id) ?? null;
+			const described = describeUsageSource(reading);
+			const row = this.usageEl.createDiv({ cls: "co-sm-usage-row" });
+			row.dataset.headroom = usageHeadroom(reading);
+			row.createSpan({ cls: "co-sm-usage-engine", text: def.label });
+			const value = row.createSpan({ cls: "co-sm-usage-value", text: described.value });
+			if (described.stale && described.value !== "Unavailable") {
+				value.dataset.stale = "true";
+				value.textContent = `${described.value} (stale)`;
+			}
+			if (described.detail) {
+				row.createSpan({ cls: "co-sm-usage-detail", text: described.detail });
+			}
+			// The source and read time are part of the reading, not decoration:
+			// a number with no provenance is not evidence.
+			const when = reading ? new Date(reading.fetchedAt).toLocaleTimeString() : "never";
+			row.title = `${described.source}\nread at ${when}`;
 		}
 	}
 
@@ -588,6 +675,7 @@ export class SessionManagerView extends ItemView {
 						e.stopPropagation();
 						void this.app.workspace.openLinkText(expectedPath, "");
 					});
+					this.renderEngineRow(settingsPanel, session, project);
 				} else {
 					noteRow.createSpan({ cls: "co-sm-settings-warn", text: "⚠ not found" });
 					const relinkBtn = settingsPanel.createEl("button", {
@@ -605,6 +693,21 @@ export class SessionManagerView extends ItemView {
 		// Meta row: mode · queue badge · relative time
 		const metaRow = card.createDiv({ cls: "co-sm-card-meta" });
 		if (session.hasNote) {
+			const engineRef = resolveSessionEngineRef(
+				session.engine,
+				project ? this.plugin.settings.projects[project]?.defaultEngine : null,
+				this.plugin.settings.defaultEngine,
+			);
+			const engineEl = metaRow.createSpan({ cls: "co-sm-card-engine" });
+			engineEl.dataset.engine = engineRef.id ?? "unknown";
+			engineEl.textContent = engineRef.definition?.label ?? engineDisplayLabel(engineRef);
+			engineEl.title = session.engine
+				? `Engine: ${engineDisplayLabel(engineRef)}${session.model ? ` · model ${session.model}` : ""}`
+				: `Engine not recorded on the note — defaulting to ${engineDisplayLabel(engineRef)}`;
+			if (!session.engine) engineEl.dataset.implicit = "true";
+
+			metaRow.createSpan({ cls: "co-sm-card-dot-sep", text: "·" });
+
 			const modeEl = metaRow.createSpan({ cls: "co-sm-card-mode" });
 			modeEl.dataset.mode = session.queueMode;
 			modeEl.textContent = queueModeLabel(session.queueMode).toUpperCase();
@@ -639,6 +742,10 @@ export class SessionManagerView extends ItemView {
 			});
 		}
 
+		if (project) {
+			this.renderTransferOffer(card, session, project);
+		}
+
 		// Note preview (italic gray)
 		if (session.preview) {
 			const previewEl = card.createDiv({ cls: "co-sm-card-note" });
@@ -664,6 +771,170 @@ export class SessionManagerView extends ItemView {
 			}
 		});
 
+	}
+
+	/**
+	 * Engine row inside a session's settings panel: which engine it runs on,
+	 * and a picker to move it to the other one.
+	 */
+	private renderEngineRow(panel: HTMLElement, session: SessionInfo, project: string): void {
+		const projectDefault = this.plugin.settings.projects[project]?.defaultEngine;
+		const current = resolveSessionEngineRef(session.engine, projectDefault, this.plugin.settings.defaultEngine);
+
+		const row = panel.createDiv({ cls: "co-sm-settings-row" });
+		row.createSpan({ cls: "co-sm-settings-label", text: "Engine:" });
+
+		const select = row.createEl("select", { cls: "co-sm-settings-select" });
+		for (const id of ENGINE_IDS) {
+			const def = getEngineDefinition(id);
+			if (!def) continue;
+			select.createEl("option", { value: id, text: def.label });
+		}
+		// A note naming an engine we have no definition for still has to be
+		// visible and switchable, so surface it as its own option.
+		if (current.definition === null && current.raw) {
+			select.createEl("option", { value: current.raw, text: engineDisplayLabel(current) });
+		}
+		select.value = current.raw ?? current.id ?? DEFAULT_ENGINE_ID;
+
+		const hint = panel.createDiv({ cls: "co-sm-settings-hint" });
+		if (!session.engine) {
+			hint.textContent = `Not recorded on the note — running as ${engineDisplayLabel(current)}.`;
+		} else if (session.model) {
+			hint.textContent = `Model: ${session.model}`;
+		}
+
+		select.addEventListener("change", (e) => {
+			e.stopPropagation();
+			void this.applyEngineSwitch(session, project, select.value, hint);
+		});
+		select.addEventListener("click", (e) => { e.stopPropagation(); });
+	}
+
+	/**
+	 * Apply an engine change. A session that has already run work is never
+	 * repurposed or killed — a sibling session is opened for the other
+	 * engine and this one is left intact, because the two engines'
+	 * conversation ids are separate namespaces that cannot be handed over.
+	 * Pending queue items move only when the user explicitly asks.
+	 */
+	private async applyEngineSwitch(
+		session: SessionInfo,
+		project: string,
+		target: string,
+		hint: HTMLElement,
+	): Promise<void> {
+		const config = this.plugin.settings.projects[project];
+		if (!config) return;
+		const notePath = sessionNotePath(config.vaultFolder, session.name);
+		const file = this.app.vault.getAbstractFileByPath(notePath);
+		if (!(file instanceof TFile)) {
+			new Notice("Session note not found.");
+			return;
+		}
+		const note = parseSessionNote(await this.app.vault.read(file), session.name);
+		const plan = planEngineSwitch(note, target);
+
+		if (plan.kind === "unsupported") {
+			new Notice(plan.reason);
+			return;
+		}
+		if (plan.kind === "noop") {
+			hint.textContent = plan.reason;
+			return;
+		}
+		if (plan.kind === "retarget") {
+			note.engine = plan.target ?? "";
+			note.model = "";
+			await this.app.vault.modify(file, serializeSessionNote(note));
+			new Notice(`Session now targets ${engineDisplayLabel(resolveEngineRef(note.engine))}.`);
+			void this.refresh();
+			return;
+		}
+
+		// new-session: stand up a sibling for the target engine.
+		const openNames = collectOpenSessionNames(this.app.workspace);
+		const dir = this.app.vault.getAbstractFileByPath(sessionDirPath(config.vaultFolder));
+		if (dir instanceof TFolder) {
+			for (const child of dir.children) {
+				if (child instanceof TFile && child.extension === "md") openNames.add(child.basename);
+			}
+		}
+		const newName = generateSessionName(project, openNames);
+		const newPath = sessionNotePath(config.vaultFolder, newName);
+		await this.app.vault.create(
+			newPath,
+			createDefaultSessionNote(newName, this.plugin.settings.defaultQueueMode, plan.target ?? ""),
+		);
+
+		if (plan.pendingCount > 0) {
+			this.pendingTransfer = { source: session.name, target: newName, count: plan.pendingCount };
+		}
+		await this.plugin.createTerminalLeaf(project, newName);
+		new Notice(`${engineDisplayLabel(resolveEngineRef(plan.target ?? ""))} session ${newName} opened. ${session.name} kept as is.`);
+		void this.refresh();
+	}
+
+	/**
+	 * Inline offer to hand pending work to the session just created for the
+	 * other engine. Never automatic: the user says yes, once. Clearing the
+	 * offer before the move means a second click cannot double-send, and
+	 * transferQueue drains the source anyway.
+	 */
+	private renderTransferOffer(card: HTMLElement, session: SessionInfo, project: string): void {
+		const offer = this.pendingTransfer;
+		if (!offer || offer.source !== session.name) return;
+
+		const row = card.createDiv({ cls: "co-sm-transfer-offer" });
+		row.createSpan({
+			cls: "co-sm-transfer-text",
+			text: `Move ${offer.count} queued item(s) to ${offer.target}?`,
+		});
+		row.createSpan({
+			cls: "co-sm-transfer-note",
+			text: "History stays here. Conversation context does not carry across — hand that over in the task note.",
+		});
+
+		const actions = row.createDiv({ cls: "co-sm-transfer-actions" });
+		const moveBtn = actions.createEl("button", { cls: "btn", text: "Move" });
+		moveBtn.dataset.variant = "primary";
+		moveBtn.dataset.size = "sm";
+		moveBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			this.pendingTransfer = null;
+			void this.runQueueTransfer(project, offer.source, offer.target);
+		});
+
+		const keepBtn = actions.createEl("button", { cls: "btn", text: "Keep here" });
+		keepBtn.dataset.size = "sm";
+		keepBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			this.pendingTransfer = null;
+			void this.refresh();
+		});
+	}
+
+	private async runQueueTransfer(project: string, sourceName: string, targetName: string): Promise<void> {
+		const config = this.plugin.settings.projects[project];
+		if (!config) return;
+		const sourceFile = this.app.vault.getAbstractFileByPath(sessionNotePath(config.vaultFolder, sourceName));
+		const targetFile = this.app.vault.getAbstractFileByPath(sessionNotePath(config.vaultFolder, targetName));
+		if (!(sourceFile instanceof TFile) || !(targetFile instanceof TFile)) {
+			new Notice("Could not find both session notes — nothing moved.");
+			return;
+		}
+		const sourceNote: SessionNote = parseSessionNote(await this.app.vault.read(sourceFile), sourceName);
+		const targetNote: SessionNote = parseSessionNote(await this.app.vault.read(targetFile), targetName);
+		const moved = transferQueue(sourceNote, targetNote, nowStamp);
+		if (moved === 0) {
+			new Notice("Nothing left to move.");
+			void this.refresh();
+			return;
+		}
+		await this.app.vault.modify(targetFile, serializeSessionNote(targetNote));
+		await this.app.vault.modify(sourceFile, serializeSessionNote(sourceNote));
+		new Notice(`Moved ${moved} queued item(s) to ${targetName}.`);
+		void this.refresh();
 	}
 
 	private buildCountdownEl(parent: HTMLElement, sessionName: string, remaining: number): void {
@@ -1134,6 +1405,16 @@ export class SessionManagerView extends ItemView {
 			}
 		})());
 
+		const engineRow = form.createDiv({ cls: "co-sm-form-row" });
+		engineRow.createSpan({ cls: "co-sm-form-label", text: "Engine" });
+		const engineSelect = engineRow.createEl("select", { cls: "co-sm-form-input" });
+		engineSelect.createEl("option", { value: "", text: "Use global default" });
+		for (const id of ENGINE_IDS) {
+			const def = getEngineDefinition(id);
+			if (def) engineSelect.createEl("option", { value: id, text: def.label });
+		}
+		engineSelect.value = config?.defaultEngine && isEngineId(config.defaultEngine) ? config.defaultEngine : "";
+
 		let inactiveChecked = config?.inactive ?? false;
 		if (isEdit) {
 			const inactiveRow = form.createDiv({ cls: "co-sm-form-row" });
@@ -1204,7 +1485,12 @@ export class SessionManagerView extends ItemView {
 				}
 			}
 
-			const newConfig: ProjectConfig = { vaultFolder, workingDirectory, inactive: inactiveChecked || undefined };
+			const newConfig: ProjectConfig = {
+				vaultFolder,
+				workingDirectory,
+				inactive: inactiveChecked || undefined,
+				defaultEngine: engineSelect.value || undefined,
+			};
 
 			if (isEdit) {
 				this.plugin.settings.projects = updateProjectConfig(this.plugin.settings.projects, existingKey, newConfig);

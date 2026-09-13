@@ -39,8 +39,9 @@ import {
 	extractTimestamp,
 	computeSessionCwd,
 	countdownText,
+	resolveSessionEngineRef,
 } from "./utils";
-import type { ProjectRegistry, QueueMode, StopReason, SlashCommandEntry, ThemeName } from "./utils";
+import type { EngineId, ProjectRegistry, QueueMode, StopReason, SlashCommandEntry, ThemeName } from "./utils";
 import type { QueueEngine } from "./queue-engine";
 import { Terminal } from "@xterm/xterm";
 import type { IPty } from "node-pty";
@@ -48,6 +49,20 @@ import * as os from "os";
 import * as path from "path";
 
 export const VIEW_TYPE_TERMINAL = "claude-orchestrator-terminal";
+
+/** The slice of plugin settings a terminal panel reads. Named so the
+ * constructor and the field cannot drift apart. */
+export interface TerminalViewSettings {
+	simpleMode: boolean;
+	projects: ProjectRegistry;
+	quickReplyKeys: string[];
+	slashCommands: SlashCommandEntry[];
+	playSoundOnAsking: boolean;
+	theme: ThemeName;
+	autoSendCountdownSeconds: number;
+	defaultQueueMode: QueueMode;
+	defaultEngine: EngineId;
+}
 
 export interface TerminalViewState {
 	project?: string;
@@ -109,7 +124,7 @@ export class TerminalView extends ItemView {
 	private xtermReady = false;
 	private stateSeenPreOpen = false;
 	private host: HTMLElement | null = null;
-	private getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean; theme: ThemeName; autoSendCountdownSeconds: number; defaultQueueMode: QueueMode };
+	private getSettings?: () => TerminalViewSettings;
 	private historyPanel: HTMLElement | null = null;
 	private queuePanel: HTMLElement | null = null;
 	private queueList: HTMLElement | null = null;
@@ -156,7 +171,7 @@ export class TerminalView extends ItemView {
 	constructor(
 		leaf: WorkspaceLeaf,
 		pluginDir: string,
-		getSettings?: () => { simpleMode: boolean; projects: ProjectRegistry; quickReplyKeys: string[]; slashCommands: SlashCommandEntry[]; playSoundOnAsking: boolean; theme: ThemeName; autoSendCountdownSeconds: number; defaultQueueMode: QueueMode },
+		getSettings?: () => TerminalViewSettings,
 		getEngine?: () => QueueEngine,
 	) {
 		super(leaf);
@@ -948,9 +963,15 @@ export class TerminalView extends ItemView {
 			if (!this.app.vault.getAbstractFileByPath(dirPath)) {
 				await this.app.vault.createFolder(dirPath);
 			}
+			const settings = this.getSettings?.();
+			const engineRef = resolveSessionEngineRef(
+				null,
+				this.project ? settings?.projects[this.project]?.defaultEngine : null,
+				settings?.defaultEngine,
+			);
 			await this.app.vault.create(
 				notePath,
-				createDefaultSessionNote(this.sessionName, this.getSettings?.().defaultQueueMode),
+				createDefaultSessionNote(this.sessionName, settings?.defaultQueueMode, engineRef.id ?? ""),
 			);
 		}
 	}
