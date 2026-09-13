@@ -130,8 +130,6 @@ export class StopSignalLedger {
 }
 
 /** Signals that no vault claims are cleaned up after this TTL. */
-
-/** Signals that no vault claims are cleaned up after this TTL. */
 export const STOP_SIGNAL_TTL_MS = 5 * 60 * 1000;
 
 export function isStaleSignalFile(mtimeMs: number, nowMs: number): boolean {
@@ -142,17 +140,6 @@ export interface StopSignalDisposition {
 	action: "consume" | "ignore" | "discard";
 	project: string | null;
 }
-
-/**
- * Decide what a vault's watcher should do with a signal file. The signal
- * directory is shared by all vaults, so a watcher must never delete a file
- * another vault's plugin may still need:
- * - consume: ours (vault tag matches, or legacy untagged with a known
- *   project) — dispatch and delete.
- * - ignore: someone else's (other vault tag, or untagged with no project
- *   match here) — leave the file for its owner; TTL cleanup catches strays.
- * - discard: garbage or provably unclaimable — delete without dispatching.
- */
 
 /**
  * Decide what a vault's watcher should do with a signal file. The signal
@@ -220,10 +207,6 @@ interface ClaudeHookMatcher {
 	matcher: string;
 	hooks: ClaudeHookEntry[];
 }
-
-// Single-quote a path for /bin/sh -c. Required because the registered command
-// is run via shell, and unquoted paths with spaces (e.g. iCloud's "Mobile
-// Documents/") get word-split into "command not found".
 
 // Single-quote a path for /bin/sh -c. Required because the registered command
 // is run via shell, and unquoted paths with spaces (e.g. iCloud's "Mobile
@@ -301,11 +284,6 @@ export function ensureStopHookConfig(
 ): { updated: boolean; content: string } {
 	return ensureEngineHookConfig(settingsJson, "Stop", "co-stop-hook.sh", scriptPath);
 }
-
-/**
- * Notification hook: permission requests are a structured, reliable
- * "Claude is asking" signal (vs. guessing from transcript regexes).
- */
 
 /**
  * Notification hook: permission requests are a structured, reliable

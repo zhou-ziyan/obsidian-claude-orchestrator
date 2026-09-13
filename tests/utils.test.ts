@@ -68,6 +68,8 @@ import {
 	shellQuoteSingle,
 	materializeHookScripts,
 	hookScriptsDir,
+	ENGINE_IDS,
+	getEngineDefinition,
 	HOOK_SCRIPT_SOURCES,
 	HOOK_SCRIPT_MODE,
 	parseQuickReplyKeys,
@@ -5703,6 +5705,52 @@ describe("hook script sources stay in sync with scripts/", () => {
 
 	it("bundles every hook script in scripts/, and nothing else", () => {
 		assert.deepEqual(Object.keys(HOOK_SCRIPT_SOURCES).sort(), onDiskNames);
+	});
+});
+
+describe("every engine's declared hook scripts are actually shipped", () => {
+	// Two directions have to hold, and glob-based generation only covers one:
+	//   scripts/ -> bundle   is covered by the drift suite above
+	//   engine   -> scripts/ is covered here
+	// Without this, adding an engine (or a hook to an existing one) and
+	// forgetting to add the script would register a path that cannot run —
+	// exactly the failure this whole module exists to prevent, and invisible
+	// on a dev checkout.
+	it("declares at least one hook script to check", () => {
+		const declared = ENGINE_IDS.flatMap(
+			(id) => getEngineDefinition(id)?.hooks?.entries.map((e) => e.script) ?? [],
+		);
+		assert.ok(declared.length > 0, "no engine declares any hook script");
+	});
+
+	for (const id of ENGINE_IDS) {
+		const definition = getEngineDefinition(id);
+		for (const entry of definition?.hooks?.entries ?? []) {
+			it(`${id}: ${entry.event} hook ships ${entry.script}`, () => {
+				assert.ok(
+					Object.prototype.hasOwnProperty.call(HOOK_SCRIPT_SOURCES, entry.script),
+					`${id} registers ${entry.script} for ${entry.event}, but it is not in the bundle — `
+					+ `add it to scripts/ and run \`npm run gen:hooks\``,
+				);
+				assert.ok((HOOK_SCRIPT_SOURCES[entry.script] ?? "").length > 0, `${entry.script} is empty`);
+			});
+		}
+	}
+
+	it("materializes a runnable path for every script any engine registers", () => {
+		const { fs, files } = makeFakeFs();
+		const { paths, errors } = materializeHookScripts(FAKE_HOME, fs);
+		assert.deepEqual(errors, []);
+		for (const id of ENGINE_IDS) {
+			for (const entry of getEngineDefinition(id)?.hooks?.entries ?? []) {
+				assert.equal(
+					paths[entry.script],
+					`${SCRIPTS_DIR}/${entry.script}`,
+					`${id} would register ${entry.script} with no materialized copy`,
+				);
+				assert.ok(files[`${SCRIPTS_DIR}/${entry.script}`], `${entry.script} was never written`);
+			}
+		}
 	});
 });
 
