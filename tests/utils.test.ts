@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -5599,19 +5599,30 @@ describe("materializeHookScripts", () => {
 		assert.ok(calls.some((c) => c.op === "ensureDir" && c.path === SCRIPTS_DIR));
 	});
 
-	it("marks both scripts executable", () => {
+	it("marks every bundled script executable", () => {
 		const { fs, calls } = makeFakeFs();
 		materializeHookScripts(FAKE_HOME, fs);
 		const chmods = calls.filter((c) => c.op === "chmod");
-		assert.equal(chmods.length, 2);
+		// Counted off the bundle, not a literal: engines add hook scripts over
+		// time and a hardcoded count would have to be chased every time.
+		assert.equal(chmods.length, Object.keys(HOOK_SCRIPT_SOURCES).length);
 		for (const c of chmods) assert.equal(c.mode, HOOK_SCRIPT_MODE);
 	});
 
+	it("materializes every bundled script, not just the Claude pair", () => {
+		const { fs, files } = makeFakeFs();
+		materializeHookScripts(FAKE_HOME, fs);
+		for (const [name, source] of Object.entries(HOOK_SCRIPT_SOURCES)) {
+			assert.equal(files[`${SCRIPTS_DIR}/${name}`], source, `${name} was not written`);
+		}
+	});
+
 	it("does not rewrite a script whose content already matches", () => {
-		const { fs, calls } = makeFakeFs({
-			[STOP_PATH]: HOOK_SCRIPT_SOURCES["co-stop-hook.sh"]!,
-			[NOTIFY_PATH]: HOOK_SCRIPT_SOURCES["co-notification-hook.sh"]!,
-		});
+		const seeded: Record<string, string> = {};
+		for (const [name, source] of Object.entries(HOOK_SCRIPT_SOURCES)) {
+			seeded[`${SCRIPTS_DIR}/${name}`] = source;
+		}
+		const { fs, calls } = makeFakeFs(seeded);
 		const result = materializeHookScripts(FAKE_HOME, fs);
 		assert.equal(calls.filter((c) => c.op === "writeFile").length, 0);
 		assert.equal(result.paths["co-stop-hook.sh"], STOP_PATH);
@@ -5656,11 +5667,19 @@ describe("materializeHookScripts", () => {
 });
 
 describe("hook script sources stay in sync with scripts/", () => {
-	// The bundled copy is generated from scripts/*.sh. If someone edits one
-	// side only, the shipped hook silently diverges from the reviewed one.
-	for (const name of ["co-stop-hook.sh", "co-notification-hook.sh"]) {
+	// Discovered, never hand-listed: a literal list here would go stale the
+	// moment someone adds a hook script, and the drift check would pass while
+	// the new script quietly failed to ship.
+	const scriptsDir = join(process.cwd(), "scripts");
+	const onDiskNames = readdirSync(scriptsDir).filter((n) => /^co-.*\.sh$/.test(n)).sort();
+
+	it("finds hook scripts to check at all", () => {
+		assert.ok(onDiskNames.length > 0, "no co-*.sh scripts found in scripts/");
+	});
+
+	for (const name of onDiskNames) {
 		it(`${name} matches the committed inline copy`, () => {
-			const onDisk = readFileSync(join(process.cwd(), "scripts", name), "utf-8");
+			const onDisk = readFileSync(join(scriptsDir, name), "utf-8");
 			assert.equal(
 				HOOK_SCRIPT_SOURCES[name],
 				onDisk,
@@ -5669,11 +5688,8 @@ describe("hook script sources stay in sync with scripts/", () => {
 		});
 	}
 
-	it("ships exactly the scripts the plugin registers hooks for", () => {
-		assert.deepEqual(
-			Object.keys(HOOK_SCRIPT_SOURCES).sort(),
-			["co-notification-hook.sh", "co-stop-hook.sh"],
-		);
+	it("bundles every hook script in scripts/, and nothing else", () => {
+		assert.deepEqual(Object.keys(HOOK_SCRIPT_SOURCES).sort(), onDiskNames);
 	});
 });
 
