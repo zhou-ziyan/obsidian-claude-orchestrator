@@ -1,7 +1,7 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, ensureEngineHookConfig, materializeHookScripts, hookScriptsDir, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, StopSignalLedger, availableEngineIds, engineCreatesHookFile, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, resolveSessionEngineRef, isEngineId, ENGINE_IDS, getEngineDefinition, DEFAULT_ENGINE_ID } from "./utils";
+import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, createDefaultSessionNote, ensureEngineHookConfig, materializeHookScripts, hookScriptsDir, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, StopSignalLedger, availableEngineIds, engineCreatesHookFile, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, newSessionEngine, isEngineId, ENGINE_IDS, getEngineDefinition, DEFAULT_ENGINE_ID } from "./utils";
 import type { EngineId, HookScriptFs, ProjectRegistry, QueueMode, SessionNote, SlashCommandEntry, StopReason, ThemeName } from "./utils";
 import { QUEUE_MODES, queueModeLabel } from "./utils";
 import { QueueEngine } from "./queue-engine";
@@ -264,10 +264,11 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 	}
 
 	/** Engine a new session in this project should start on. */
+	/** Engine to stamp on a session being created now. Never consulted for
+	 * sessions that already exist — their note is the only source. */
 	defaultEngineForProject(project: string | null): EngineId {
 		const config = project ? this.settings.projects[project] : undefined;
-		const ref = resolveSessionEngineRef(null, config?.defaultEngine, this.settings.defaultEngine);
-		return ref.id ?? DEFAULT_ENGINE_ID;
+		return newSessionEngine(config?.defaultEngine, this.settings.defaultEngine);
 	}
 
 	applyThemeToAllViews(): void {
@@ -393,7 +394,15 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		await this.createNewTerminalForProject(project);
 	}
 
-	async createNewTerminalForProject(project: string) {
+	/**
+	 * Create a session that runs `engine`.
+	 *
+	 * The engine is written onto the note here, at creation, because that is
+	 * the only moment it is decided. Leaving the note blank would make the
+	 * session's engine depend on whatever the default happens to be later.
+	 */
+	async createNewTerminalForProject(project: string, engine?: EngineId) {
+		const chosen = engine ?? this.defaultEngineForProject(project);
 		const openNames = this.collectSessionNames();
 		const config = this.settings.projects[project];
 		if (config) {
@@ -409,6 +418,21 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			}
 		}
 		const sessionName = generateSessionName(project, openNames);
+		if (config) {
+			const dirPath = sessionDirPath(config.vaultFolder);
+			const notePath = sessionNotePath(config.vaultFolder, sessionName);
+			if (!this.app.vault.getAbstractFileByPath(notePath)) {
+				try {
+					if (!this.app.vault.getAbstractFileByPath(dirPath)) {
+						await this.app.vault.createFolder(dirPath);
+					}
+					await this.app.vault.create(
+						notePath,
+						createDefaultSessionNote(sessionName, this.settings.defaultQueueMode, chosen),
+					);
+				} catch { /* a view may have created it first; its engine stands */ }
+			}
+		}
 		await this.createTerminalLeaf(project, sessionName);
 	}
 

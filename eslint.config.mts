@@ -21,6 +21,7 @@ export default tseslint.config(
 					'tests/engine-usage.test.ts',
 					'tests/e2e-tmux.test.ts',
 					'tests/e2e-dual-engine.test.ts',
+					'tests/engine-cli.ts',
 					]
 				},
 				tsconfigRootDir: import.meta.dirname,

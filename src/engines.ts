@@ -17,7 +17,7 @@
  */
 import { BUILTIN_SLASH_COMMANDS, loadSlashCommands, mergeWithBuiltinCommands } from "./slash-commands.ts";
 import type { SlashCommandEntry } from "./slash-commands.ts";
-import type { QueueMode, SessionNote } from "./session-note.ts";
+import type { QueueMode } from "./session-note.ts";
 
 export type EngineId = "claude" | "codex";
 
@@ -27,28 +27,6 @@ export const DEFAULT_ENGINE_ID: EngineId = "claude";
 
 export function isEngineId(value: unknown): value is EngineId {
 	return typeof value === "string" && (ENGINE_IDS as readonly string[]).includes(value);
-}
-
-/** A command line to type into the session's shell. */
-export interface EngineCommand {
-	command: string;
-	args: string[];
-}
-
-export interface EngineLaunchOptions {
-	/** Model name for this session. Never hard-coded — it comes from the
-	 * session note or project config, so new models need no code change. */
-	model?: string;
-	/** Resolved binary path, overriding the engine's default command name.
-	 * Codex ships as a shell function pointing into ChatGPT.app rather than
-	 * a binary on PATH, so the caller resolves it once and passes it here. */
-	binary?: string;
-}
-
-export interface EngineResumeOptions extends EngineLaunchOptions {
-	/** Provider-side conversation id, when one is known. Null/absent means
-	 * "continue whatever ran last in this directory". */
-	conversationId?: string | null;
 }
 
 /**
@@ -99,29 +77,6 @@ export interface EngineDefinition {
 	builtinSlashCommands: readonly SlashCommandEntry[];
 	completionSignal: EngineCompletionSignal;
 	hooks: EngineHookConfig | null;
-	buildLaunchCommand(opts?: EngineLaunchOptions): EngineCommand;
-	/** Null when the engine has no resume story. */
-	buildResumeCommand(opts?: EngineResumeOptions): EngineCommand | null;
-}
-
-function modelArgs(model: string | undefined, flag: string): string[] {
-	const trimmed = model?.trim() ?? "";
-	return trimmed ? [flag, trimmed] : [];
-}
-
-function commandName(fallback: string, opts?: EngineLaunchOptions): string {
-	const binary = opts?.binary?.trim() ?? "";
-	return binary || fallback;
-}
-
-function shellQuote(token: string): string {
-	return /^[A-Za-z0-9_@%+=:,./-]+$/.test(token) ? token : `'${token.replace(/'/g, "'\\''")}'`;
-}
-
-/** Render a command for typing into an interactive shell inside tmux. */
-export function engineCommandLine(cmd: EngineCommand | null): string {
-	if (!cmd) return "";
-	return [cmd.command, ...cmd.args].map(shellQuote).join(" ");
 }
 
 export const CLAUDE_ENGINE: EngineDefinition = {
@@ -139,14 +94,6 @@ export const CLAUDE_ENGINE: EngineDefinition = {
 			{ role: "turn-end", event: "Stop", script: "co-stop-hook.sh" },
 			{ role: "waiting-for-input", event: "Notification", script: "co-notification-hook.sh" },
 		],
-	},
-	buildLaunchCommand(opts) {
-		return { command: commandName("claude", opts), args: modelArgs(opts?.model, "--model") };
-	},
-	buildResumeCommand(opts) {
-		const id = opts?.conversationId?.trim() ?? "";
-		const resume = id ? ["--resume", id] : ["--continue"];
-		return { command: commandName("claude", opts), args: [...resume, ...modelArgs(opts?.model, "--model")] };
 	},
 };
 
@@ -189,14 +136,6 @@ export const CODEX_ENGINE: EngineDefinition = {
 			{ role: "waiting-for-input", event: "PermissionRequest", script: "co-codex-permission-hook.sh" },
 			{ role: "interrupted", event: "Interrupt", script: "co-codex-interrupt-hook.sh" },
 		],
-	},
-	buildLaunchCommand(opts) {
-		return { command: commandName("codex", opts), args: modelArgs(opts?.model, "-m") };
-	},
-	buildResumeCommand(opts) {
-		const id = opts?.conversationId?.trim() ?? "";
-		const target = id ? [id] : ["--last"];
-		return { command: commandName("codex", opts), args: ["resume", ...target, ...modelArgs(opts?.model, "-m")] };
 	},
 };
 
@@ -344,90 +283,20 @@ export function engineHookRegistrations(ref: EngineRef, scriptsDir: string): Eng
 // --- Selecting an engine for a session ---
 
 /**
- * Where a session's engine comes from, most specific first: the session
- * note, then the project's default, then the global default. A note that
- * names an unknown engine still fails safe — a project default must never
- * override an explicit (even if broken) per-session choice, or a switch
- * would silently target the wrong CLI.
+ * Engine for a session being created right now.
+ *
+ * Consulted only at creation. An existing session's engine comes from its
+ * own note via `resolveEngineRef`, never from a default — otherwise changing
+ * the default would retroactively relabel sessions the queue is still
+ * driving as Claude.
  */
-export function resolveSessionEngineRef(
-	noteEngine: string | null | undefined,
+export function newSessionEngine(
 	projectDefault: string | null | undefined,
 	globalDefault: string | null | undefined,
-): EngineRef {
-	const note = (noteEngine ?? "").trim();
-	if (note !== "") return resolveEngineRef(note);
-	const project = (projectDefault ?? "").trim();
-	if (project !== "") return resolveEngineRef(project);
-	return resolveEngineRef(globalDefault ?? undefined);
-}
-
-// --- Switching a session between engines ---
-
-export type EngineSwitchKind = "noop" | "retarget" | "new-session" | "unsupported";
-
-export interface EngineSwitchPlan {
-	kind: EngineSwitchKind;
-	target: EngineId | null;
-	/** Queue items that would need an explicit transfer afterwards. */
-	pendingCount: number;
-	/** Always false. A switch opens a sibling session; it never tears down
-	 * the session the user may still have work running in. */
-	killsSource: false;
-	reason: string;
-}
-
-/**
- * Decide what switching this session to `target` should do.
- *
- * A tmux session is just a shell — the engine is whatever CLI is running
- * inside it, and the two engines' conversation ids are separate namespaces
- * that cannot be handed to each other. So once a session has actually run
- * something, switching means standing up a sibling session for the other
- * engine and leaving this one intact, rather than pretending the
- * conversation can move across. Only a session that has done nothing yet is
- * retargeted in place.
- */
-export function planEngineSwitch(note: SessionNote, target: string): EngineSwitchPlan {
-	const targetRef = resolveEngineRef(target);
-	const pendingCount = note.queue.length;
-	if (!targetRef.definition || targetRef.id === null) {
-		return { kind: "unsupported", target: targetRef.id, pendingCount, killsSource: false,
-			reason: `No definition for engine "${target}"` };
+): EngineId {
+	for (const candidate of [projectDefault, globalDefault]) {
+		const ref = resolveEngineRef(candidate);
+		if (ref.status === "known" && ref.id) return ref.id;
 	}
-	const current = resolveEngineRef(note.engine);
-	if (current.id === targetRef.id) {
-		return { kind: "noop", target: targetRef.id, pendingCount, killsSource: false,
-			reason: `Already running ${targetRef.definition.label}` };
-	}
-	const hasRun = note.history.length > 0 || note.status === "running";
-	if (!hasRun) {
-		return { kind: "retarget", target: targetRef.id, pendingCount: 0, killsSource: false,
-			reason: "Session has not run anything yet — switching in place" };
-	}
-	return { kind: "new-session", target: targetRef.id, pendingCount, killsSource: false,
-		reason: `Existing work stays in this session; a new ${targetRef.definition.label} session will open alongside it` };
-}
-
-/**
- * Move pending queue items from one session note to another.
- *
- * Only queued work moves: history stays where it ran, and no claim is made
- * that conversation context carries across. Exactly-once falls out of
- * draining the source — a repeat call finds an empty queue and moves
- * nothing, so a double-click cannot duplicate a task. Returns how many
- * items moved.
- */
-export function transferQueue(
-	source: SessionNote,
-	target: SessionNote,
-	stamp: () => string,
-): number {
-	if (source === target || source.session === target.session) return 0;
-	const moving = source.queue.splice(0, source.queue.length);
-	if (moving.length === 0) return 0;
-	target.queue.push(...moving);
-	const line = `[${stamp()}] Handed off ${moving.length} queued item(s) → ${target.session}`;
-	source.notes = source.notes ? `${source.notes}\n${line}` : line;
-	return moving.length;
+	return DEFAULT_ENGINE_ID;
 }

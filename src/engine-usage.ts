@@ -24,7 +24,8 @@ export interface UsageWindow {
 }
 
 export interface UsageCredits {
-	hasCredits: boolean;
+	/** null = the backend did not say. Absent information stays absent. */
+	hasCredits: boolean | null;
 	balance: string | null;
 }
 
@@ -75,7 +76,9 @@ function parseCredits(raw: unknown): UsageCredits | null {
 	const c = asRecord(raw);
 	if (!c) return null;
 	return {
-		hasCredits: c.hasCredits === true,
+		// `=== true` would turn "not stated" into a definite "no credits",
+		// which then reads as exhausted downstream. Keep the third state.
+		hasCredits: typeof c.hasCredits === "boolean" ? c.hasCredits : null,
 		balance: typeof c.balance === "string" ? c.balance : null,
 	};
 }
@@ -150,7 +153,12 @@ export function usageHeadroom(usage: EngineUsage | null): UsageHeadroom {
 	const primary = usage.primary;
 	if (!primary) return "unknown";
 	if (primary.usedPercent < 100 && usage.ordinaryUsageAllowed !== false) return "ok";
-	return usage.credits?.hasCredits ? "limited" : "exhausted";
+	// The window is full, so everything now hinges on credits. Saying
+	// "exhausted" without having been told there are none would be inventing
+	// a verdict out of missing data.
+	const hasCredits = usage.credits?.hasCredits ?? null;
+	if (hasCredits === null) return "unknown";
+	return hasCredits ? "limited" : "exhausted";
 }
 
 export interface UsageDescription {

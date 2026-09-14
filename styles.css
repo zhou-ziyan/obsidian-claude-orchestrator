@@ -1290,29 +1290,6 @@
     background: var(--co-text-dim);
 }
 
-/* Queue handoff offer after an engine switch */
-.co-sm-transfer-offer {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    margin-top: 4px;
-    padding: 5px 6px;
-    border: 1px dashed var(--s-ask);
-    border-radius: 4px;
-}
-.co-sm-transfer-text {
-    font-size: 11px;
-    color: var(--co-text);
-}
-.co-sm-transfer-note {
-    font-size: 10px;
-    color: var(--co-text-dim);
-}
-.co-sm-transfer-actions {
-    display: flex;
-    gap: 4px;
-}
-
 /* Engine badge (which CLI this session runs) */
 .co-sm-card-engine {
     font-size: 10px;
@@ -1374,11 +1351,12 @@
     border-color: var(--s-listen);
 }
 
-.co-sm-settings-select {
+/* Engine, shown read-only: a session's engine is fixed at creation. */
+.co-sm-settings-value {
     font-size: 11px;
     line-height: 1.4;
-    height: 20px;
-    padding: 0 20px 0 6px;
+    color: var(--co-text);
+    font-weight: 600;
 }
 .co-sm-settings-hint {
     font-size: 10px;

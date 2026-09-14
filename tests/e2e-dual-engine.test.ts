@@ -28,7 +28,6 @@ import {
 	autoSendAction,
 	CLAUDE_ENGINE,
 	CODEX_ENGINE,
-	engineCommandLine,
 	engineHookRegistrations,
 	findTmuxBinary,
 	parseStopSignal,
@@ -37,6 +36,7 @@ import {
 	StopSignalLedger,
 } from "../src/utils.ts";
 import type { EngineDefinition, SessionNote, StopSignal } from "../src/utils.ts";
+import { claudeLaunchLine, codexLaunchLine, codexResumeLine } from "./engine-cli.ts";
 
 // @types/node v16 predates import.meta.dirname — narrow it locally.
 const HERE = (import.meta as { dirname: string }).dirname;
@@ -101,6 +101,28 @@ async function waitForPane(session: string, needle: RegExp, timeoutMs: number): 
 		await sleep(500);
 	}
 	return false;
+}
+
+/**
+ * Answer Claude's workspace-trust prompt.
+ *
+ * The prompt defaults to "No, exit" with "Yes, I trust this folder" one line
+ * below. Waiting on the explanatory paragraph is a race: that text paints
+ * before the option list is interactive, so a Down sent on sight of it can
+ * land before there is a list to move, leaving the cursor on "No, exit" —
+ * Enter then drops straight back to the shell with the task never sent.
+ * Wait for the option itself, then confirm the marker actually moved.
+ */
+async function trustWorkspace(session: string, timeoutMs = 30_000): Promise<boolean> {
+	if (!await waitForPane(session, /Yes, I trust this folder/, timeoutMs)) return false;
+	const selectedYes = /❯\s*Yes, I trust this folder/;
+	for (let attempt = 0; attempt < 5 && !selectedYes.test(pane(session)); attempt++) {
+		tmux(["send-keys", "-t", session, "Down"]);
+		await sleep(400);
+	}
+	assert.match(pane(session), selectedYes, "trust prompt is on the trusting option before Enter");
+	tmux(["send-keys", "-t", session, "Enter"]);
+	return true;
 }
 
 async function awaitSignal(dir: string, timeoutMs: number): Promise<StopSignal | null> {
@@ -201,7 +223,7 @@ function workDir(): string {
 }
 
 async function launchCodex(session: string, extraFlags: string): Promise<void> {
-	const launch = engineCommandLine(CODEX_ENGINE.buildLaunchCommand({ binary: CODEX! }));
+	const launch = codexLaunchLine(CODEX!);
 	typeLine(session, `${launch} --dangerously-bypass-hook-trust ${extraFlags}`);
 	// A fresh directory prompts for trust; the default answer is "yes".
 	if (await waitForPane(session, /Do you trust/, 12_000)) {
@@ -326,9 +348,7 @@ describe("e2e: Codex through the queue engine", { skip: !CODEX_READY, concurrenc
 			tmux(["send-keys", "-t", session, "C-c"]);
 			await sleep(2000);
 
-			const resume = engineCommandLine(
-				CODEX_ENGINE.buildResumeCommand({ binary: CODEX!, conversationId }),
-			);
+			const resume = codexResumeLine(CODEX!, conversationId);
 			assert.match(resume, / resume /, "resume command is built, not improvised");
 			typeLine(session, `${resume} --dangerously-bypass-hook-trust -s read-only`);
 			if (await waitForPane(session, /Do you trust/, 12_000)) {
@@ -356,15 +376,9 @@ describe("e2e: Claude through the queue engine", { skip: !CLAUDE_READY, concurre
 		try {
 			startTmux(session, work, { CO_SIGNAL_DIR: rig.signals });
 			await sleep(800);
-			const launch = engineCommandLine(CLAUDE_ENGINE.buildLaunchCommand({ binary: CLAUDE! }));
+			const launch = claudeLaunchLine(CLAUDE!);
 			typeLine(session, `${launch} --settings ${claude.path} --permission-mode plan`);
-			// Claude asks whether the folder is trusted, and defaults to
-			// "No, exit" — the trusting option is the one below it.
-			if (await waitForPane(session, /trust this folder|Is this a project you created/, 30_000)) {
-				tmux(["send-keys", "-t", session, "Down"]);
-				await sleep(300);
-				tmux(["send-keys", "-t", session, "Enter"]);
-			}
+			await trustWorkspace(session);
 			// The ready TUI shows its mode footer under the input box.
 			assert.ok(await waitForPane(session, /shift\+tab to cycle|plan mode on/, 60_000),
 				`Claude TUI reached its prompt:\n${pane(session)}`);
