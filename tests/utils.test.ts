@@ -118,7 +118,7 @@ import {
 	loadSlashCommandsFor,
 	stopSignalKey,
 	StopSignalLedger,
-	resolveSessionEngineRef,
+	newSessionEngine,
 	engineQueueModes,
 	CARD_DRAG_IGNORE_SELECTOR,
 	selectorCoversTag,
@@ -5511,7 +5511,7 @@ describe("project default engine", () => {
 		let reg = addProject({}, "P", { vaultFolder: "f", defaultEngine: "codex" });
 		reg = updateProjectConfig(reg, "P", { defaultEngine: undefined });
 		assert.equal(reg.P?.defaultEngine, undefined);
-		assert.equal(resolveSessionEngineRef(null, reg.P?.defaultEngine, "claude").id, "claude");
+		assert.equal(newSessionEngine(reg.P?.defaultEngine, "claude"), "claude");
 	});
 
 	it("is absent on projects that never set one", () => {
@@ -5521,9 +5521,10 @@ describe("project default engine", () => {
 
 	it("does not survive migration as a bogus value — resolution still fails safe", () => {
 		const reg = addProject({}, "P", { vaultFolder: "f", defaultEngine: "not-an-engine" });
-		const ref = resolveSessionEngineRef(null, reg.P?.defaultEngine, "claude");
-		assert.equal(ref.status, "unavailable");
-		assert.deepStrictEqual(engineQueueModes(ref), ["manual"]);
+		// A bogus project default must not make new sessions unusable: the
+		// create path ignores it and falls back rather than stamping garbage.
+		assert.equal(newSessionEngine(reg.P?.defaultEngine, "claude"), "claude");
+		assert.deepStrictEqual(engineQueueModes(resolveEngineRef("not-an-engine")), ["manual"]);
 	});
 });
 

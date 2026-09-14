@@ -1,10 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { createDefaultSessionNote, parseSessionNote, serializeSessionNote } from "../src/session-note.ts";
 import {
 	CLAUDE_ENGINE,
 	CODEX_ENGINE,
 	DEFAULT_ENGINE_ID,
-	engineCommandLine,
 	engineCreatesHookFile,
 	engineSettingsPath,
 	loadSlashCommandsFor,
@@ -19,12 +19,9 @@ import {
 	isEngineId,
 	resolveEngineBinary,
 	resolveEngineRef,
-	resolveSessionEngineRef,
-	planEngineSwitch,
-	transferQueue,
+	newSessionEngine,
 } from "../src/engines.ts";
 import type { EngineDefinition } from "../src/engines.ts";
-import type { SessionNote } from "../src/session-note.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../src/slash-commands.ts";
 
 // ---------------------------------------------------------------------------
@@ -193,44 +190,6 @@ describe("CLAUDE_ENGINE definition", () => {
 	});
 });
 
-describe("Claude launch and resume commands", () => {
-	it("launches bare interactive claude by default", () => {
-		assert.deepStrictEqual(CLAUDE_ENGINE.buildLaunchCommand(), { command: "claude", args: [] });
-	});
-
-	it("passes an explicit model through --model", () => {
-		assert.deepStrictEqual(
-			CLAUDE_ENGINE.buildLaunchCommand({ model: "opus" }),
-			{ command: "claude", args: ["--model", "opus"] },
-		);
-	});
-
-	it("ignores a blank model rather than emitting an empty flag", () => {
-		assert.deepStrictEqual(CLAUDE_ENGINE.buildLaunchCommand({ model: "  " }), { command: "claude", args: [] });
-	});
-
-	it("resumes the most recent conversation with --continue when no id is known", () => {
-		assert.deepStrictEqual(
-			CLAUDE_ENGINE.buildResumeCommand(),
-			{ command: "claude", args: ["--continue"] },
-		);
-	});
-
-	it("resumes a specific conversation with --resume <id>", () => {
-		assert.deepStrictEqual(
-			CLAUDE_ENGINE.buildResumeCommand({ conversationId: "abc-123" }),
-			{ command: "claude", args: ["--resume", "abc-123"] },
-		);
-	});
-
-	it("combines resume with a model override", () => {
-		assert.deepStrictEqual(
-			CLAUDE_ENGINE.buildResumeCommand({ conversationId: "abc-123", model: "sonnet" }),
-			{ command: "claude", args: ["--resume", "abc-123", "--model", "sonnet"] },
-		);
-	});
-});
-
 describe("resolveEngineBinary", () => {
 	const home = "/Users/tester";
 
@@ -313,9 +272,7 @@ describe("engine registry integrity", () => {
 			assert.ok(def.label.length > 0, `${id} has a label`);
 			assert.ok(def.binaryNames.length > 0, `${id} names at least one binary`);
 			assert.ok(["hook", "none"].includes(def.completionSignal));
-			const launch = def.buildLaunchCommand();
-			assert.ok(launch.command.length > 0);
-			assert.ok(Array.isArray(launch.args));
+			assert.ok(def.binarySearchPaths.every((p) => p.length > 0), `${id} search paths are non-empty`);
 		}
 	});
 
@@ -377,55 +334,6 @@ describe("CODEX_ENGINE definition", () => {
 	});
 });
 
-describe("Codex launch and resume commands", () => {
-	it("launches the interactive TUI bare by default", () => {
-		assert.deepStrictEqual(CODEX_ENGINE.buildLaunchCommand(), { command: "codex", args: [] });
-	});
-
-	it("passes a model through -m", () => {
-		assert.deepStrictEqual(
-			CODEX_ENGINE.buildLaunchCommand({ model: "gpt-6-astra" }),
-			{ command: "codex", args: ["-m", "gpt-6-astra"] },
-		);
-	});
-
-	it("never emits exec-only flags on the TUI path", () => {
-		// --skip-git-repo-check is exec-only; the TUI rejects it outright.
-		const all = [
-			...CODEX_ENGINE.buildLaunchCommand({ model: "x" }).args,
-			...(CODEX_ENGINE.buildResumeCommand({ conversationId: "y" })?.args ?? []),
-		];
-		assert.ok(!all.includes("--skip-git-repo-check"));
-	});
-
-	it("resumes a specific conversation by session id", () => {
-		assert.deepStrictEqual(
-			CODEX_ENGINE.buildResumeCommand({ conversationId: "01a09a21-ec1d-7c92-a71e-2a01a6ffed90" }),
-			{ command: "codex", args: ["resume", "01a09a21-ec1d-7c92-a71e-2a01a6ffed90"] },
-		);
-	});
-
-	it("resumes the most recent conversation with --last when no id is known", () => {
-		assert.deepStrictEqual(CODEX_ENGINE.buildResumeCommand(), { command: "codex", args: ["resume", "--last"] });
-	});
-
-	it("combines resume with a model override", () => {
-		assert.deepStrictEqual(
-			CODEX_ENGINE.buildResumeCommand({ conversationId: "abc", model: "gpt-6-astra" }),
-			{ command: "codex", args: ["resume", "abc", "-m", "gpt-6-astra"] },
-		);
-	});
-
-	it("honors an explicitly resolved binary — the shell function is not on PATH", () => {
-		const app = "/Applications/ChatGPT.app/Contents/Resources/codex";
-		assert.deepStrictEqual(
-			CODEX_ENGINE.buildLaunchCommand({ binary: app }),
-			{ command: app, args: [] },
-		);
-		assert.equal(CODEX_ENGINE.buildResumeCommand({ binary: app })?.command, app);
-	});
-});
-
 describe("resolveEngineBinary for Codex", () => {
 	const home = "/Users/tester";
 	const APP = "/Applications/ChatGPT.app/Contents/Resources/codex";
@@ -444,22 +352,6 @@ describe("resolveEngineBinary for Codex", () => {
 	});
 });
 
-describe("engine launch commands render as a shell line", () => {
-	it("joins command and args for typing into an interactive shell", () => {
-		assert.equal(engineCommandLine(CLAUDE_ENGINE.buildLaunchCommand({ model: "opus" })), "claude --model opus");
-		assert.equal(engineCommandLine(CODEX_ENGINE.buildResumeCommand({ conversationId: "abc" })), "codex resume abc");
-	});
-
-	it("quotes a binary path containing spaces", () => {
-		const cmd = engineCommandLine(CODEX_ENGINE.buildLaunchCommand({ binary: "/Applications/My App/codex" }));
-		assert.equal(cmd, "'/Applications/My App/codex'");
-	});
-
-	it("returns an empty string for a null command", () => {
-		assert.equal(engineCommandLine(null), "");
-	});
-});
-
 describe("engineCreatesHookFile", () => {
 	it("creates Codex's dedicated hooks.json when absent", () => {
 		assert.equal(engineCreatesHookFile(resolveEngineRef("codex")), true);
@@ -475,149 +367,93 @@ describe("engineCreatesHookFile", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Engine selection: note → project default → global default
+// Engine selection: the note decides for existing sessions; defaults only
+// seed new ones.
 // ---------------------------------------------------------------------------
 
-describe("resolveSessionEngineRef", () => {
-	it("prefers the session note's own engine", () => {
-		assert.equal(resolveSessionEngineRef("codex", "claude", "claude").id, "codex");
-	});
-
-	it("falls back to the project default when the note says nothing", () => {
-		const ref = resolveSessionEngineRef("", "codex", "claude");
-		assert.equal(ref.id, "codex");
-		assert.equal(ref.status, "known");
+describe("new-session engine choice", () => {
+	it("uses the project default", () => {
+		assert.equal(newSessionEngine("codex", "claude"), "codex");
 	});
 
 	it("falls back to the global default when the project says nothing", () => {
-		assert.equal(resolveSessionEngineRef("", undefined, "codex").id, "codex");
+		assert.equal(newSessionEngine(null, "codex"), "codex");
 	});
 
-	it("lands on Claude when nothing anywhere is set", () => {
-		const ref = resolveSessionEngineRef(undefined, undefined, undefined);
-		assert.equal(ref.id, "claude");
-		assert.equal(ref.status, "default");
+	it("falls back to Claude when nothing is configured", () => {
+		assert.equal(newSessionEngine(null, null), "claude");
 	});
 
-	it("still fails safe when the note names an engine we cannot drive", () => {
-		const ref = resolveSessionEngineRef("gpt-5-turbo", "claude", "claude");
-		assert.equal(ref.status, "unavailable");
-		assert.equal(ref.definition, null);
+	it("ignores an unrecognized default rather than failing the create", () => {
+		assert.equal(newSessionEngine("nonsense", null), "claude");
 	});
 
-	it("does not let a broken project default hijack an explicit note engine", () => {
-		assert.equal(resolveSessionEngineRef("claude", "nonsense", "claude").id, "claude");
+	it("ignores an engine id that has no definition", () => {
+		assert.equal(newSessionEngine("  ", "   "), "claude");
 	});
 });
 
-// ---------------------------------------------------------------------------
-// Switching engines
-// ---------------------------------------------------------------------------
-
-function note(over: Partial<SessionNote> = {}): SessionNote {
-	return {
-		session: "P-1", status: "idle", queueMode: "manual", displayName: "", summary: "",
-		engine: "", model: "", notes: "", history: [], queue: [], ...over,
-	};
-}
-
-describe("planEngineSwitch", () => {
-	it("does nothing when the target is already the current engine", () => {
-		const plan = planEngineSwitch(note({ engine: "codex" }), "codex");
-		assert.equal(plan.kind, "noop");
+describe("defaults never reach an existing session", () => {
+	// Regression. resolveSessionEngineRef() fell through note -> project
+	// default -> global default, so flipping the default to Codex silently
+	// relabelled every legacy Claude card, while the queue kept driving them
+	// as Claude via resolveEngineRef(""). Cards and queue disagreed.
+	it("a note with no engine is Claude, whatever the defaults say", () => {
+		assert.equal(resolveEngineRef("").id, "claude");
+		assert.equal(resolveEngineRef(null).id, "claude");
+		assert.equal(resolveEngineRef(undefined).id, "claude");
 	});
 
-	it("treats an engine-less legacy note as already Claude", () => {
-		assert.equal(planEngineSwitch(note(), "claude").kind, "noop");
+	it("does not export a defaults-aware resolver for existing notes", async () => {
+		const mod: Record<string, unknown> = await import("../src/engines.ts");
+		assert.equal(
+			"resolveSessionEngineRef" in mod, false,
+			"an existing session's engine must come from its note alone; defaults are for new sessions only",
+		);
 	});
 
-	it("retargets a fresh session in place — nothing to preserve", () => {
-		const plan = planEngineSwitch(note({ engine: "claude" }), "codex");
-		assert.equal(plan.kind, "retarget");
-		assert.equal(plan.pendingCount, 0);
+	it("does not export engine switching or queue transfer", async () => {
+		const mod: Record<string, unknown> = await import("../src/engines.ts");
+		for (const gone of ["planEngineSwitch", "transferQueue"]) {
+			assert.equal(gone in mod, false, `${gone} was removed: sessions do not change engine`);
+		}
 	});
+});
 
-	it("opens a sibling session once the current one has run work", () => {
-		const plan = planEngineSwitch(note({ engine: "claude", history: [{ text: "did a thing", completed: true }] }), "codex");
-		assert.equal(plan.kind, "new-session");
-	});
-
-	it("opens a sibling session when a task is still in flight", () => {
-		const plan = planEngineSwitch(note({ engine: "claude", status: "running", history: [{ text: "running", completed: false }] }), "codex");
-		assert.equal(plan.kind, "new-session");
-	});
-
-	it("never kills or reuses the source session", () => {
-		for (const target of ENGINE_IDS) {
-			const plan = planEngineSwitch(note({ engine: "claude", history: [{ text: "x", completed: true }] }), target);
-			assert.equal(plan.killsSource, false, `${target} switch leaves the source alive`);
+describe("creating one session per engine", () => {
+	// The point of the feature after the trim: run Claude in one session and
+	// Codex in another, side by side. Both must carry their engine on their
+	// own note from the moment they exist.
+	it("stamps each new session with the engine it was created for", () => {
+		for (const id of availableEngineIds()) {
+			const note = parseSessionNote(createDefaultSessionNote(`P-${id}`, "manual", id));
+			assert.equal(note.engine, id, `${id} session records its engine`);
+			assert.equal(resolveEngineRef(note.engine).id, id);
 		}
 	});
 
-	it("reports how many queued items would need an explicit transfer", () => {
-		const plan = planEngineSwitch(note({ engine: "claude", history: [{ text: "x", completed: true }], queue: ["a", "b"] }), "codex");
-		assert.equal(plan.kind, "new-session");
-		assert.equal(plan.pendingCount, 2);
+	it("keeps two coexisting sessions on their own engines", () => {
+		const claude = parseSessionNote(createDefaultSessionNote("P-1", "manual", newSessionEngine("claude", null)));
+		const codex = parseSessionNote(createDefaultSessionNote("P-2", "manual", newSessionEngine("codex", null)));
+		assert.equal(resolveEngineRef(claude.engine).id, "claude");
+		assert.equal(resolveEngineRef(codex.engine).id, "codex");
+		assert.notEqual(resolveEngineRef(claude.engine).id, resolveEngineRef(codex.engine).id);
 	});
 
-	it("refuses to plan a switch to an engine with no definition", () => {
-		const plan = planEngineSwitch(note({ engine: "claude" }), "nonsense");
-		assert.equal(plan.kind, "unsupported");
-	});
-});
-
-describe("transferQueue", () => {
-	const stamp = () => "2026-09-13 04:00";
-
-	it("moves every pending item to the target in order", () => {
-		const from = note({ session: "P-1", engine: "claude", queue: ["a", "b"] });
-		const to = note({ session: "P-2", engine: "codex" });
-		assert.equal(transferQueue(from, to, stamp), 2);
-		assert.deepStrictEqual(to.queue, ["a", "b"]);
-		assert.deepStrictEqual(from.queue, []);
+	it("a later change of default leaves both notes alone", () => {
+		const codexNote = parseSessionNote(createDefaultSessionNote("P-2", "manual", "codex"));
+		const legacy = parseSessionNote(createDefaultSessionNote("P-3", "manual"));
+		// Default flips to Codex afterwards.
+		assert.equal(newSessionEngine("codex", "codex"), "codex");
+		assert.equal(resolveEngineRef(codexNote.engine).id, "codex", "explicit note is untouched");
+		assert.equal(resolveEngineRef(legacy.engine).id, "claude", "legacy note stays Claude");
 	});
 
-	it("appends after anything already queued on the target", () => {
-		const from = note({ session: "P-1", queue: ["c"] });
-		const to = note({ session: "P-2", queue: ["a", "b"] });
-		transferQueue(from, to, stamp);
-		assert.deepStrictEqual(to.queue, ["a", "b", "c"]);
-	});
-
-	it("moves each item exactly once — a repeated transfer is a no-op", () => {
-		const from = note({ session: "P-1", queue: ["a"] });
-		const to = note({ session: "P-2" });
-		assert.equal(transferQueue(from, to, stamp), 1);
-		assert.equal(transferQueue(from, to, stamp), 0);
-		assert.deepStrictEqual(to.queue, ["a"], "no duplicate landed on the target");
-	});
-
-	it("leaves an audit line on the source so the handoff is traceable", () => {
-		const from = note({ session: "P-1", queue: ["a", "b"] });
-		const to = note({ session: "P-2", engine: "codex" });
-		transferQueue(from, to, stamp);
-		assert.match(from.notes, /2 queued item\(s\) → P-2/);
-		assert.match(from.notes, /2026-09-13 04:00/);
-	});
-
-	it("writes no audit line when there was nothing to move", () => {
-		const from = note({ session: "P-1", notes: "existing" });
-		const to = note({ session: "P-2" });
-		assert.equal(transferQueue(from, to, stamp), 0);
-		assert.equal(from.notes, "existing");
-	});
-
-	it("never touches history — only pending work moves", () => {
-		const from = note({ session: "P-1", queue: ["a"], history: [{ text: "already ran", completed: true }] });
-		const to = note({ session: "P-2" });
-		transferQueue(from, to, stamp);
-		assert.equal(from.history.length, 1);
-		assert.equal(to.history.length, 0);
-	});
-
-	it("refuses to transfer a note onto itself", () => {
-		const same = note({ session: "P-1", queue: ["a"] });
-		assert.equal(transferQueue(same, same, stamp), 0);
-		assert.deepStrictEqual(same.queue, ["a"]);
+	it("round-trips an engine through serialize/parse without drift", () => {
+		for (const id of availableEngineIds()) {
+			const once = createDefaultSessionNote("P-1", "manual", id);
+			const twice = serializeSessionNote(parseSessionNote(once));
+			assert.equal(parseSessionNote(twice).engine, id);
+		}
 	});
 });

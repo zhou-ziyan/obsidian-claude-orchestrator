@@ -251,3 +251,53 @@ describe("parseAppServerLines", () => {
 		assert.equal(parseAppServerLines('{"jsonrpc":"2.0","id":2,"error":{"code":-32601}}', 2), null);
 	});
 });
+
+describe("missing credit information stays unknown", () => {
+	// Regression (found by Codex acceptance): a 100% window with no credits
+	// field reported "exhausted", i.e. a definite verdict built out of missing
+	// data. Absent information must stay absent — same rule as R6.
+	const base = { state: "available" as const, engine: "codex" as const, source: "x", fetchedAt: 0, planType: null, secondary: null };
+	const full = { usedPercent: 100, windowMinutes: 300, resetsAt: null };
+
+	it("parses a missing credits object as null", () => {
+		const usage = parseCodexRateLimits({ rateLimits: { primary: { usedPercent: 100 } } }, 0);
+		assert.equal(usage.state, "available");
+		if (usage.state !== "available") return;
+		assert.equal(usage.credits, null);
+	});
+
+	it("is unknown — not exhausted — when the backend sent no credits at all", () => {
+		const usage = parseCodexRateLimits({ rateLimits: { primary: { usedPercent: 100 } } }, 0);
+		assert.equal(usageHeadroom(usage), "unknown");
+	});
+
+	it("keeps a missing hasCredits as null rather than false", () => {
+		const usage = parseCodexRateLimits(
+			{ rateLimits: { primary: { usedPercent: 100 }, credits: { balance: "12.5" } } }, 0);
+		assert.equal(usage.state, "available");
+		if (usage.state !== "available") return;
+		assert.equal(usage.credits?.hasCredits, null);
+		assert.equal(usage.credits?.balance, "12.5");
+	});
+
+	it("is unknown when credits exist but hasCredits was not stated", () => {
+		assert.equal(usageHeadroom({
+			...base, primary: full, ordinaryUsageAllowed: false,
+			credits: { hasCredits: null, balance: "12.5" },
+		}), "unknown");
+	});
+
+	it("is exhausted only when the backend positively says there are none", () => {
+		assert.equal(usageHeadroom({
+			...base, primary: full, ordinaryUsageAllowed: false,
+			credits: { hasCredits: false, balance: "0" },
+		}), "exhausted");
+	});
+
+	it("is still limited when credits are positively present", () => {
+		assert.equal(usageHeadroom({
+			...base, primary: full, ordinaryUsageAllowed: false,
+			credits: { hasCredits: true, balance: "76.17" },
+		}), "limited");
+	});
+});

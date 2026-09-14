@@ -1,4 +1,4 @@
-import { FuzzySuggestModal, ItemView, Notice, setIcon, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import { FuzzySuggestModal, ItemView, Menu, Notice, setIcon, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import type { App } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import {
@@ -40,15 +40,11 @@ import {
 	summarizeSessionNote,
 	computeRelinkTarget,
 	CARD_DRAG_IGNORE_SELECTOR,
-	nowStamp,
 	ENGINE_IDS,
-	DEFAULT_ENGINE_ID,
 	getEngineDefinition,
+	availableEngineIds,
 	engineDisplayLabel,
 	resolveEngineRef,
-	resolveSessionEngineRef,
-	planEngineSwitch,
-	transferQueue,
 	describeUsageSource,
 	usageHeadroom,
 	claudeUsageUnavailable,
@@ -58,7 +54,7 @@ import {
 	isEngineId,
 } from "./utils";
 import { findTerminalLeafBySession, collectOpenSessionNames } from "./workspace-helpers";
-import type { EngineUsage, ProjectConfig, PtyLevel, SessionNote } from "./utils";
+import type { EngineUsage, ProjectConfig, PtyLevel } from "./utils";
 import type ClaudeOrchestratorPlugin from "./main";
 import { existsSync } from "fs";
 import { homedir } from "os";
@@ -184,7 +180,6 @@ export class SessionManagerView extends ItemView {
 	private usageInFlight = false;
 	// A queue handoff offered after an engine switch, awaiting the user's
 	// explicit yes. Keyed by source session so it can only be offered once.
-	private pendingTransfer: { source: string; target: string; count: number } | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClaudeOrchestratorPlugin) {
 		super(leaf);
@@ -550,9 +545,23 @@ export class SessionManagerView extends ItemView {
 			newBtn.title = "New session";
 			newBtn.addEventListener("click", (e) => {
 				e.stopPropagation();
-				void this.plugin.createNewTerminalForProject(group.project).then(() => {
-					setTimeout(() => { void this.refresh(); }, 500);
-				});
+				// One click to open, one to pick. The engine is chosen here
+				// because it cannot be changed afterwards, and picking it must
+				// not require a trip through project or global settings.
+				const menu = new Menu();
+				for (const id of availableEngineIds()) {
+					const def = getEngineDefinition(id);
+					if (!def) continue;
+					menu.addItem((item) => {
+						item.setTitle(`New ${def.label} session`);
+						item.onClick(() => {
+							void this.plugin.createNewTerminalForProject(group.project, id).then(() => {
+								setTimeout(() => { void this.refresh(); }, 500);
+							});
+						});
+					});
+				}
+				menu.showAtMouseEvent(e);
 			});
 
 			const gearBtn = groupHeader.createEl("button", {
@@ -676,7 +685,7 @@ export class SessionManagerView extends ItemView {
 						e.stopPropagation();
 						void this.app.workspace.openLinkText(expectedPath, "");
 					});
-					this.renderEngineRow(settingsPanel, session, project);
+					this.renderEngineRow(settingsPanel, session);
 				} else {
 					noteRow.createSpan({ cls: "co-sm-settings-warn", text: "⚠ not found" });
 					const relinkBtn = settingsPanel.createEl("button", {
@@ -694,17 +703,15 @@ export class SessionManagerView extends ItemView {
 		// Meta row: mode · queue badge · relative time
 		const metaRow = card.createDiv({ cls: "co-sm-card-meta" });
 		if (session.hasNote) {
-			const engineRef = resolveSessionEngineRef(
-				session.engine,
-				project ? this.plugin.settings.projects[project]?.defaultEngine : null,
-				this.plugin.settings.defaultEngine,
-			);
+			// The note alone decides. A default must never relabel a session
+			// that the queue is still driving as Claude.
+			const engineRef = resolveEngineRef(session.engine);
 			const engineEl = metaRow.createSpan({ cls: "co-sm-card-engine" });
 			engineEl.dataset.engine = engineRef.id ?? "unknown";
 			engineEl.textContent = engineRef.definition?.label ?? engineDisplayLabel(engineRef);
 			engineEl.title = session.engine
 				? `Engine: ${engineDisplayLabel(engineRef)}${session.model ? ` · model ${session.model}` : ""}`
-				: `Engine not recorded on the note — defaulting to ${engineDisplayLabel(engineRef)}`;
+				: `Engine not recorded on the note — treated as ${engineDisplayLabel(engineRef)}`;
 			if (!session.engine) engineEl.dataset.implicit = "true";
 
 			metaRow.createSpan({ cls: "co-sm-card-dot-sep", text: "·" });
@@ -743,10 +750,6 @@ export class SessionManagerView extends ItemView {
 			});
 		}
 
-		if (project) {
-			this.renderTransferOffer(card, session, project);
-		}
-
 		// Note preview (italic gray)
 		if (session.preview) {
 			const previewEl = card.createDiv({ cls: "co-sm-card-note" });
@@ -775,28 +778,21 @@ export class SessionManagerView extends ItemView {
 	}
 
 	/**
-	 * Engine row inside a session's settings panel: which engine it runs on,
-	 * and a picker to move it to the other one.
+	 * Engine row inside a session's settings panel — read-only.
+	 *
+	 * A session's engine is fixed when it is created. A tmux session is just a
+	 * shell running one CLI, and the two engines' conversation ids are separate
+	 * namespaces, so there is nothing to hand over; run the other engine by
+	 * creating a session for it.
 	 */
-	private renderEngineRow(panel: HTMLElement, session: SessionInfo, project: string): void {
-		const projectDefault = this.plugin.settings.projects[project]?.defaultEngine;
-		const current = resolveSessionEngineRef(session.engine, projectDefault, this.plugin.settings.defaultEngine);
+	private renderEngineRow(panel: HTMLElement, session: SessionInfo): void {
+		const current = resolveEngineRef(session.engine);
 
 		const row = panel.createDiv({ cls: "co-sm-settings-row" });
 		row.createSpan({ cls: "co-sm-settings-label", text: "Engine:" });
-
-		const select = row.createEl("select", { cls: "co-sm-settings-select co-select" });
-		for (const id of ENGINE_IDS) {
-			const def = getEngineDefinition(id);
-			if (!def) continue;
-			select.createEl("option", { value: id, text: def.label });
-		}
-		// A note naming an engine we have no definition for still has to be
-		// visible and switchable, so surface it as its own option.
-		if (current.definition === null && current.raw) {
-			select.createEl("option", { value: current.raw, text: engineDisplayLabel(current) });
-		}
-		select.value = current.raw ?? current.id ?? DEFAULT_ENGINE_ID;
+		const value = row.createSpan({ cls: "co-sm-settings-value" });
+		value.dataset.engine = current.id ?? "unknown";
+		value.textContent = engineDisplayLabel(current);
 
 		const hint = panel.createDiv({ cls: "co-sm-settings-hint" });
 		if (!session.engine) {
@@ -804,138 +800,6 @@ export class SessionManagerView extends ItemView {
 		} else if (session.model) {
 			hint.textContent = `Model: ${session.model}`;
 		}
-
-		select.addEventListener("change", (e) => {
-			e.stopPropagation();
-			void this.applyEngineSwitch(session, project, select.value, hint);
-		});
-		select.addEventListener("click", (e) => { e.stopPropagation(); });
-	}
-
-	/**
-	 * Apply an engine change. A session that has already run work is never
-	 * repurposed or killed — a sibling session is opened for the other
-	 * engine and this one is left intact, because the two engines'
-	 * conversation ids are separate namespaces that cannot be handed over.
-	 * Pending queue items move only when the user explicitly asks.
-	 */
-	private async applyEngineSwitch(
-		session: SessionInfo,
-		project: string,
-		target: string,
-		hint: HTMLElement,
-	): Promise<void> {
-		const config = this.plugin.settings.projects[project];
-		if (!config) return;
-		const notePath = sessionNotePath(config.vaultFolder, session.name);
-		const file = this.app.vault.getAbstractFileByPath(notePath);
-		if (!(file instanceof TFile)) {
-			new Notice("Session note not found.");
-			return;
-		}
-		const note = parseSessionNote(await this.app.vault.read(file), session.name);
-		const plan = planEngineSwitch(note, target);
-
-		if (plan.kind === "unsupported") {
-			new Notice(plan.reason);
-			return;
-		}
-		if (plan.kind === "noop") {
-			hint.textContent = plan.reason;
-			return;
-		}
-		if (plan.kind === "retarget") {
-			note.engine = plan.target ?? "";
-			note.model = "";
-			await this.app.vault.modify(file, serializeSessionNote(note));
-			new Notice(`Session now targets ${engineDisplayLabel(resolveEngineRef(note.engine))}.`);
-			void this.refresh();
-			return;
-		}
-
-		// new-session: stand up a sibling for the target engine.
-		const openNames = collectOpenSessionNames(this.app.workspace);
-		const dir = this.app.vault.getAbstractFileByPath(sessionDirPath(config.vaultFolder));
-		if (dir instanceof TFolder) {
-			for (const child of dir.children) {
-				if (child instanceof TFile && child.extension === "md") openNames.add(child.basename);
-			}
-		}
-		const newName = generateSessionName(project, openNames);
-		const newPath = sessionNotePath(config.vaultFolder, newName);
-		await this.app.vault.create(
-			newPath,
-			createDefaultSessionNote(newName, this.plugin.settings.defaultQueueMode, plan.target ?? ""),
-		);
-
-		if (plan.pendingCount > 0) {
-			this.pendingTransfer = { source: session.name, target: newName, count: plan.pendingCount };
-		}
-		await this.plugin.createTerminalLeaf(project, newName);
-		new Notice(`${engineDisplayLabel(resolveEngineRef(plan.target ?? ""))} session ${newName} opened. ${session.name} kept as is.`);
-		void this.refresh();
-	}
-
-	/**
-	 * Inline offer to hand pending work to the session just created for the
-	 * other engine. Never automatic: the user says yes, once. Clearing the
-	 * offer before the move means a second click cannot double-send, and
-	 * transferQueue drains the source anyway.
-	 */
-	private renderTransferOffer(card: HTMLElement, session: SessionInfo, project: string): void {
-		const offer = this.pendingTransfer;
-		if (!offer || offer.source !== session.name) return;
-
-		const row = card.createDiv({ cls: "co-sm-transfer-offer" });
-		row.createSpan({
-			cls: "co-sm-transfer-text",
-			text: `Move ${offer.count} queued item(s) to ${offer.target}?`,
-		});
-		row.createSpan({
-			cls: "co-sm-transfer-note",
-			text: "History stays here. Conversation context does not carry across — hand that over in the task note.",
-		});
-
-		const actions = row.createDiv({ cls: "co-sm-transfer-actions" });
-		const moveBtn = actions.createEl("button", { cls: "btn", text: "Move" });
-		moveBtn.dataset.variant = "primary";
-		moveBtn.dataset.size = "sm";
-		moveBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			this.pendingTransfer = null;
-			void this.runQueueTransfer(project, offer.source, offer.target);
-		});
-
-		const keepBtn = actions.createEl("button", { cls: "btn", text: "Keep here" });
-		keepBtn.dataset.size = "sm";
-		keepBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			this.pendingTransfer = null;
-			void this.refresh();
-		});
-	}
-
-	private async runQueueTransfer(project: string, sourceName: string, targetName: string): Promise<void> {
-		const config = this.plugin.settings.projects[project];
-		if (!config) return;
-		const sourceFile = this.app.vault.getAbstractFileByPath(sessionNotePath(config.vaultFolder, sourceName));
-		const targetFile = this.app.vault.getAbstractFileByPath(sessionNotePath(config.vaultFolder, targetName));
-		if (!(sourceFile instanceof TFile) || !(targetFile instanceof TFile)) {
-			new Notice("Could not find both session notes — nothing moved.");
-			return;
-		}
-		const sourceNote: SessionNote = parseSessionNote(await this.app.vault.read(sourceFile), sourceName);
-		const targetNote: SessionNote = parseSessionNote(await this.app.vault.read(targetFile), targetName);
-		const moved = transferQueue(sourceNote, targetNote, nowStamp);
-		if (moved === 0) {
-			new Notice("Nothing left to move.");
-			void this.refresh();
-			return;
-		}
-		await this.app.vault.modify(targetFile, serializeSessionNote(targetNote));
-		await this.app.vault.modify(sourceFile, serializeSessionNote(sourceNote));
-		new Notice(`Moved ${moved} queued item(s) to ${targetName}.`);
-		void this.refresh();
 	}
 
 	private buildCountdownEl(parent: HTMLElement, sessionName: string, remaining: number): void {
