@@ -112,8 +112,16 @@ export const CLAUDE_ENGINE: EngineDefinition = {
  *   install winning over the app bundle.
  * - The TUI and `exec` take different flag sets (`--skip-git-repo-check` is
  *   exec-only, `-a` is TUI-only), so only TUI flags appear here.
- * - No slash-command surface is verified for the TUI, so we claim none
- *   rather than showing Claude's list under a Codex session.
+ * - The TUI's `/` menu is a fixed eight-entry built-in list (/model, /fast,
+ *   /ide, /permissions, /keymap, /vim, /experimental, /approve). Skills never
+ *   join it: `/<skill-name>` matches nothing. Codex reaches skills through a
+ *   separate `$<skill-name>` picker instead, and loads them from
+ *   $CODEX_HOME/skills, ~/.agents/skills and <project>/{.codex,.agents}/skills
+ *   — never <project>/.claude/skills. Since this plugin's completion surface
+ *   is keyed on `/`, listing skill directories here would offer Zoey commands
+ *   that do nothing when typed, so both lists below stay empty on purpose.
+ *   (Measured on 0.154.0-alpha.6.2, 2026-09-16; scripts/sync-codex-config.sh
+ *   is what actually makes the vault's skills reachable from Codex.)
  */
 export const CODEX_ENGINE: EngineDefinition = {
 	id: "codex",
