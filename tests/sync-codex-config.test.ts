@@ -17,7 +17,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, readFileSync, lstatSync, readlinkSync, existsSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, readFileSync, lstatSync, readlinkSync, realpathSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,10 +81,14 @@ function cleanup(box: Sandbox): void {
 	rmSync(box.root, { recursive: true, force: true });
 }
 
-/** What a published skill must look like: a symlink pointing at the real source dir. */
+/**
+ * What a published skill must look like: a symlink pointing at the real source
+ * dir. Compared through realpath because the script resolves its targets and
+ * macOS hands out /var/folders temp paths that are really /private/var.
+ */
 function assertLinkedTo(dest: string, expected: string): void {
 	assert.ok(lstatSync(dest).isSymbolicLink(), `${dest} should be a symlink`);
-	assert.equal(readlinkSync(dest), expected);
+	assert.equal(realpathSync(readlinkSync(dest)), realpathSync(expected));
 }
 
 // ---------------------------------------------------------------------------
