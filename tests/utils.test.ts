@@ -4622,10 +4622,10 @@ describe("prepareQueueTaskText", () => {
 		);
 	});
 
-	it("escapes leading bang after timestamp strip", () => {
+	it("prefixes an image reference after timestamp strip", () => {
 		assert.equal(
 			prepareQueueTaskText("[2026-04-20 14:30] ![[image.png]]"),
-			" ![[image.png]]",
+			"请查看以下附件：\n![[image.png]]",
 		);
 	});
 
@@ -5883,5 +5883,22 @@ describe("selectorCoversTag", () => {
 
 	it("does not match a prefix of a longer tag", () => {
 		assert.equal(selectorCoversTag("textarea", "text"), false);
+	});
+});
+
+
+describe("queue image prompt safety", () => {
+	it("keeps image-first prompts out of shell mode even after trimming", () => {
+		for (const raw of ["![[image.png]]", " \n![[folder/screen shot.png|preview]]\n请分析", "![[a.png]]\n![[b.jpg]]"]) {
+			const sent = prepareQueueTaskText(raw);
+			assert.equal(sent, "请查看以下附件：\n" + raw);
+			assert.equal(sent.trimStart().startsWith("!"), false);
+			assert.equal(prepareQueueTaskText(sent), sent);
+		}
+	});
+	it("preserves text-first image prompts and ordinary commands", () => {
+		for (const text of ["看看 ![[a.png]]", "/fast off", "普通文字"]) {
+			assert.equal(prepareQueueTaskText(text), text);
+		}
 	});
 });

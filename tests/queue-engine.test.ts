@@ -449,3 +449,19 @@ describe("QueueEngine error stop signal", () => {
 		assert.deepStrictEqual(h.notes.get("P-1")!.queue, []);
 	});
 });
+
+
+describe("Queue image-first delivery", () => {
+	for (const engine of ["codex", "claude"]) {
+		it(`sends a normal prompt to ${engine} and preserves history`, async () => {
+			const raw = "[2026-09-19 10:00] ![[screen shot.png]]\n请查看这里";
+			const h = makeHarness(makeNote({ engine, queue: [raw] }));
+			await h.engine.sendNext("P-1");
+			const literal = h.execs.find((args) => args.includes("-l"))!;
+			assert.equal(literal.at(-1), "请查看以下附件：\n![[screen shot.png]]\n请查看这里");
+			assert.equal(h.notes.get("P-1")!.history[0]!.text, raw);
+			assert.equal(h.notes.get("P-1")!.queue.length, 0);
+		}
+		);
+	}
+});

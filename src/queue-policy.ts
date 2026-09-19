@@ -70,5 +70,9 @@ export function notifyQueueMessage(prefix: string, queueLength: number): string 
 }
 
 export function prepareQueueTaskText(rawTask: string): string {
-	return escapeLeadingBang(stripTimestamp(rawTask));
+	const text = stripTimestamp(rawTask);
+	// Whitespace alone is not a reliable escape for CLI shell shortcuts.
+	// Keep Obsidian embeds intact, but start image/attachment prompts with prose.
+	if (/^\s*!\[\[/.test(text)) return "请查看以下附件：\n" + text;
+	return escapeLeadingBang(text);
 }
