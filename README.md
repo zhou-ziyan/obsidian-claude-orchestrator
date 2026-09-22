@@ -123,6 +123,13 @@ They need `tmux`, both CLIs installed and signed in, and they run fully
 isolated — a temporary `CODEX_HOME`, a temporary settings file for Claude,
 and a temporary signal directory, so your own config is never touched.
 
+One clipboard test overwrites your real system clipboard (it round-trips CJK
+text through `pbcopy`), so it is opt-in too:
+
+```bash
+CO_E2E_CLIPBOARD=1 npm run test:e2e
+```
+
 Symlink into your vault for development:
 
 ```bash

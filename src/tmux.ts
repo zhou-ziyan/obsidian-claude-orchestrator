@@ -104,6 +104,108 @@ export function quickReplyLabel(key: string): string {
 	return name;
 }
 
+/**
+ * Character encoding for tmux jobs.
+ *
+ * `copy-pipe`/`run-shell` commands are forked by the tmux *server*, so they
+ * inherit the server's environment — never the pane's. A server started by
+ * launchd (which is how the lighthouse agent starts one) carries no
+ * LANG/LC_* at all, only `__CF_USER_TEXT_ENCODING=<uid>:0x0:0x0`; that `0x0`
+ * is kCFStringEncodingMacRoman, and CoreFoundation tools fall back to it when
+ * no POSIX locale is set. So the common `copy-pipe-and-cancel "pbcopy"`
+ * binding decodes a UTF-8 selection as MacRoman and 我会 (e6 88 91 e4 bc 9a)
+ * lands on the clipboard as Êàë‰ºö.
+ *
+ * Any POSIX locale variable overrides the CoreFoundation fallback, so the fix
+ * is to make sure the tmux global environment declares a UTF-8 one.
+ */
+export const TMUX_FALLBACK_LOCALE = "en_US.UTF-8";
+
+/** POSIX precedence for the character-encoding category, highest first. */
+export const TMUX_LOCALE_VARS = ["LC_ALL", "LC_CTYPE", "LANG"] as const;
+
+export function isUtf8Locale(value: string | null | undefined): boolean {
+	return typeof value === "string" && /\.utf-?8$/i.test(value.trim());
+}
+
+/**
+ * The UTF-8 locale to publish into tmux: reuse whatever the host already
+ * declares so a zh_CN user keeps their messages, falling back to en_US.UTF-8
+ * when the host declares none (Obsidian launched from Finder inherits no
+ * locale at all).
+ */
+export function pickUtf8Locale(env: Record<string, string | undefined>): string {
+	for (const name of TMUX_LOCALE_VARS) {
+		const value = env[name];
+		if (isUtf8Locale(value)) return value!.trim();
+	}
+	return TMUX_FALLBACK_LOCALE;
+}
+
+/**
+ * Read one variable out of `tmux show-environment -g` output. tmux marks an
+ * explicitly-unset variable as `-NAME`, which reads the same as absent here.
+ */
+export function parseTmuxGlobalEnvValue(output: string, name: string): string | null {
+	const prefix = name + "=";
+	for (const line of output.split("\n")) {
+		const trimmed = line.trim();
+		if (trimmed.startsWith(prefix)) return trimmed.slice(prefix.length);
+	}
+	return null;
+}
+
+export function tmuxShowGlobalEnvArgs(): string[] {
+	return ["show-environment", "-g"];
+}
+
+export function tmuxSetGlobalEnvArgs(name: string, value: string): string[] {
+	return ["set-environment", "-g", name, value];
+}
+
+/**
+ * tmux args that make the server's jobs decode UTF-8, or null when they
+ * already do. Repairs the variable that actually governs decoding — fixing
+ * LANG under an `LC_ALL=C` server would leave pbcopy mangling text — and
+ * never overwrites a locale that is already UTF-8.
+ */
+export function tmuxLocaleRepair(
+	globalEnvDump: string,
+	hostEnv: Record<string, string | undefined>,
+): string[] | null {
+	for (const name of TMUX_LOCALE_VARS) {
+		const value = parseTmuxGlobalEnvValue(globalEnvDump, name);
+		if (value === null) continue;
+		return isUtf8Locale(value) ? null : tmuxSetGlobalEnvArgs(name, pickUtf8Locale(hostEnv));
+	}
+	return tmuxSetGlobalEnvArgs("LANG", pickUtf8Locale(hostEnv));
+}
+
+/**
+ * Publish a UTF-8 locale into a running tmux server's global environment.
+ * Resolves false when nothing needed doing — including when no server is up
+ * yet, since the plugin's own spawn env seeds a fresh server correctly.
+ */
+export async function ensureTmuxUtf8Locale(
+	exec: (args: string[]) => Promise<string>,
+	hostEnv: Record<string, string | undefined>,
+): Promise<boolean> {
+	let dump: string;
+	try {
+		dump = await exec(tmuxShowGlobalEnvArgs());
+	} catch {
+		return false;
+	}
+	const repair = tmuxLocaleRepair(dump, hostEnv);
+	if (!repair) return false;
+	try {
+		await exec(repair);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 export function cancelCopyModeArgs(sessionName: string): string[] {
 	return ["send-keys", "-t", sessionName, "-X", "cancel"];
 }

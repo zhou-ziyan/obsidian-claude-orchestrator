@@ -16,6 +16,7 @@ import {
 	QUICK_REPLY_KEYS,
 	quickReplyLabel,
 	buildTmuxSessionArgs,
+	ensureTmuxUtf8Locale,
 	computeTerminalFit,
 	terminalPageKey,
 	tmuxPageArgs,
@@ -866,6 +867,12 @@ export class TerminalView extends ItemView {
 		let file: string;
 		let args: string[];
 		if (this.sessionName) {
+			// tmux forks copy-pipe/run-shell jobs from the *server's*
+			// environment, so a server first started by launchd (no LANG,
+			// __CF_USER_TEXT_ENCODING=<uid>:0x0:0x0 = MacRoman) makes pbcopy
+			// mangle CJK selections. Heal it before attaching; a server that
+			// does not exist yet inherits `env` below, which is already UTF-8.
+			await ensureTmuxUtf8Locale(execTmux, env);
 			file = findTmuxBinary();
 			args = buildTmuxSessionArgs(this.sessionName, this.app.vault.getName());
 		} else {

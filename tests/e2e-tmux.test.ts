@@ -15,7 +15,7 @@ import {
 	parseTmuxGlobalEnvValue,
 	tmuxPageArgs,
 } from "../src/utils.ts";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 
 const require = createRequire(import.meta.url);
@@ -168,9 +168,10 @@ describe("e2e: PTY-driven window sizing", { skip: !TMUX, concurrency: 1 }, () =>
 describe("e2e: tmux job environment carries a UTF-8 locale", { skip: !TMUX, concurrency: 1 }, () => {
 	const SOCKET = `co-e2e-locale-${RUN_TAG}`;
 	const SESSION = "probe";
+	const CJK = "我会核对";
 	let tmpDir: string;
 
-	// A launchd-style environment: no LANG, no LC_*, CF text encoding = MacRoman.
+	// A launchd-shaped environment: no LANG, no LC_*, CF text encoding = MacRoman.
 	const launchdEnv = {
 		HOME: os.homedir(),
 		PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
@@ -178,38 +179,41 @@ describe("e2e: tmux job environment carries a UTF-8 locale", { skip: !TMUX, conc
 		__CF_USER_TEXT_ENCODING: "0x1F5:0x0:0x0",
 	};
 
-	const onSocket = (args: string[], env?: NodeJS.ProcessEnv) =>
+	const onSocket = (args: string[]) =>
 		execFileSync(TMUX!, ["-L", SOCKET, ...args], {
 			encoding: "utf8",
-			env: env as { [k: string]: string } | undefined,
+			stdio: ["ignore", "pipe", "pipe"],
 		}).trim();
 
+	const quiet = (args: string[]) => { try { onSocket(args); } catch { /* best effort */ } };
+	const pause = (seconds: string) => execFileSync("/bin/sleep", [seconds]);
+
 	after(() => {
-		try { onSocket(["kill-server"]); } catch { /* already gone */ }
+		quiet(["kill-server"]);
 		if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	// What a `copy-pipe` job actually sees: run-shell uses the same job
-	// mechanism, so dumping its env is a faithful probe.
+	// What a `copy-pipe` job sees: run-shell goes through the same job
+	// mechanism, so dumping its environment is a faithful probe.
 	const jobLang = (): string | null => {
 		const out = path.join(tmpDir, `env-${Math.random().toString(36).slice(2)}.txt`);
-		onSocket(["run-shell", `sh -c 'printenv LANG > ${out} || true'`]);
+		onSocket(["run-shell", `sh -c 'printenv LANG > ${out}; true'`]);
 		for (let i = 0; i < 40; i++) {
 			try {
-				const v = readFileSync(out, "utf8").trim();
-				if (v) return v;
-				return null;
-			} catch { /* job not finished yet */ }
-			execFileSync("/bin/sleep", ["0.05"]);
+				return readFileSync(out, "utf8").trim() || null;
+			} catch {
+				pause("0.05");
+			}
 		}
 		return null;
 	};
 
 	it("reproduces the broken server: a launchd-started tmux has no LANG in its jobs", () => {
 		tmpDir = mkdtempSync(path.join(os.tmpdir(), "co-e2e-locale-"));
-		try { onSocket(["kill-server"]); } catch { /* not running */ }
+		quiet(["kill-server"]);
 		execFileSync(TMUX!, ["-L", SOCKET, "new-session", "-d", "-s", SESSION], {
 			env: launchdEnv,
+			stdio: "ignore",
 		});
 		assert.equal(
 			parseTmuxGlobalEnvValue(onSocket(["show-environment", "-g"]), "LANG"),
@@ -220,10 +224,7 @@ describe("e2e: tmux job environment carries a UTF-8 locale", { skip: !TMUX, conc
 	});
 
 	it("ensureTmuxUtf8Locale installs a UTF-8 LANG that reaches job processes", async () => {
-		const fixed = await ensureTmuxUtf8Locale(
-			(args) => Promise.resolve(onSocket(args)),
-			{},
-		);
+		const fixed = await ensureTmuxUtf8Locale((args) => Promise.resolve(onSocket(args)), {});
 		assert.equal(fixed, true, "reported that it repaired the environment");
 		const lang = jobLang();
 		assert.ok(isUtf8Locale(lang), `copy-pipe jobs now see a UTF-8 LANG (got ${lang})`);
@@ -231,27 +232,36 @@ describe("e2e: tmux job environment carries a UTF-8 locale", { skip: !TMUX, conc
 
 	it("is idempotent and does not clobber a locale that is already UTF-8", async () => {
 		onSocket(["set-environment", "-g", "LANG", "zh_CN.UTF-8"]);
-		const fixed = await ensureTmuxUtf8Locale(
-			(args) => Promise.resolve(onSocket(args)),
-			{},
-		);
+		const fixed = await ensureTmuxUtf8Locale((args) => Promise.resolve(onSocket(args)), {});
 		assert.equal(fixed, false, "left the existing UTF-8 locale untouched");
 		assert.equal(jobLang(), "zh_CN.UTF-8");
 	});
 
-	it("tmux copy-pipe itself is byte-transparent for CJK (the mangling is pbcopy's decode)", () => {
+	it("tmux copy-pipe is byte-transparent for CJK (the mangling is pbcopy's decode, not tmux's)", () => {
+		const src = path.join(tmpDir, "cjk.txt");
 		const sink = path.join(tmpDir, "copied.bin");
-		onSocket(["send-keys", "-t", SESSION, "clear; printf '\\u6211\\u4f1a\\u6838\\u5bf9\\\\n'", "Enter"]);
-		execFileSync("/bin/sleep", ["0.8"]);
+		writeFileSync(src, CJK + "\n", "utf8");
+
+		onSocket(["send-keys", "-t", SESSION, `clear; cat ${src}`, "Enter"]);
+		pause("1");
+
+		// Locate the CJK row rather than guessing how many lines the prompt
+		// spans: capture-pane rows and #{cursor_y} share a 0-based origin at
+		// the top of the visible pane.
+		const rows = onSocket(["capture-pane", "-p", "-t", SESSION]).split("\n");
+		const row = rows.findIndex((l) => l.includes(CJK));
+		assert.ok(row >= 0, `pane rendered the CJK line (pane: ${JSON.stringify(rows)})`);
+		const cursorY = Number(onSocket(["display-message", "-p", "-t", SESSION, "#{cursor_y}"]));
+
 		onSocket(["copy-mode", "-t", SESSION]);
-		onSocket(["send-keys", "-t", SESSION, "-X", "cursor-up"]);
-		onSocket(["send-keys", "-t", SESSION, "-X", "cursor-up"]);
+		for (let i = row; i < cursorY; i++) onSocket(["send-keys", "-t", SESSION, "-X", "cursor-up"]);
 		onSocket(["send-keys", "-t", SESSION, "-X", "select-line"]);
 		onSocket(["send-keys", "-t", SESSION, "-X", "copy-pipe-and-cancel", `cat > ${sink}`]);
-		execFileSync("/bin/sleep", ["0.8"]);
+		pause("1");
+
 		const copied = readFileSync(sink);
 		assert.ok(
-			copied.includes(Buffer.from("我会核对", "utf8")),
+			copied.includes(Buffer.from(CJK, "utf8")),
 			`copy-pipe delivered raw UTF-8 bytes (got ${copied.toString("hex")})`,
 		);
 	});

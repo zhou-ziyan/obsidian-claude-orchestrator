@@ -43,6 +43,7 @@ import {
 	tmuxShowGlobalEnvArgs,
 	tmuxSetGlobalEnvArgs,
 	tmuxLocaleRepair,
+	ensureTmuxUtf8Locale,
 	TMUX_FALLBACK_LOCALE,
 	TMUX_LOCALE_VARS,
 	computeTerminalFit,
@@ -6057,5 +6058,45 @@ describe("tmuxLocaleRepair", () => {
 			tmuxLocaleRepair("", { LANG: "zh_CN.UTF-8" }),
 			["set-environment", "-g", "LANG", "zh_CN.UTF-8"],
 		);
+	});
+});
+
+describe("ensureTmuxUtf8Locale", () => {
+	const recorder = (dump: string | Error, setFails = false) => {
+		const calls: string[][] = [];
+		const exec = (args: string[]): Promise<string> => {
+			calls.push(args);
+			if (args[0] === "show-environment") {
+				return dump instanceof Error ? Promise.reject(dump) : Promise.resolve(dump);
+			}
+			return setFails ? Promise.reject(new Error("set failed")) : Promise.resolve("");
+		};
+		return { calls, exec };
+	};
+
+	it("publishes a UTF-8 LANG into a server that declares none", async () => {
+		const { calls, exec } = recorder("HOME=/Users/eureka\n");
+		assert.equal(await ensureTmuxUtf8Locale(exec, { LANG: "zh_CN.UTF-8" }), true);
+		assert.deepStrictEqual(calls, [
+			["show-environment", "-g"],
+			["set-environment", "-g", "LANG", "zh_CN.UTF-8"],
+		]);
+	});
+
+	it("reads once and writes nothing when the server is already UTF-8", async () => {
+		const { calls, exec } = recorder("LANG=en_US.UTF-8\n");
+		assert.equal(await ensureTmuxUtf8Locale(exec, {}), false);
+		assert.deepStrictEqual(calls, [["show-environment", "-g"]]);
+	});
+
+	it("stays quiet when no tmux server is running — the spawn env seeds a fresh one", async () => {
+		const { calls, exec } = recorder(new Error("no server running"));
+		assert.equal(await ensureTmuxUtf8Locale(exec, {}), false);
+		assert.deepStrictEqual(calls, [["show-environment", "-g"]]);
+	});
+
+	it("reports failure rather than throwing when the write is rejected", async () => {
+		const { exec } = recorder("HOME=/x\n", true);
+		assert.equal(await ensureTmuxUtf8Locale(exec, {}), false);
 	});
 });
