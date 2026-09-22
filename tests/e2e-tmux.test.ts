@@ -7,7 +7,16 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import * as os from "node:os";
-import { buildTmuxSessionArgs, findTmuxBinary, tmuxPageArgs } from "../src/utils.ts";
+import {
+	buildTmuxSessionArgs,
+	ensureTmuxUtf8Locale,
+	findTmuxBinary,
+	isUtf8Locale,
+	parseTmuxGlobalEnvValue,
+	tmuxPageArgs,
+} from "../src/utils.ts";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import * as path from "node:path";
 
 const require = createRequire(import.meta.url);
 // @types/node v16 predates node:test's `after` — type it from the module.
@@ -138,5 +147,150 @@ describe("e2e: PTY-driven window sizing", { skip: !TMUX, concurrency: 1 }, () =>
 		const lines = s.tmux(["capture-pane", "-p", "-t", SESSION]).split("\n").filter((l) => l.includes("X"));
 		assert.equal(lines.length, 2, "100 chars wrap into 2 lines at 64 cols");
 		assert.equal(lines[0]!.length, 64);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// e2e: clipboard encoding through tmux's copy-pipe job
+//
+// `~/.tmux.conf` binds drag-select to `copy-pipe-and-cancel "pbcopy"`. tmux
+// forks that command as a *job*, which inherits the tmux SERVER environment —
+// not the pane's. A server started by launchd (lighthouse does exactly this)
+// has no LANG/LC_* and only `__CF_USER_TEXT_ENCODING=<uid>:0x0:0x0`; 0x0 is
+// kCFStringEncodingMacRoman, so pbcopy decodes UTF-8 stdin as MacRoman and
+// 我会 (e6 88 91 e4 bc 9a) reaches the clipboard as Êàë‰ºö.
+//
+// These tests run against a private tmux server (`-L`) started with a
+// launchd-shaped environment, so they reproduce the broken server without
+// touching the user's real sessions.
+// ---------------------------------------------------------------------------
+
+describe("e2e: tmux job environment carries a UTF-8 locale", { skip: !TMUX, concurrency: 1 }, () => {
+	const SOCKET = `co-e2e-locale-${RUN_TAG}`;
+	const SESSION = "probe";
+	let tmpDir: string;
+
+	// A launchd-style environment: no LANG, no LC_*, CF text encoding = MacRoman.
+	const launchdEnv = {
+		HOME: os.homedir(),
+		PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+		SHELL: "/bin/zsh",
+		__CF_USER_TEXT_ENCODING: "0x1F5:0x0:0x0",
+	};
+
+	const onSocket = (args: string[], env?: NodeJS.ProcessEnv) =>
+		execFileSync(TMUX!, ["-L", SOCKET, ...args], {
+			encoding: "utf8",
+			env: env as { [k: string]: string } | undefined,
+		}).trim();
+
+	after(() => {
+		try { onSocket(["kill-server"]); } catch { /* already gone */ }
+		if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	// What a `copy-pipe` job actually sees: run-shell uses the same job
+	// mechanism, so dumping its env is a faithful probe.
+	const jobLang = (): string | null => {
+		const out = path.join(tmpDir, `env-${Math.random().toString(36).slice(2)}.txt`);
+		onSocket(["run-shell", `sh -c 'printenv LANG > ${out} || true'`]);
+		for (let i = 0; i < 40; i++) {
+			try {
+				const v = readFileSync(out, "utf8").trim();
+				if (v) return v;
+				return null;
+			} catch { /* job not finished yet */ }
+			execFileSync("/bin/sleep", ["0.05"]);
+		}
+		return null;
+	};
+
+	it("reproduces the broken server: a launchd-started tmux has no LANG in its jobs", () => {
+		tmpDir = mkdtempSync(path.join(os.tmpdir(), "co-e2e-locale-"));
+		try { onSocket(["kill-server"]); } catch { /* not running */ }
+		execFileSync(TMUX!, ["-L", SOCKET, "new-session", "-d", "-s", SESSION], {
+			env: launchdEnv,
+		});
+		assert.equal(
+			parseTmuxGlobalEnvValue(onSocket(["show-environment", "-g"]), "LANG"),
+			null,
+			"precondition: server global env has no LANG",
+		);
+		assert.equal(jobLang(), null, "precondition: copy-pipe jobs inherit no LANG");
+	});
+
+	it("ensureTmuxUtf8Locale installs a UTF-8 LANG that reaches job processes", async () => {
+		const fixed = await ensureTmuxUtf8Locale(
+			(args) => Promise.resolve(onSocket(args)),
+			{},
+		);
+		assert.equal(fixed, true, "reported that it repaired the environment");
+		const lang = jobLang();
+		assert.ok(isUtf8Locale(lang), `copy-pipe jobs now see a UTF-8 LANG (got ${lang})`);
+	});
+
+	it("is idempotent and does not clobber a locale that is already UTF-8", async () => {
+		onSocket(["set-environment", "-g", "LANG", "zh_CN.UTF-8"]);
+		const fixed = await ensureTmuxUtf8Locale(
+			(args) => Promise.resolve(onSocket(args)),
+			{},
+		);
+		assert.equal(fixed, false, "left the existing UTF-8 locale untouched");
+		assert.equal(jobLang(), "zh_CN.UTF-8");
+	});
+
+	it("tmux copy-pipe itself is byte-transparent for CJK (the mangling is pbcopy's decode)", () => {
+		const sink = path.join(tmpDir, "copied.bin");
+		onSocket(["send-keys", "-t", SESSION, "clear; printf '\\u6211\\u4f1a\\u6838\\u5bf9\\\\n'", "Enter"]);
+		execFileSync("/bin/sleep", ["0.8"]);
+		onSocket(["copy-mode", "-t", SESSION]);
+		onSocket(["send-keys", "-t", SESSION, "-X", "cursor-up"]);
+		onSocket(["send-keys", "-t", SESSION, "-X", "cursor-up"]);
+		onSocket(["send-keys", "-t", SESSION, "-X", "select-line"]);
+		onSocket(["send-keys", "-t", SESSION, "-X", "copy-pipe-and-cancel", `cat > ${sink}`]);
+		execFileSync("/bin/sleep", ["0.8"]);
+		const copied = readFileSync(sink);
+		assert.ok(
+			copied.includes(Buffer.from("我会核对", "utf8")),
+			`copy-pipe delivered raw UTF-8 bytes (got ${copied.toString("hex")})`,
+		);
+	});
+});
+
+// The real pbcopy round-trip overwrites the user's system clipboard, so it is
+// opt-in rather than part of `npm run check`:
+//   CO_E2E_CLIPBOARD=1 npm run test:e2e
+describe("e2e: pbcopy round-trip", {
+	skip: !TMUX || process.env.CO_E2E_CLIPBOARD !== "1",
+	concurrency: 1,
+}, () => {
+	const SOCKET = `co-e2e-pb-${RUN_TAG}`;
+	const CJK = "我会核对";
+
+	const onSocket = (args: string[]) =>
+		execFileSync(TMUX!, ["-L", SOCKET, ...args], { encoding: "utf8" }).trim();
+
+	after(() => { try { onSocket(["kill-server"]); } catch { /* gone */ } });
+
+	const pipeThroughPbcopy = (): string => {
+		const b64 = Buffer.from(CJK, "utf8").toString("base64");
+		onSocket(["run-shell", `sh -c 'printf %s ${b64} | base64 -d | pbcopy'`]);
+		execFileSync("/bin/sleep", ["1"]);
+		return execFileSync("/usr/bin/pbpaste", { encoding: "utf8" });
+	};
+
+	it("mangles CJK on a launchd-shaped server, and is fixed by ensureTmuxUtf8Locale", async () => {
+		execFileSync(TMUX!, ["-L", SOCKET, "new-session", "-d", "-s", "probe"], {
+			env: {
+				HOME: os.homedir(),
+				PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+				SHELL: "/bin/zsh",
+				__CF_USER_TEXT_ENCODING: "0x1F5:0x0:0x0",
+			},
+		});
+		assert.notEqual(pipeThroughPbcopy(), CJK, "precondition: clipboard is mojibake");
+
+		await ensureTmuxUtf8Locale((args) => Promise.resolve(onSocket(args)), {});
+		assert.equal(pipeThroughPbcopy(), CJK, "clipboard now round-trips UTF-8");
 	});
 });

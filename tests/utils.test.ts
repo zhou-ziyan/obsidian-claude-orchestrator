@@ -37,6 +37,14 @@ import {
 	quickReplyLabel,
 	cancelCopyModeArgs,
 	buildTmuxSessionArgs,
+	isUtf8Locale,
+	pickUtf8Locale,
+	parseTmuxGlobalEnvValue,
+	tmuxShowGlobalEnvArgs,
+	tmuxSetGlobalEnvArgs,
+	tmuxLocaleRepair,
+	TMUX_FALLBACK_LOCALE,
+	TMUX_LOCALE_VARS,
 	computeTerminalFit,
 	TERMINAL_MIN_FIT_WIDTH,
 	TERMINAL_MIN_FIT_HEIGHT,
@@ -5900,5 +5908,154 @@ describe("queue image prompt safety", () => {
 		for (const text of ["看看 ![[a.png]]", "/fast off", "普通文字"]) {
 			assert.equal(prepareQueueTaskText(text), text);
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// tmux locale / clipboard encoding
+//
+// Regression guard for the Chinese-copy mojibake: tmux `copy-pipe "pbcopy"`
+// runs pbcopy in the *server's* environment. A tmux server started by launchd
+// carries no LANG/LC_* and `__CF_USER_TEXT_ENCODING=<uid>:0x0:0x0`, whose 0x0
+// is kCFStringEncodingMacRoman — so pbcopy decodes UTF-8 bytes as MacRoman
+// and 我会 lands on the clipboard as Êàë‰ºö. Any POSIX locale variable
+// overrides that, so the plugin pushes one into the tmux global environment.
+// ---------------------------------------------------------------------------
+
+describe("isUtf8Locale", () => {
+	it("accepts UTF-8 locales in their common spellings", () => {
+		for (const v of ["en_US.UTF-8", "zh_CN.UTF-8", "C.UTF-8", "en_US.utf8", "ja_JP.UTF8"]) {
+			assert.equal(isUtf8Locale(v), true, v);
+		}
+	});
+
+	it("rejects non-UTF-8 and unset values", () => {
+		for (const v of ["C", "POSIX", "en_US", "en_US.ISO8859-1", "", null, undefined]) {
+			assert.equal(isUtf8Locale(v), false, String(v));
+		}
+	});
+
+	it("ignores surrounding whitespace", () => {
+		assert.equal(isUtf8Locale("  en_US.UTF-8\n"), true);
+	});
+});
+
+describe("pickUtf8Locale", () => {
+	it("prefers LC_ALL, then LC_CTYPE, then LANG", () => {
+		assert.equal(
+			pickUtf8Locale({ LC_ALL: "de_DE.UTF-8", LC_CTYPE: "fr_FR.UTF-8", LANG: "es_ES.UTF-8" }),
+			"de_DE.UTF-8",
+		);
+		assert.equal(pickUtf8Locale({ LC_CTYPE: "fr_FR.UTF-8", LANG: "es_ES.UTF-8" }), "fr_FR.UTF-8");
+		assert.equal(pickUtf8Locale({ LANG: "es_ES.UTF-8" }), "es_ES.UTF-8");
+	});
+
+	it("skips non-UTF-8 entries rather than propagating them", () => {
+		assert.equal(pickUtf8Locale({ LC_ALL: "C", LANG: "zh_CN.UTF-8" }), "zh_CN.UTF-8");
+	});
+
+	it("falls back when the host declares no UTF-8 locale (Obsidian launched from Finder)", () => {
+		assert.equal(pickUtf8Locale({}), TMUX_FALLBACK_LOCALE);
+		assert.equal(pickUtf8Locale({ LANG: "C", LC_ALL: "POSIX" }), TMUX_FALLBACK_LOCALE);
+	});
+
+	it("has a UTF-8 fallback", () => {
+		assert.equal(isUtf8Locale(TMUX_FALLBACK_LOCALE), true);
+	});
+});
+
+describe("parseTmuxGlobalEnvValue", () => {
+	it("reads the value out of `show-environment -g NAME` output", () => {
+		assert.equal(parseTmuxGlobalEnvValue("LANG=en_US.UTF-8\n", "LANG"), "en_US.UTF-8");
+	});
+
+	it("returns null for a variable tmux marks as explicitly unset", () => {
+		assert.equal(parseTmuxGlobalEnvValue("-LANG\n", "LANG"), null);
+	});
+
+	it("returns null for empty output or an error string", () => {
+		assert.equal(parseTmuxGlobalEnvValue("", "LANG"), null);
+		assert.equal(parseTmuxGlobalEnvValue("unknown variable: LANG\n", "LANG"), null);
+	});
+
+	it("picks the requested variable out of a multi-line dump", () => {
+		const dump = "HOME=/Users/eureka\nLANG=zh_CN.UTF-8\nPATH=/usr/bin\n";
+		assert.equal(parseTmuxGlobalEnvValue(dump, "LANG"), "zh_CN.UTF-8");
+		assert.equal(parseTmuxGlobalEnvValue(dump, "PATH"), "/usr/bin");
+	});
+
+	it("does not match a variable whose name merely ends with the requested one", () => {
+		assert.equal(parseTmuxGlobalEnvValue("XLANG=broken\n", "LANG"), null);
+	});
+
+	it("keeps `=` characters inside the value", () => {
+		assert.equal(parseTmuxGlobalEnvValue("FOO=a=b=c\n", "FOO"), "a=b=c");
+	});
+});
+
+describe("tmuxShowGlobalEnvArgs / tmuxSetGlobalEnvArgs", () => {
+	it("dumps the whole global environment in one read", () => {
+		assert.deepStrictEqual(tmuxShowGlobalEnvArgs(), ["show-environment", "-g"]);
+	});
+
+	it("writes one variable into the global environment", () => {
+		assert.deepStrictEqual(
+			tmuxSetGlobalEnvArgs("LANG", "en_US.UTF-8"),
+			["set-environment", "-g", "LANG", "en_US.UTF-8"],
+		);
+	});
+});
+
+describe("tmuxLocaleRepair", () => {
+	const host = { LANG: "en_US.UTF-8" };
+
+	it("checks the POSIX precedence order", () => {
+		assert.deepStrictEqual([...TMUX_LOCALE_VARS], ["LC_ALL", "LC_CTYPE", "LANG"]);
+	});
+
+	it("sets LANG when the server declares no locale at all (the launchd case)", () => {
+		const dump = "HOME=/Users/eureka\nPATH=/usr/bin\n__CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0\n";
+		assert.deepStrictEqual(
+			tmuxLocaleRepair(dump, host),
+			["set-environment", "-g", "LANG", "en_US.UTF-8"],
+		);
+	});
+
+	it("does nothing when the effective locale is already UTF-8", () => {
+		assert.equal(tmuxLocaleRepair("LANG=zh_CN.UTF-8\n", host), null);
+		assert.equal(tmuxLocaleRepair("LC_ALL=C.UTF-8\nLANG=C\n", host), null);
+	});
+
+	it("repairs the variable that actually governs decoding, not a lower-precedence one", () => {
+		// LC_ALL outranks LANG, so fixing LANG alone would leave pbcopy broken.
+		assert.deepStrictEqual(
+			tmuxLocaleRepair("LC_ALL=C\nLANG=en_US.UTF-8\n", host),
+			["set-environment", "-g", "LC_ALL", "en_US.UTF-8"],
+		);
+		assert.deepStrictEqual(
+			tmuxLocaleRepair("LC_CTYPE=POSIX\nLANG=en_US.UTF-8\n", host),
+			["set-environment", "-g", "LC_CTYPE", "en_US.UTF-8"],
+		);
+	});
+
+	it("repairs a non-UTF-8 LANG in place", () => {
+		assert.deepStrictEqual(
+			tmuxLocaleRepair("LANG=en_US.ISO8859-1\n", host),
+			["set-environment", "-g", "LANG", "en_US.UTF-8"],
+		);
+	});
+
+	it("treats tmux's `-NAME` unset marker as absent", () => {
+		assert.deepStrictEqual(
+			tmuxLocaleRepair("-LANG\n-LC_ALL\n", host),
+			["set-environment", "-g", "LANG", "en_US.UTF-8"],
+		);
+	});
+
+	it("propagates the host's own UTF-8 locale instead of forcing en_US", () => {
+		assert.deepStrictEqual(
+			tmuxLocaleRepair("", { LANG: "zh_CN.UTF-8" }),
+			["set-environment", "-g", "LANG", "zh_CN.UTF-8"],
+		);
 	});
 });
