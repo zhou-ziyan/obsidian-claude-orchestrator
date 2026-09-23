@@ -4,6 +4,15 @@ All notable changes to the Claude Orchestrator plugin will be documented in this
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+- **Session Manager status distinction**: Running, idle, waiting for input, error, and no-panel states now have static labels/icons and distinct theme-aware colors; idle no longer relies on orange animation.
+- **Keyboard and motion accessibility**: Session cards are keyboard-operable with visible focus rings, and reduced-motion preferences suppress status animations and transitions.
+
+### Fixed
+- **Silent status mapping**: Unknown and `silent` session statuses remain idle instead of being presented as busy/running.
+
 ## [0.0.96] - 2026-04-20
 
 ### Added
