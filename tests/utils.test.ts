@@ -5432,6 +5432,24 @@ describe("StopSignalLedger", () => {
 		assert.equal(ledger.accept(sig()), false);
 	});
 
+	it("debounces the same Codex turn even when duplicate hook files have different timestamps", () => {
+		const ledger = new StopSignalLedger();
+		assert.equal(ledger.accept(sig({ turnId: "turn-1", timestamp: 100 })), true);
+		assert.equal(ledger.accept(sig({ turnId: "turn-1", timestamp: 101 })), false);
+	});
+
+	it("debounces duplicate Claude lifecycle events arriving inside the event window", () => {
+		const ledger = new StopSignalLedger();
+		assert.equal(ledger.accept(sig({ provider: "claude", turnId: null, timestamp: 100 })), true);
+		assert.equal(ledger.accept(sig({ provider: "claude", turnId: null, timestamp: 101 })), false);
+	});
+
+	it("keeps Claude start and completion as distinct events inside the debounce window", () => {
+		const ledger = new StopSignalLedger();
+		assert.equal(ledger.accept(sig({ provider: "claude", turnId: null, stopReason: "started", timestamp: 100 })), true);
+		assert.equal(ledger.accept(sig({ provider: "claude", turnId: null, stopReason: "done", timestamp: 101 })), true);
+	});
+
 	it("accepts the next turn of the same conversation", () => {
 		const ledger = new StopSignalLedger();
 		ledger.accept(sig());

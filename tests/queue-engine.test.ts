@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { QueueEngine } from "../src/queue-engine.ts";
 import type { SessionNote } from "../src/utils.ts";
 import { parseSessionNote } from "../src/utils.ts";
@@ -38,7 +39,7 @@ interface Harness {
 	updates: string[];
 }
 
-function makeHarness(note: SessionNote, opts: { countdownSeconds?: number; playSoundOnAsking?: boolean } = {}): Harness {
+function makeHarness(note: SessionNote, opts: { countdownSeconds?: number; idleStabilityMs?: number; playSoundOnAsking?: boolean } = {}): Harness {
 	const notes = new Map<string, SessionNote>([[note.session, note]]);
 	const writes: { session: string; note: SessionNote }[] = [];
 	const execs: string[][] = [];
@@ -60,12 +61,121 @@ function makeHarness(note: SessionNote, opts: { countdownSeconds?: number; playS
 			soundOnAsking: () => { h.askingSounds++; },
 		},
 		getCountdownSeconds: () => opts.countdownSeconds ?? 3,
+		idleStabilityMs: opts.idleStabilityMs ?? 0,
 		playSoundOnAsking: () => opts.playSoundOnAsking ?? false,
 		onUpdate: (s) => { updates.push(s); },
 		sendKeyDelayMs: 0,
 	});
 	return h;
 }
+
+describe("QueueEngine strict serial send gate", () => {
+	it("does not auto-send a queue item appended while a Claude turn is running", async (t) => {
+		timers(t).enable({ apis: ["setInterval", "setTimeout"] });
+		const h = makeHarness(makeNote({ engine: "claude", status: "idle", queueMode: "auto" }), {
+			countdownSeconds: 1,
+			idleStabilityMs: 250,
+		});
+		await h.engine.onLifecycleSignal("P-1", "started", "claude", "turn-1:start");
+		const note = h.notes.get("P-1")!;
+		note.queue.push("added while running");
+		h.notes.set("P-1", note);
+		await h.engine.onNoteChanged("P-1");
+		timers(t).tick(5_000);
+		await h.engine.flush();
+		assert.deepStrictEqual(h.notes.get("P-1")!.queue, ["added while running"]);
+		assert.equal(h.execs.length, 0);
+	});
+
+	it("sends exactly once after a matching completion and stable idle window", async (t) => {
+		timers(t).enable({ apis: ["setInterval", "setTimeout"] });
+		const h = makeHarness(makeNote({ engine: "codex", queueMode: "auto", queue: ["next"] }), {
+			countdownSeconds: 1,
+			idleStabilityMs: 250,
+		});
+		await h.engine.onLifecycleSignal("P-1", "started", "codex", "turn-1:start");
+		await h.engine.onLifecycleSignal("P-1", "done", "codex", "turn-1:done");
+		assert.equal(h.engine.getCountdownRemaining("P-1"), 0, "countdown waits for stable idle");
+		timers(t).tick(250);
+		assert.equal(h.engine.getCountdownRemaining("P-1"), 1);
+		timers(t).tick(1_000);
+		await h.engine.flush();
+		assert.equal(h.execs.filter(isLiteralSend).length, 1);
+		assert.deepStrictEqual(h.notes.get("P-1")!.queue, []);
+	});
+
+	for (const provider of ["claude", "codex"] as const) {
+		it(`accepts ${provider} lifecycle state only for a ${provider} session`, async () => {
+			const h = makeHarness(makeNote({ engine: provider, queueMode: "auto", queue: ["next"] }));
+			const other = provider === "claude" ? "codex" : "claude";
+			await h.engine.onLifecycleSignal("P-1", "done", other, "wrong-provider");
+			assert.equal(h.engine.isIdle("P-1"), false);
+			assert.equal(h.engine.getCountdownRemaining("P-1"), 0);
+			await h.engine.onLifecycleSignal("P-1", "done", provider, "right-provider");
+			assert.equal(h.engine.isIdle("P-1"), true);
+		});
+	}
+
+	it("revalidates after an async read and does not claim when a new turn starts", async () => {
+		let releaseRead: (() => void) | null = null;
+		let blockReads = false;
+		const note = makeNote({ engine: "codex", status: "idle", queue: ["must stay queued"] });
+		const notes = new Map([[note.session, note]]);
+		const execs: string[][] = [];
+		let engine!: QueueEngine;
+		engine = new QueueEngine({
+			store: {
+				read: async (session) => {
+					if (blockReads) await new Promise<void>((resolve) => { releaseRead = resolve; });
+					return notes.has(session) ? structuredClone(notes.get(session)!) : null;
+				},
+				write: (session, saved) => { notes.set(session, structuredClone(saved)); return Promise.resolve(); },
+			},
+			exec: (args) => { execs.push(args); return Promise.resolve(""); },
+			notifier: { notify: () => {}, soundOnAsking: () => {} },
+			getCountdownSeconds: () => 0,
+			idleStabilityMs: 0,
+			playSoundOnAsking: () => false,
+			sendKeyDelayMs: 0,
+		});
+		await engine.onLifecycleSignal("P-1", "done", "codex", "turn-1:done");
+		blockReads = true;
+		const send = engine.sendNext("P-1");
+		await Promise.resolve();
+		blockReads = false;
+		const started = engine.onLifecycleSignal("P-1", "started", "codex", "turn-2:start");
+		releaseRead?.();
+		await Promise.all([send, started]);
+		assert.deepStrictEqual(notes.get("P-1")!.queue, ["must stay queued"]);
+		assert.equal(execs.filter(isLiteralSend).length, 0);
+	});
+});
+
+describe("Queue edit confirmation is save-only", () => {
+	for (const trigger of ["check button", "Enter"] as const) {
+		it(`${trigger} persists the edit without sending, claiming, or consuming`, async () => {
+			const h = makeHarness(makeNote({
+				engine: "claude",
+				status: "idle",
+				queueMode: "auto",
+				queue: ["[2026-09-23 10:00] before"],
+			}));
+			await h.engine.onLifecycleSignal("P-1", "done", "claude", "turn-1:done");
+			await h.engine.saveQueueEdit("P-1", 0, "[2026-09-23 10:00] after");
+			assert.deepStrictEqual(h.notes.get("P-1")!.queue, ["[2026-09-23 10:00] after"]);
+			assert.equal(h.notes.get("P-1")!.history.length, 0);
+			assert.equal(h.execs.length, 0);
+			assert.equal(h.engine.getCountdownRemaining("P-1"), 0);
+		});
+	}
+
+	it("the edit UI uses one save-only path and a non-submit confirmation button", () => {
+		const source = readFileSync(new URL("../src/view.ts", import.meta.url), "utf8");
+		assert.match(source, /saveBtn\.type\s*=\s*["']button["']/);
+		assert.match(source, /saveQueueEdit\(/);
+		assert.doesNotMatch(source, /shouldAutoSendAfterEdit/);
+	});
+});
 
 describe("QueueEngine stop signal", () => {
 	it("marks history done and sets idle status on done, with no panel involved", async () => {
