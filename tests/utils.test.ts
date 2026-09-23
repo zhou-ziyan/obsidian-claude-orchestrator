@@ -3488,29 +3488,55 @@ describe("sessionStatusDisplay", () => {
 		const r = sessionStatusDisplay(true, "running");
 		assert.equal(r.dataStatus, "running");
 		assert.equal(r.cls, "co-sm-status-dot");
+		assert.equal(r.label, "Running");
 	});
 
 	it("returns waiting_for_user dot when waiting for user", () => {
 		const r = sessionStatusDisplay(true, "waiting_for_user");
 		assert.equal(r.dataStatus, "waiting_for_user");
 		assert.equal(r.cls, "co-sm-status-dot");
+		assert.equal(r.label, "Waiting for input");
 	});
 
 	it("returns idle dot when panel active and idle", () => {
 		const r = sessionStatusDisplay(true, "idle");
 		assert.equal(r.dataStatus, "idle");
 		assert.equal(r.cls, "co-sm-status-dot");
+		assert.equal(r.label, "Idle");
 	});
 
 	it("returns off dot when no panel", () => {
 		const r = sessionStatusDisplay(false, "running");
 		assert.equal(r.dataStatus, "off");
 		assert.equal(r.cls, "co-sm-status-dot");
+		assert.equal(r.label, "No panel");
 	});
 
 	it("defaults unknown status to idle", () => {
 		const r = sessionStatusDisplay(true, "something_else");
 		assert.equal(r.dataStatus, "idle");
+		assert.equal(r.label, "Idle");
+	});
+
+	it("keeps silent out of the busy/running mapping", () => {
+		const r = sessionStatusDisplay(true, "silent");
+		assert.equal(r.dataStatus, "idle");
+		assert.notEqual(r.dataStatus, "running");
+		assert.equal(r.label, "Idle");
+	});
+
+	it("has static status labels, reduced-motion coverage, and keyboard card semantics", () => {
+		const css = readFileSync("styles.css", "utf8");
+		const view = readFileSync("src/session-manager-view.ts", "utf8");
+		assert.match(css, /\.co-sm-status-label/);
+		assert.match(css, /prefers-reduced-motion/);
+		assert.match(css, /data-s="running"/);
+		assert.match(css, /data-s="idle"/);
+		assert.match(css, /data-s="waiting_for_user"/);
+		assert.match(css, /data-s="error"/);
+		assert.match(view, /co-sm-status-label/);
+		assert.match(view, /tabIndex = 0/);
+		assert.match(view, /aria-label/);
 	});
 });
 
