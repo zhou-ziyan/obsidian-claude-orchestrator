@@ -134,12 +134,15 @@ export function groupSessionsByProject(
 export function sessionStatusDisplay(
 	hasPanel: boolean,
 	status: string,
-): { cls: string; dataStatus: string } {
-	if (!hasPanel) return { cls: "co-sm-status-dot", dataStatus: "off" };
+	): { cls: string; dataStatus: string; label: string } {
+	if (!hasPanel) return { cls: "co-sm-status-dot", dataStatus: "off", label: "No panel" };
 	const dataStatus = status === "running" ? "running"
 		: status === "waiting_for_user" ? "waiting_for_user"
 			: status === "error" ? "error" : "idle";
-	return { cls: "co-sm-status-dot", dataStatus };
+	const label = dataStatus === "running" ? "Running"
+		: dataStatus === "waiting_for_user" ? "Waiting for input"
+			: dataStatus === "error" ? "Error" : "Idle";
+	return { cls: "co-sm-status-dot", dataStatus, label };
 }
 
 export function restorableSessionNames(group: SessionGroup): string[] {

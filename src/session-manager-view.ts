@@ -605,6 +605,8 @@ export class SessionManagerView extends ItemView {
 		if (idle) cls += " co-sm-card-idle";
 		const card = parent.createDiv({ cls });
 		card.dataset.sessionName = session.name;
+		card.tabIndex = 0;
+		card.setAttribute("role", "button");
 		if (isFocused) {
 			requestAnimationFrame(() => card.scrollIntoView({ block: "nearest" }));
 		}
@@ -616,12 +618,16 @@ export class SessionManagerView extends ItemView {
 		// Top row: name + kill button in top-right corner
 		const topRow = card.createDiv({ cls: "co-sm-card-top" });
 
-		const { cls: statusCls, dataStatus } = sessionStatusDisplay(session.hasPanel, session.status);
+		const { cls: statusCls, dataStatus, label: statusLabel } = sessionStatusDisplay(session.hasPanel, session.status);
 		const statusDot = topRow.createDiv({ cls: statusCls });
 		statusDot.dataset.s = dataStatus;
+		statusDot.setAttribute("aria-hidden", "true");
+		const statusEl = topRow.createSpan({ cls: "co-sm-status-label", text: statusLabel });
+		statusEl.dataset.s = dataStatus;
 		const nameRow = topRow.createDiv({ cls: "co-sm-card-name" });
 		const displayLabel = sessionDisplayLabel(session.name, session.displayName);
 		const nameSpan = nameRow.createSpan({ text: displayLabel });
+		card.setAttribute("aria-label", `${displayLabel}: ${statusLabel}`);
 		nameSpan.addEventListener("dblclick", (e) => {
 			e.stopPropagation();
 			this.showInlineRename(nameSpan, session);
@@ -768,6 +774,15 @@ export class SessionManagerView extends ItemView {
 		}
 
 		card.addEventListener("dblclick", () => {
+			if (session.hasPanel) {
+				this.focusSession(session.name);
+			} else {
+				void this.attachSession(session);
+			}
+		});
+		card.addEventListener("keydown", (event) => {
+			if (event.key !== "Enter" && event.key !== " ") return;
+			event.preventDefault();
 			if (session.hasPanel) {
 				this.focusSession(session.name);
 			} else {
@@ -1458,4 +1473,3 @@ export class SessionManagerView extends ItemView {
 		setTimeout(() => { void this.refresh(); }, 500);
 	}
 }
-
