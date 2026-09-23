@@ -33,6 +33,7 @@ import {
 	parseStopSignal,
 	resolveEngineBinary,
 	resolveEngineRef,
+	stopSignalKey,
 	StopSignalLedger,
 } from "../src/utils.ts";
 import type { EngineDefinition, SessionNote, StopSignal } from "../src/utils.ts";
@@ -125,7 +126,7 @@ async function trustWorkspace(session: string, timeoutMs = 30_000): Promise<bool
 	return true;
 }
 
-async function awaitSignal(dir: string, timeoutMs: number): Promise<StopSignal | null> {
+async function awaitSignal(dir: string, timeoutMs: number, reason?: StopSignal["stopReason"]): Promise<StopSignal | null> {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
 		const files = readdirSync(dir).filter((f) => f.endsWith(".json")).sort();
@@ -133,7 +134,10 @@ async function awaitSignal(dir: string, timeoutMs: number): Promise<StopSignal |
 			const path = join(dir, f);
 			let sig: StopSignal | null = null;
 			try { sig = parseStopSignal(readFileSync(path, "utf8")); } catch { /* mid-write */ }
-			if (sig) { rmSync(path, { force: true }); return sig; }
+			if (sig && (reason === undefined || sig.stopReason === reason)) {
+				rmSync(path, { force: true });
+				return sig;
+			}
 		}
 		await sleep(400);
 	}
@@ -165,6 +169,7 @@ function makeRig(sessionName: string, note: Partial<SessionNote>, dirs: string[]
 		exec: tmuxAsync,
 		notifier: { notify: (m) => { notifications.push(m); }, soundOnAsking: () => {} },
 		getCountdownSeconds: () => 0,
+		idleStabilityMs: 100,
 		playSoundOnAsking: () => false,
 	});
 	return {
@@ -259,7 +264,11 @@ describe("e2e: Codex through the queue engine", { skip: !CODEX_READY, concurrenc
 			await rig.engine.sendNext(session);
 			assert.equal(rig.notes.get(session)!.queue.length, 1, "one item left queued");
 
-			const first = await awaitSignal(rig.signals, 150_000);
+			const firstStart = await awaitSignal(rig.signals, 30_000, "started");
+			assert.equal(firstStart?.stopReason, "started", "UserPromptSubmit disarms Queue");
+			await rig.engine.onLifecycleSignal(session, "started", "codex", stopSignalKey(firstStart));
+
+			const first = await awaitSignal(rig.signals, 150_000, "done");
 			assert.notEqual(first, null, "turn-end signal for item 1");
 			assert.equal(first!.provider, "codex");
 			assert.equal(first!.stopReason, "done");
@@ -271,14 +280,19 @@ describe("e2e: Codex through the queue engine", { skip: !CODEX_READY, concurrenc
 			assert.equal(ledger.accept(first!), false, "a redelivered signal is dropped");
 
 			// --- auto-send drains item 2 ---
-			await rig.engine.onStopSignal(session, "done");
+			await rig.engine.onLifecycleSignal(session, "done", "codex", stopSignalKey(first!));
+			await sleep(150);
 			await rig.engine.flush();
 			assert.equal(rig.notes.get(session)!.queue.length, 0, "auto mode sent the next item");
 
-			const second = await awaitSignal(rig.signals, 150_000);
+			const secondStart = await awaitSignal(rig.signals, 30_000, "started");
+			assert.equal(secondStart?.stopReason, "started");
+			await rig.engine.onLifecycleSignal(session, "started", "codex", stopSignalKey(secondStart));
+			const second = await awaitSignal(rig.signals, 150_000, "done");
 			assert.notEqual(second, null, "turn-end signal for item 2");
 			assert.notEqual(second!.turnId, first!.turnId, "a distinct turn, not a replay");
-			await rig.engine.onStopSignal(session, "done");
+			await rig.engine.onLifecycleSignal(session, "done", "codex", stopSignalKey(second!));
+			await sleep(150);
 
 			const final = rig.notes.get(session)!;
 			assert.deepStrictEqual(final.queue, []);
@@ -308,12 +322,15 @@ describe("e2e: Codex through the queue engine", { skip: !CODEX_READY, concurrenc
 
 			await rig.engine.sendNext(session);
 
-			const signal = await awaitSignal(rig.signals, 150_000);
+			const started = await awaitSignal(rig.signals, 30_000, "started");
+			assert.equal(started?.stopReason, "started");
+			await rig.engine.onLifecycleSignal(session, "started", "codex", stopSignalKey(started));
+			const signal = await awaitSignal(rig.signals, 150_000, "asking");
 			assert.notEqual(signal, null, `a signal arrived while blocked. Pane was:\n${pane(session)}`);
 			assert.equal(signal!.provider, "codex");
 			assert.equal(signal!.stopReason, "asking", "PermissionRequest maps to asking, not done");
 
-			await rig.engine.onStopSignal(session, "asking");
+			await rig.engine.onLifecycleSignal(session, "asking", "codex", stopSignalKey(signal!));
 			const note = rig.notes.get(session)!;
 			assert.equal(note.status, "waiting_for_user");
 			assert.deepStrictEqual(note.queue, ["Reply with exactly: SHOULD_NOT_RUN"],
@@ -337,7 +354,10 @@ describe("e2e: Codex through the queue engine", { skip: !CODEX_READY, concurrenc
 			await launchCodex(session, "-s read-only");
 
 			await rig.engine.sendNext(session);
-			const signal = await awaitSignal(rig.signals, 150_000);
+			const started = await awaitSignal(rig.signals, 30_000, "started");
+			assert.equal(started?.stopReason, "started");
+			await rig.engine.onLifecycleSignal(session, "started", "codex", stopSignalKey(started));
+			const signal = await awaitSignal(rig.signals, 150_000, "done");
 			assert.notEqual(signal, null, `seed turn produced a signal. Pane was:\n${pane(session)}`);
 			const conversationId = signal!.sessionId;
 			assert.ok(conversationId, "the turn-end names the conversation");
@@ -389,12 +409,16 @@ describe("e2e: Claude through the queue engine", { skip: !CLAUDE_READY, concurre
 			await rig.engine.sendNext(session);
 			assert.deepStrictEqual(rig.notes.get(session)!.queue, [], "task left the queue");
 
-			const signal = await awaitSignal(rig.signals, 180_000);
+			const started = await awaitSignal(rig.signals, 30_000, "started");
+			assert.equal(started?.stopReason, "started", "Claude UserPromptSubmit disarms Queue");
+			await rig.engine.onLifecycleSignal(session, "started", "claude", stopSignalKey(started));
+			const signal = await awaitSignal(rig.signals, 180_000, "done");
 			assert.notEqual(signal, null, "Claude's Stop hook produced a signal");
 			assert.equal(signal!.provider, "claude", "untagged signals are attributed to Claude");
 			assert.equal(signal!.turnId, null, "Claude supplies no turn id — correlation falls back to session id");
 
-			await rig.engine.onStopSignal(session, signal!.stopReason ?? "done");
+			await rig.engine.onLifecycleSignal(session, signal!.stopReason ?? "done", "claude", stopSignalKey(signal!));
+			await sleep(150);
 			const note = rig.notes.get(session)!;
 			assert.equal(note.history.length, 1);
 			assert.notEqual(note.status, "running");

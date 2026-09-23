@@ -10,7 +10,6 @@ import {
 	nowStamp,
 	copyHistoryItemToQueue,
 	HISTORY_ITEM_MIN_HEIGHT,
-	shouldAutoSendAfterEdit,
 	computeDisplayText,
 	SessionNote,
 	QUICK_REPLY_KEYS,
@@ -1219,6 +1218,7 @@ export class TerminalView extends ItemView {
 			const saveBtn = row.createEl("button", {
 				cls: "icon-btn",
 			});
+			saveBtn.type = "button";
 			setIcon(saveBtn, "check");
 			saveBtn.dataset.tone = "success";
 			const cancel = () => {
@@ -1227,11 +1227,13 @@ export class TerminalView extends ItemView {
 			const save = () => {
 				const newText = input.value.trim();
 				if (newText && this.sessionNote) {
-					this.sessionNote.queue[idx] = `${tsPrefix}${newText}`;
-					void this.saveSessionNote();
-					if (shouldAutoSendAfterEdit(this.sessionNote.queue.length)) {
-						void this.sendNext();
-						return;
+					const edited = `${tsPrefix}${newText}`;
+					this.sessionNote.queue[idx] = edited;
+					const engine = this.engine();
+					if (engine && this.sessionName) {
+						void engine.saveQueueEdit(this.sessionName, idx, edited);
+					} else {
+						void this.saveSessionNote();
 					}
 				}
 				this.renderQueue();

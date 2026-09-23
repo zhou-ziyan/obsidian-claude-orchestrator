@@ -24,7 +24,6 @@ import {
 	TMUX_SEARCH_PATHS,
 	HISTORY_ITEM_MIN_HEIGHT,
 	copyHistoryItemToQueue,
-	shouldAutoSendAfterEdit,
 	validateProjectKey,
 	addProject,
 	updateProjectConfig,
@@ -1501,26 +1500,6 @@ describe("copyHistoryItemToQueue", () => {
 		const queue = ["existing"];
 		const idx = copyHistoryItemToQueue("new item", queue);
 		assert.equal(idx, 1);
-	});
-});
-
-// --- shouldAutoSendAfterEdit ---
-
-describe("shouldAutoSendAfterEdit", () => {
-	it("returns true when queue has exactly 1 item", () => {
-		assert.equal(shouldAutoSendAfterEdit(1), true);
-	});
-
-	it("returns false when queue is empty", () => {
-		assert.equal(shouldAutoSendAfterEdit(0), false);
-	});
-
-	it("returns false when queue has 2 items", () => {
-		assert.equal(shouldAutoSendAfterEdit(2), false);
-	});
-
-	it("returns false when queue has many items", () => {
-		assert.equal(shouldAutoSendAfterEdit(10), false);
 	});
 });
 
@@ -5259,6 +5238,7 @@ describe("engineHookRegistrations", () => {
 	it("maps Claude's hook entries onto the plugin scripts directory", () => {
 		const regs = engineHookRegistrations(resolveEngineRef("claude"), "/plugin/scripts");
 		assert.deepStrictEqual(regs, [
+			{ role: "turn-start", event: "UserPromptSubmit", scriptName: "co-prompt-submit-hook.sh", scriptPath: "/plugin/scripts/co-prompt-submit-hook.sh" },
 			{ role: "turn-end", event: "Stop", scriptName: "co-stop-hook.sh", scriptPath: "/plugin/scripts/co-stop-hook.sh" },
 			{ role: "waiting-for-input", event: "Notification", scriptName: "co-notification-hook.sh", scriptPath: "/plugin/scripts/co-notification-hook.sh" },
 		]);
@@ -5365,6 +5345,13 @@ describe("autoSendAction with engine clamping", () => {
 // ---------------------------------------------------------------------------
 
 describe("parseStopSignal provider and turn fields", () => {
+	it("accepts the started lifecycle reason", () => {
+		const sig = parseStopSignal(JSON.stringify({
+			tmux_session: "P-1", timestamp: 99, provider: "claude", stop_reason: "started",
+		}));
+		assert.equal(sig?.stopReason, "started");
+	});
+
 	it("reads provider and turn_id when the hook supplies them", () => {
 		const sig = parseStopSignal(JSON.stringify({
 			tmux_session: "P-1", timestamp: 100, provider: "codex",
@@ -5448,6 +5435,13 @@ describe("StopSignalLedger", () => {
 		const ledger = new StopSignalLedger();
 		assert.equal(ledger.accept(sig({ provider: "claude", turnId: null, stopReason: "started", timestamp: 100 })), true);
 		assert.equal(ledger.accept(sig({ provider: "claude", turnId: null, stopReason: "done", timestamp: 101 })), true);
+	});
+
+	it("accepts a rapid second Claude completion when a new start separates the turns", () => {
+		const ledger = new StopSignalLedger();
+		assert.equal(ledger.accept(sig({ provider: "claude", turnId: null, stopReason: "done", timestamp: 100 })), true);
+		assert.equal(ledger.accept(sig({ provider: "claude", turnId: null, stopReason: "started", timestamp: 101 })), true);
+		assert.equal(ledger.accept(sig({ provider: "claude", turnId: null, stopReason: "done", timestamp: 102 })), true);
 	});
 
 	it("accepts the next turn of the same conversation", () => {

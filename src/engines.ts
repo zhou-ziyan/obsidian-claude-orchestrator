@@ -43,7 +43,7 @@ export type EngineCompletionSignal = "hook" | "none";
  * input" with `Notification`, Codex with `PermissionRequest` — so consumers
  * key off the role and the definition supplies the engine-side event name.
  */
-export type EngineHookRole = "turn-end" | "waiting-for-input" | "interrupted";
+export type EngineHookRole = "turn-start" | "turn-end" | "waiting-for-input" | "interrupted";
 
 export interface EngineHookEntry {
 	role: EngineHookRole;
@@ -91,6 +91,7 @@ export const CLAUDE_ENGINE: EngineDefinition = {
 		settingsSegments: [".claude", "settings.json"],
 		createIfMissing: false,
 		entries: [
+			{ role: "turn-start", event: "UserPromptSubmit", script: "co-prompt-submit-hook.sh" },
 			{ role: "turn-end", event: "Stop", script: "co-stop-hook.sh" },
 			{ role: "waiting-for-input", event: "Notification", script: "co-notification-hook.sh" },
 		],
@@ -140,6 +141,7 @@ export const CODEX_ENGINE: EngineDefinition = {
 		settingsSegments: [".codex", "hooks.json"],
 		createIfMissing: true,
 		entries: [
+			{ role: "turn-start", event: "UserPromptSubmit", script: "co-codex-prompt-submit-hook.sh" },
 			{ role: "turn-end", event: "Stop", script: "co-codex-stop-hook.sh" },
 			{ role: "waiting-for-input", event: "PermissionRequest", script: "co-codex-permission-hook.sh" },
 			{ role: "interrupted", event: "Interrupt", script: "co-codex-interrupt-hook.sh" },

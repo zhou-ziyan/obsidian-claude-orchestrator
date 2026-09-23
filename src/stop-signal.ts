@@ -14,16 +14,17 @@ export function stopSignalFileName(tmuxSession: string, timestamp: number): stri
 
 /**
  * Normalized turn outcome, shared by every engine:
- * - `done`    — the turn finished; the queue may advance.
+ * - `started` — a prompt was submitted; every send path is disarmed.
+ * - `done`    — the turn finished; the queue may advance after settling.
  * - `asking`  — the agent is blocked on the user (Claude `Notification`,
  *               Codex `PermissionRequest`).
  * - `error`   — the turn was aborted (Codex `Interrupt`). Not a completion:
  *               the queue must not advance and nothing is marked done.
  */
-export type StopReason = "done" | "asking" | "error";
+export type StopReason = "started" | "done" | "asking" | "error";
 
 function isStopReason(s: string): s is StopReason {
-	return s === "done" || s === "asking" || s === "error";
+	return s === "started" || s === "done" || s === "asking" || s === "error";
 }
 
 export interface StopSignal {
@@ -74,13 +75,17 @@ export function parseStopSignal(json: string): StopSignal | null {
  * sniffing the id's shape.
  */
 export function stopSignalKey(signal: StopSignal): string {
+	// Codex supplies a real per-turn id. Do not include the hook file's wall
+	// clock in that identity: the same event can be delivered twice with a
+	// different timestamp by watch + poll or duplicate hook registration.
+	const eventClock = signal.turnId ? "" : String(signal.timestamp);
 	return [
 		signal.provider,
 		signal.tmuxSession,
 		signal.sessionId ?? "",
 		signal.turnId ?? "",
 		signal.stopReason ?? "",
-		String(signal.timestamp),
+		eventClock,
 	].join("|");
 }
 
@@ -100,10 +105,13 @@ export class StopSignalLedger {
 	private seen = new Set<string>();
 	private order: string[] = [];
 	private latest = new Map<string, number>();
+	private latestKind = new Map<string, number>();
 	private maxEntries: number;
+	private debounceSeconds: number;
 
-	constructor(maxEntries: number = DEFAULT_LEDGER_SIZE) {
+	constructor(maxEntries: number = DEFAULT_LEDGER_SIZE, debounceSeconds: number = 2) {
 		this.maxEntries = Math.max(1, maxEntries);
+		this.debounceSeconds = Math.max(0, debounceSeconds);
 	}
 
 	get size(): number {
@@ -117,10 +125,23 @@ export class StopSignalLedger {
 		const lane = `${signal.provider}|${signal.tmuxSession}`;
 		const newest = this.latest.get(lane);
 		if (newest !== undefined && signal.timestamp < newest) return false;
+		if (signal.stopReason === "started") {
+			for (const reason of ["done", "asking", "error"]) {
+				this.latestKind.delete(`${lane}|${reason}`);
+			}
+		}
+		// Claude has no turn id. Collapse same-kind hook bursts in a short
+		// window, while started → done remains distinct and legitimate.
+		const kindLane = `${lane}|${signal.stopReason ?? ""}`;
+		const newestKind = this.latestKind.get(kindLane);
+		if (!signal.turnId && newestKind !== undefined
+			&& signal.timestamp >= newestKind
+			&& signal.timestamp - newestKind <= this.debounceSeconds) return false;
 
 		this.seen.add(key);
 		this.order.push(key);
 		this.latest.set(lane, Math.max(newest ?? 0, signal.timestamp));
+		this.latestKind.set(kindLane, Math.max(newestKind ?? 0, signal.timestamp));
 		while (this.order.length > this.maxEntries) {
 			const evicted = this.order.shift();
 			if (evicted !== undefined) this.seen.delete(evicted);

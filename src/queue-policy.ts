@@ -15,32 +15,19 @@ export function autoSendAction(
 	queueLength: number,
 ): AutoSendAction {
 	if (mode === "manual") return "none";
-	// Neither an approval prompt nor an aborted turn is a completion.
-	if (stopReason === "asking" || stopReason === "error") return "none";
+	// Only an explicit completion (or a later note change while a completion
+	// remains stably idle) may advance the queue.
+	if (stopReason !== null && stopReason !== "done") return "none";
 	if (queueLength === 0) return "none";
 	if (mode === "auto") return "send";
 	if (mode === "listen") return "notify";
 	return "none";
 }
 
-/**
- * Reverse-map a vault file path to the tmux session it is the note for.
- * Returns null for archives, non-markdown files, nested paths, and paths
- * outside every registered project's sessions directory.
- */
-
-/**
- * After editing a queue item, determine whether to auto-send.
- * Returns true when the queue has exactly 1 item — the one just edited —
- * so save-and-send can happen in one Enter press.
- */
-export function shouldAutoSendAfterEdit(queueLength: number): boolean {
-	return queueLength === 1;
-}
-
 export function deriveStatusFromStop(
 	stopReason: StopReason | null,
 ): { claudeIdle: boolean; status: SessionStatus } {
+	if (stopReason === "started") return { claudeIdle: false, status: "running" };
 	if (stopReason === "asking") return { claudeIdle: false, status: "waiting_for_user" };
 	// An aborted turn still leaves the agent idle — Codex fires Interrupt
 	// *instead of* Stop, never both, so treating error as "still running"

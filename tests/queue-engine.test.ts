@@ -87,6 +87,22 @@ describe("QueueEngine strict serial send gate", () => {
 		assert.equal(h.execs.length, 0);
 	});
 
+	it("holds explicit Send Next while the current turn is busy", async () => {
+		const h = makeHarness(makeNote({ engine: "codex", status: "idle", queueMode: "manual", queue: ["next"] }));
+		await h.engine.onLifecycleSignal("P-1", "started", "codex", "turn-1:start");
+		await h.engine.sendNext("P-1");
+		assert.deepStrictEqual(h.notes.get("P-1")!.queue, ["next"]);
+		assert.equal(h.execs.length, 0);
+		assert.match(h.notifications.at(-1) ?? "", /held/i);
+	});
+
+	it("keeps explicit Send Next usable for a stably idle startup session", async () => {
+		const h = makeHarness(makeNote({ engine: "claude", status: "idle", queueMode: "manual", queue: ["first"] }));
+		await h.engine.sendNext("P-1");
+		assert.deepStrictEqual(h.notes.get("P-1")!.queue, []);
+		assert.equal(h.execs.filter(isLiteralSend).length, 1);
+	});
+
 	it("sends exactly once after a matching completion and stable idle window", async (t) => {
 		timers(t).enable({ apis: ["setInterval", "setTimeout"] });
 		const h = makeHarness(makeNote({ engine: "codex", queueMode: "auto", queue: ["next"] }), {
@@ -113,6 +129,8 @@ describe("QueueEngine strict serial send gate", () => {
 			assert.equal(h.engine.getCountdownRemaining("P-1"), 0);
 			await h.engine.onLifecycleSignal("P-1", "done", provider, "right-provider");
 			assert.equal(h.engine.isIdle("P-1"), true);
+			await h.engine.onLifecycleSignal("P-1", "started", other, "wrong-provider-start");
+			assert.equal(h.engine.isIdle("P-1"), true, "the other engine cannot mark this session busy");
 		});
 	}
 
@@ -243,6 +261,8 @@ describe("QueueEngine stop signal", () => {
 describe("QueueEngine sendNext", () => {
 	it("moves the item to history, saves before sending, and sends in order", async () => {
 		const h = makeHarness(makeNote({ queue: ["[2026-07-06 10:00] do the thing", "later"] }));
+		await h.engine.onStopSignal("P-1", "done");
+		h.writes.length = 0;
 		await h.engine.sendNext("P-1");
 		const saved = h.notes.get("P-1")!;
 		assert.equal(saved.status, "running");
@@ -257,6 +277,8 @@ describe("QueueEngine sendNext", () => {
 
 	it("no-ops on an empty queue", async () => {
 		const h = makeHarness(makeNote({ queue: [] }));
+		await h.engine.onStopSignal("P-1", "done");
+		h.writes.length = 0;
 		await h.engine.sendNext("P-1");
 		assert.equal(h.writes.length, 0);
 		assert.equal(h.execs.length, 0);
@@ -275,20 +297,20 @@ describe("QueueEngine sendNext", () => {
 });
 
 describe("QueueEngine note changes (external edits / view edits)", () => {
-	it("starts countdown when idle in auto mode and a task appears", async (t) => {
+	it("does not trust persisted idle when a task appears", async (t) => {
 		timers(t).enable({ apis: ["setInterval"] });
 		const h = makeHarness(makeNote({ status: "idle", queueMode: "auto", queue: ["new task"] }), { countdownSeconds: 2 });
-		await h.engine.onNoteChanged("P-1"); // idle seeded from note.status
-		assert.equal(h.engine.getCountdownRemaining("P-1"), 2);
+		await h.engine.onNoteChanged("P-1");
+		assert.equal(h.engine.getCountdownRemaining("P-1"), 0);
 		timers(t).tick(2000);
 		await h.engine.flush();
-		assert.equal(h.notes.get("P-1")!.queue.length, 0);
+		assert.equal(h.notes.get("P-1")!.queue.length, 1);
 	});
 
-	it("notifies (not sends) in listen mode when idle and a task appears", async () => {
+	it("does not notify from persisted idle alone in listen mode", async () => {
 		const h = makeHarness(makeNote({ status: "idle", queueMode: "listen", queue: ["t"] }));
 		await h.engine.onNoteChanged("P-1");
-		assert.equal(h.notifications.length, 1);
+		assert.equal(h.notifications.length, 0);
 		assert.equal(h.execs.length, 0);
 	});
 
@@ -388,22 +410,22 @@ describe("QueueEngine engine capability", () => {
 		assert.equal(h.notifications.length, 0);
 	});
 
-	it("still records status and history for an undrivable engine", async () => {
+	it("ignores lifecycle signals for an undrivable engine instead of guessing a provider", async () => {
 		const h = makeHarness(makeNote({
 			engine: "gpt-5-turbo", queueMode: "auto",
 			history: [{ text: "task A", completed: false }],
 		}));
 		await h.engine.onStopSignal("P-1", "done");
 		const saved = h.notes.get("P-1")!;
-		assert.equal(saved.status, "idle");
-		assert.equal(saved.history[0]!.completed, true);
+		assert.equal(saved.status, "running");
+		assert.equal(saved.history[0]!.completed, false);
 	});
 
-	it("still sends on an explicit manual sendNext for an undrivable engine", async () => {
+	it("holds explicit sendNext for an undrivable engine because idle cannot be verified", async () => {
 		const h = makeHarness(makeNote({ engine: "gpt-5-turbo", queueMode: "manual", queue: ["do it"] }));
 		await h.engine.sendNext("P-1");
-		assert.equal(h.notes.get("P-1")!.queue.length, 0);
-		assert.ok(h.execs.some((a) => a.join(" ").includes("do it")));
+		assert.equal(h.notes.get("P-1")!.queue.length, 1);
+		assert.equal(h.execs.length, 0);
 	});
 
 	it("ignores a note edit that would auto-send for an undrivable engine", async () => {
@@ -415,7 +437,11 @@ describe("QueueEngine engine capability", () => {
 
 	it("still auto-sends on a note edit for Claude", async (t) => {
 		timers(t).enable({ apis: ["setInterval"] });
-		const h = makeHarness(makeNote({ engine: "claude", status: "idle", queueMode: "auto", queue: ["x"] }), { countdownSeconds: 1 });
+		const h = makeHarness(makeNote({ engine: "claude", status: "running", queueMode: "auto", queue: [] }), { countdownSeconds: 1 });
+		await h.engine.onStopSignal("P-1", "done");
+		const note = h.notes.get("P-1")!;
+		note.queue.push("x");
+		h.notes.set("P-1", note);
 		await h.engine.onNoteChanged("P-1");
 		assert.equal(h.engine.getCountdownRemaining("P-1"), 1);
 		timers(t).tick(1000);
@@ -448,6 +474,7 @@ function makeFailingHarness(note: SessionNote, failOn: (args: string[]) => boole
 			soundOnAsking: () => {},
 		},
 		getCountdownSeconds: () => 3,
+		idleStabilityMs: 0,
 		playSoundOnAsking: () => false,
 		sendKeyDelayMs: 0,
 	});
@@ -460,6 +487,7 @@ const isEnterSend = (args: string[]): boolean => args[0] === "send-keys" && args
 describe("QueueEngine send failure", () => {
 	it("puts the task back at the head of the queue when the text never reached tmux", async () => {
 		const h = makeFailingHarness(makeNote({ queue: ["first", "second"] }), isLiteralSend);
+		await h.engine.onStopSignal("P-1", "done");
 		await h.engine.sendNext("P-1");
 		const saved = h.notes.get("P-1")!;
 		assert.deepStrictEqual(saved.queue, ["first", "second"], "queue restored in order");
@@ -468,12 +496,14 @@ describe("QueueEngine send failure", () => {
 
 	it("does not leave the session marked running after a failed send", async () => {
 		const h = makeFailingHarness(makeNote({ status: "idle", queue: ["x"] }), isLiteralSend);
+		await h.engine.onStopSignal("P-1", "done");
 		await h.engine.sendNext("P-1");
 		assert.notEqual(h.notes.get("P-1")!.status, "running");
 	});
 
 	it("tells the user the send failed instead of failing silently", async () => {
 		const h = makeFailingHarness(makeNote({ queue: ["x"] }), isLiteralSend);
+		await h.engine.onStopSignal("P-1", "done");
 		await h.engine.sendNext("P-1");
 		assert.equal(h.notifications.length, 1);
 		assert.match(h.notifications[0]!, /fail/i);
@@ -481,6 +511,7 @@ describe("QueueEngine send failure", () => {
 
 	it("sends the task exactly once on a retry after a failure", async () => {
 		const h = makeFailingHarness(makeNote({ queue: ["only task"] }), isLiteralSend);
+		await h.engine.onStopSignal("P-1", "done");
 		await h.engine.sendNext("P-1");
 		assert.deepStrictEqual(h.notes.get("P-1")!.queue, ["only task"]);
 		const literalSends = h.execs.filter(isLiteralSend);
@@ -491,6 +522,7 @@ describe("QueueEngine send failure", () => {
 		// The text is already sitting in the agent's input box: re-queueing it
 		// would type the prompt twice.
 		const h = makeFailingHarness(makeNote({ queue: ["x"] }), isEnterSend);
+		await h.engine.onStopSignal("P-1", "done");
 		await h.engine.sendNext("P-1");
 		const saved = h.notes.get("P-1")!;
 		assert.deepStrictEqual(saved.queue, []);
@@ -500,6 +532,7 @@ describe("QueueEngine send failure", () => {
 
 	it("does nothing at all on an empty queue", async () => {
 		const h = makeFailingHarness(makeNote({ queue: [] }), isLiteralSend);
+		await h.engine.onStopSignal("P-1", "done");
 		await h.engine.sendNext("P-1");
 		assert.equal(h.execs.filter(isLiteralSend).length, 0);
 		assert.equal(h.notifications.length, 0);
@@ -539,14 +572,14 @@ describe("QueueEngine error stop signal", () => {
 		assert.equal(h.execs.length, 0);
 	});
 
-	it("lets the user resume by queueing new work after an interrupt", async (t) => {
+	it("does not let a note edit masquerade as completion after an interrupt", async (t) => {
 		timers(t).enable({ apis: ["setInterval"] });
 		const h = makeHarness(makeNote({ queueMode: "auto", queue: ["next"] }), { countdownSeconds: 1 });
 		await h.engine.onStopSignal("P-1", "error");
 		await h.engine.onNoteChanged("P-1");
 		timers(t).tick(1000);
 		await h.engine.flush();
-		assert.deepStrictEqual(h.notes.get("P-1")!.queue, [], "a later edit can resume the queue");
+		assert.deepStrictEqual(h.notes.get("P-1")!.queue, ["next"], "an explicit completion is still required");
 	});
 
 	it("resumes normally once a real turn-end arrives", async (t) => {
@@ -566,6 +599,7 @@ describe("Queue image-first delivery", () => {
 		it(`sends a normal prompt to ${engine} and preserves history`, async () => {
 			const raw = "[2026-09-19 10:00] ![[screen shot.png]]\n请查看这里";
 			const h = makeHarness(makeNote({ engine, queue: [raw] }));
+			await h.engine.onStopSignal("P-1", "done");
 			await h.engine.sendNext("P-1");
 			const literal = h.execs.find((args) => args.includes("-l"))!;
 			assert.equal(literal.at(-1), "请查看以下附件：\n![[screen shot.png]]\n请查看这里");

@@ -179,11 +179,12 @@ describe("CLAUDE_ENGINE definition", () => {
 		);
 	});
 
-	it("describes the Stop and Notification hooks the plugin registers", () => {
+	it("describes start, Stop, and Notification hooks the plugin registers", () => {
 		const hooks = CLAUDE_ENGINE.hooks;
 		assert.notEqual(hooks, null);
 		assert.deepStrictEqual(hooks!.settingsSegments, [".claude", "settings.json"]);
 		assert.deepStrictEqual(hooks!.entries, [
+			{ role: "turn-start", event: "UserPromptSubmit", script: "co-prompt-submit-hook.sh" },
 			{ role: "turn-end", event: "Stop", script: "co-stop-hook.sh" },
 			{ role: "waiting-for-input", event: "Notification", script: "co-notification-hook.sh" },
 		]);
@@ -247,6 +248,15 @@ describe("engineSkillDirs", () => {
 // ---------------------------------------------------------------------------
 
 describe("hook roles are engine-independent", () => {
+	it("every hook-driven engine disarms Queue on UserPromptSubmit", () => {
+		for (const id of availableEngineIds()) {
+			const def = getEngineDefinition(id)!;
+			if (def.completionSignal !== "hook") continue;
+			const start = def.hooks?.entries.find((e) => e.role === "turn-start");
+			assert.equal(start?.event, "UserPromptSubmit", `${id} reports turn start`);
+		}
+	});
+
 	it("every registered engine that reports completion names a turn-end hook", () => {
 		for (const id of availableEngineIds()) {
 			const def = getEngineDefinition(id)!;

@@ -13,9 +13,10 @@ import {
 	findTmuxBinary,
 	isUtf8Locale,
 	parseTmuxGlobalEnvValue,
+	parseStopSignal,
 	tmuxPageArgs,
 } from "../src/utils.ts";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 
 const require = createRequire(import.meta.url);
@@ -40,6 +41,31 @@ function detectTmux(): string | null {
 
 const TMUX = detectTmux();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+describe("e2e: Claude/Codex turn-start hook scripts", { skip: !TMUX, concurrency: 1 }, () => {
+	for (const [provider, script] of [
+		["claude", "co-prompt-submit-hook.sh"],
+		["codex", "co-codex-prompt-submit-hook.sh"],
+	] as const) {
+		it(`${provider} UserPromptSubmit emits a started lifecycle signal`, () => {
+			const signalDir = mkdtempSync(path.join(os.tmpdir(), `co-e2e-${provider}-start-`));
+			try {
+				execFileSync("/bin/bash", [path.join(process.cwd(), "scripts", script)], {
+					input: JSON.stringify({ session_id: `${provider}-session`, turn_id: "turn-1" }),
+					env: { ...process.env, CO_SIGNAL_DIR: signalDir },
+					stdio: ["pipe", "ignore", "pipe"],
+				});
+				const files = readdirSync(signalDir).filter((name) => name.endsWith(".json"));
+				assert.equal(files.length, 1);
+				const signal = parseStopSignal(readFileSync(path.join(signalDir, files[0]!), "utf8"));
+				assert.equal(signal?.provider, provider);
+				assert.equal(signal?.stopReason, "started");
+			} finally {
+				rmSync(signalDir, { recursive: true, force: true });
+			}
+		});
+	}
+});
 
 interface PtySession {
 	proc: import("node-pty").IPty;
