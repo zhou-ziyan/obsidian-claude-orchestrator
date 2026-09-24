@@ -12,6 +12,7 @@ export default tseslint.config(
 			},
 			parserOptions: {
 				projectService: {
+					maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 20,
 					allowDefaultProject: [
 						'eslint.config.js',
 						'manifest.json',
@@ -23,6 +24,8 @@ export default tseslint.config(
 					'tests/e2e-tmux.test.ts',
 					'tests/e2e-dual-engine.test.ts',
 					'tests/engine-cli.ts',
+					'tests/worker-launch.test.ts',
+					'tests/e2e-worker-launch.test.ts',
 					]
 				},
 				tsconfigRootDir: import.meta.dirname,

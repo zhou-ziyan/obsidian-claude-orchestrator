@@ -74,7 +74,7 @@ describe("launchWorkerSession", () => {
 		}, { ...first, cwdExists: true, binaryExists: true });
 		assert.equal(result.kind, "created");
 		assert.ok(first.calls.some((a) => a[0] === "new-session" && a.includes("Demo-1")));
-		assert.ok(first.calls.some((a) => a[0] === "send-keys" && a.includes("--dangerously-skip-permissions")));
+		assert.ok(first.calls.some((a) => a[0] === "new-session" && a.join(" ").includes("--dangerously-skip-permissions")));
 		assert.deepEqual(first.notes, ["01_Projects/Demo/sessions/Demo-1.md"]);
 
 		const duplicate = rig({ list: "Demo-1\t1\tDemo\tclaude\n" });
@@ -108,6 +108,40 @@ describe("launchWorkerSession", () => {
 		);
 		assert.deepEqual(failed.notes, []);
 		assert.deepEqual(failed.deleted, []);
+	});
+
+	it("rejects a missing binary before creating tmux", async () => {
+		const missing = rig();
+		await assert.rejects(
+			launchWorkerSession({
+				project: "Demo", engine: "claude", sessionName: "Demo-1", cwd: "/work/tree",
+				binary: "/missing/claude", permission: "bypass", maxConcurrent: 2,
+				notePath: "Demo-1.md", noteContent: "engine: claude",
+			}, { ...missing, cwdExists: true, binaryExists: false }),
+			/claude binary is not available/,
+		);
+		assert.equal(missing.calls.length, 1);
+		assert.deepEqual(missing.notes, []);
+	});
+
+	it("rolls back both tmux and the note when the pane exits immediately", async () => {
+		const failed = rig();
+		const originalExec = failed.exec;
+		failed.exec = async (args) => {
+			if (args[0] === "has-session") throw new Error("pane exited");
+			return originalExec(args);
+		};
+		await assert.rejects(
+			launchWorkerSession({
+				project: "Demo", engine: "claude", sessionName: "Demo-1", cwd: "/work/tree",
+				binary: "/bin/claude", permission: "bypass", maxConcurrent: 2,
+				notePath: "Demo-1.md", noteContent: "engine: claude",
+			}, { ...failed, cwdExists: true, binaryExists: true }),
+			/pane exited/,
+		);
+		assert.deepEqual(failed.notes, ["Demo-1.md"]);
+		assert.deepEqual(failed.deleted, ["Demo-1.md"]);
+		assert.ok(failed.calls.some((a) => a[0] === "kill-session"));
 	});
 });
 
