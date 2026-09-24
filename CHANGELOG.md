@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Automatic engine start for new sessions**: Explicit New Claude Code/Codex actions now start the selected CLI through the shared launch path, while attach/restore remains idempotent and unattended worker limits stay separate.
 - **Configured worker launch**: Session Manager can launch tagged Claude Code or Codex CLI workers for a project, with per-engine permission policy, explicit target directory, idempotent reuse, bounded capacity, startup rollback, and Lighthouse-discoverable tmux metadata.
 - **Worker launch verification**: Added policy/unit coverage and an isolated real-tmux smoke test without real credentials or agent quota.
 

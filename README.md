@@ -41,6 +41,8 @@ Register any folder as a project — not limited to any particular vault structu
 ### Configured worker launch
 Session Manager can launch a real Claude Code or Codex CLI worker directly in a project's configured working directory. The project settings must explicitly choose **Ask for permissions** or **Bypass permission checks** for each engine; missing or unknown policies fail closed. Workers are tagged in tmux and recorded as session notes so Lighthouse can discover them. A global maximum (default 2) prevents unbounded creation, and repeated requests reuse an existing tagged worker.
 
+The **New Claude Code session** and **New Codex session** actions use the same launch path: after an engine is explicitly selected, the configured CLI starts in the new tmux session. They require that engine's explicit project permission policy and fail closed when it is missing, disabled, invalid, or the working directory/binary is unavailable. Reopening or restoring an existing session attaches without starting a second CLI. The separate **Launch worker** action remains the unattended, capacity-limited, tagged-worker mode.
+
 Claude uses the measured `--dangerously-skip-permissions` flag for bypass mode. Codex uses `--dangerously-bypass-approvals-and-sandbox` plus `--dangerously-bypass-hook-trust`. Bypass mode is intended only for a dedicated, trusted project worktree; credentials are inherited by the CLI process and are never written to notes or logs.
 
 ## Installation
@@ -102,7 +104,7 @@ To wire it up by hand instead, add the Stop hook to your project's `.claude/sett
 | Command | Description |
 |---------|-------------|
 | Open terminal for current project | Reveal existing terminal or create one |
-| Create new terminal for current project | Always create a fresh session |
+| Create new terminal for current project | Create a fresh session and start the selected/default engine |
 | Launch worker session for current project | Launch the configured default engine in the project worktree |
 | Restore all terminals for current project | Reattach sessions that lost their tab |
 | Toggle simple mode | Hide/show queue and history panels |
