@@ -1,13 +1,14 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, createDefaultSessionNote, ensureEngineHookConfig, materializeHookScripts, hookScriptsDir, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, StopSignalLedger, stopSignalKey, availableEngineIds, engineCreatesHookFile, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, newSessionEngine, isEngineId, ENGINE_IDS, getEngineDefinition, DEFAULT_ENGINE_ID } from "./utils";
+import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, parseAllTmuxSessions, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, createDefaultSessionNote, ensureEngineHookConfig, materializeHookScripts, hookScriptsDir, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, StopSignalLedger, stopSignalKey, availableEngineIds, engineCreatesHookFile, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, newSessionEngine, isEngineId, ENGINE_IDS, getEngineDefinition, DEFAULT_ENGINE_ID, computeSessionCwd, resolveEngineBinary, launchWorkerSession, shellQuote } from "./utils";
 import type { EngineId, HookScriptFs, ProjectRegistry, QueueMode, SessionNote, SlashCommandEntry, StopReason, ThemeName } from "./utils";
 import { QUEUE_MODES, queueModeLabel } from "./utils";
 import { QueueEngine } from "./queue-engine";
 import { StopHookWatcher } from "./stop-hook-watcher";
 import { findTerminalLeafBySession, findTerminalLeafByProject, collectOpenSessionNames } from "./workspace-helpers";
-import { accessSync, chmodSync, constants as fsConstants, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
+import { accessSync, chmodSync, constants as fsConstants, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
+import { execFileSync } from "child_process";
 import { dirname } from "path";
 import { homedir } from "os";
 
@@ -22,6 +23,8 @@ export interface OrchestratorSettings {
 	defaultQueueMode: QueueMode;
 	/** Engine new sessions start on when the project does not override it. */
 	defaultEngine: EngineId;
+	/** Maximum number of Manager-launched workers alive at once. */
+	maxWorkerSessions: number;
 }
 
 const DEFAULT_SETTINGS: OrchestratorSettings = {
@@ -34,6 +37,7 @@ const DEFAULT_SETTINGS: OrchestratorSettings = {
 	autoSendCountdownSeconds: 3,
 	defaultQueueMode: "manual",
 	defaultEngine: DEFAULT_ENGINE_ID,
+	maxWorkerSessions: 2,
 };
 
 /** Node-backed {@link HookScriptFs} used outside tests. */
@@ -140,6 +144,12 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			id: "create-new-terminal",
 			name: "Create new terminal for current project",
 			callback: () => this.createNewTerminal(),
+		});
+
+		this.addCommand({
+			id: "launch-worker-session",
+			name: "Launch worker session for current project",
+			callback: () => this.launchWorkerForActiveProject(),
 		});
 
 		this.addCommand({
@@ -261,6 +271,10 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		const raw: Record<string, unknown> = await this.loadData() ?? {};
 		const data = migrateSettings(raw);
 		this.settings = { ...DEFAULT_SETTINGS, ...data as Partial<OrchestratorSettings> };
+		const maxWorkers = Number(this.settings.maxWorkerSessions);
+		this.settings.maxWorkerSessions = Number.isFinite(maxWorkers)
+			? Math.max(0, Math.min(20, Math.round(maxWorkers)))
+			: DEFAULT_SETTINGS.maxWorkerSessions;
 		this.settings.theme = migrateThemeName(this.settings.theme);
 	}
 
@@ -294,6 +308,83 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 
 	private collectSessionNames(): Set<string> {
 		return collectOpenSessionNames(this.app.workspace);
+	}
+
+	private workerLaunches = new Map<string, Promise<{ kind: "created" | "existing"; sessionName: string }>>();
+
+	/** Launch one explicitly configured Claude/Codex worker without opening a panel. */
+	async launchWorkerForProject(project: string, engine: EngineId): Promise<{ kind: "created" | "existing"; sessionName: string }> {
+		const key = `${project}:${engine}`;
+		const pending = this.workerLaunches.get(key);
+		if (pending) return pending;
+		const operation = this.launchWorkerForProjectOnce(project, engine).finally(() => {
+			if (this.workerLaunches.get(key) === operation) this.workerLaunches.delete(key);
+		});
+		this.workerLaunches.set(key, operation);
+		return operation;
+	}
+
+	private async launchWorkerForProjectOnce(project: string, engine: EngineId): Promise<{ kind: "created" | "existing"; sessionName: string }> {
+		const config = this.settings.projects[project];
+		if (!config) throw new Error(`Unknown project: ${project}`);
+		if (config.inactive) throw new Error(`Project is inactive: ${project}`);
+		const permission = config.workerPermissions?.[engine];
+		const adapter = this.app.vault.adapter;
+		const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : null;
+		const cwd = computeSessionCwd(config.workingDirectory, config.vaultFolder, basePath, homedir());
+		const cwdExists = existsSync(cwd) && statSync(cwd).isDirectory();
+		const definition = getEngineDefinition(engine);
+		if (!definition) throw new Error(`Unknown engine: ${engine}`);
+		const binary = resolveEngineBinary(definition, homedir(), existsSync);
+		let binaryExists = existsSync(binary);
+		if (!binaryExists && !binary.includes("/")) {
+			try {
+				execFileSync("/bin/sh", ["-lc", `command -v -- ${shellQuote(binary)}`], { stdio: "ignore" });
+				binaryExists = true;
+			} catch { /* preflight reports the missing binary */ }
+		}
+		const openNames = this.collectSessionNames();
+		const tmuxOutput = await tmuxLs();
+		for (const session of parseAllTmuxSessions(tmuxOutput)) openNames.add(session.name);
+		const sessionName = generateSessionName(project, openNames);
+		const dirPath = sessionDirPath(config.vaultFolder);
+		const notePath = sessionNotePath(config.vaultFolder, sessionName);
+		const noteContent = createDefaultSessionNote(sessionName, this.settings.defaultQueueMode, engine);
+		const result = await launchWorkerSession({
+			project, engine, sessionName, cwd, binary, permission,
+			maxConcurrent: this.settings.maxWorkerSessions,
+			notePath, noteContent, vaultId: this.app.vault.getName(),
+		}, {
+			exec: execTmux,
+			cwdExists,
+			binaryExists,
+			createNote: async (path, content) => {
+				if (!this.app.vault.getAbstractFileByPath(dirPath)) await this.app.vault.createFolder(dirPath);
+				await this.app.vault.create(path, content);
+			},
+			deleteNote: async (path) => {
+				const file = this.app.vault.getAbstractFileByPath(path);
+				if (file) await this.app.fileManager.trashFile(file);
+			},
+		});
+		new Notice(result.kind === "created"
+			? `Launched ${engine} worker ${result.sessionName}`
+			: `Worker already running: ${result.sessionName}`);
+		return result;
+	}
+
+	private async launchWorkerForActiveProject(): Promise<void> {
+		const project = this.resolveActiveProject();
+		if (!project) {
+			new Notice("No project context — open a project note first.");
+			return;
+		}
+		const engine = this.defaultEngineForProject(project);
+		try {
+			await this.launchWorkerForProject(project, engine);
+		} catch (error) {
+			new Notice(`Worker launch failed: ${error instanceof Error ? error.message : String(error)}`);
+		}
 	}
 
 	// --- "Open terminal for current project" ---
@@ -804,6 +895,18 @@ class OrchestratorSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					});
 			});
+
+		new Setting(containerEl)
+			.setName("Maximum unattended workers")
+			.setDesc("Maximum number of Manager-launched workers. Project permission policies still apply.")
+			.addText((text) =>
+				text
+					.setValue(String(this.plugin.settings.maxWorkerSessions))
+					.onChange(async (value) => {
+						this.plugin.settings.maxWorkerSessions = Math.max(0, Math.min(20, Math.round(Number(value) || 0)));
+						await this.plugin.saveSettings();
+					}),
+			);
 
 		new Setting(containerEl)
 			.setName("Theme")

@@ -564,6 +564,29 @@ export class SessionManagerView extends ItemView {
 				menu.showAtMouseEvent(e);
 			});
 
+			const workerBtn = groupHeader.createEl("button", {
+				cls: "icon-btn co-sm-gear",
+			});
+			setIcon(workerBtn, "bot");
+			workerBtn.title = "Launch worker";
+			workerBtn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				const menu = new Menu();
+				for (const id of availableEngineIds()) {
+					const def = getEngineDefinition(id);
+					if (!def) continue;
+					menu.addItem((item) => {
+						item.setTitle(`Launch ${def.label} worker`);
+						item.onClick(() => {
+							void this.plugin.launchWorkerForProject(group.project, id).catch((error) => {
+								new Notice(`Worker launch failed: ${error instanceof Error ? error.message : String(error)}`);
+							});
+						});
+					});
+				}
+				menu.showAtMouseEvent(e);
+			});
+
 			const gearBtn = groupHeader.createEl("button", {
 				cls: "icon-btn co-sm-gear",
 			});
@@ -1295,6 +1318,23 @@ export class SessionManagerView extends ItemView {
 		}
 		engineSelect.value = config?.defaultEngine && isEngineId(config.defaultEngine) ? config.defaultEngine : "";
 
+		const workerPermissions: Record<string, "prompt" | "bypass" | ""> = {};
+		for (const id of ENGINE_IDS) {
+			const def = getEngineDefinition(id);
+			if (!def) continue;
+			const permissionRow = form.createDiv({ cls: "co-sm-form-row" });
+			permissionRow.createSpan({ cls: "co-sm-form-label", text: `${def.label} worker` });
+			const permissionSelect = permissionRow.createEl("select", { cls: "co-sm-form-input co-select" });
+			permissionSelect.createEl("option", { value: "", text: "Disabled" });
+			permissionSelect.createEl("option", { value: "prompt", text: "Ask for permissions" });
+			permissionSelect.createEl("option", { value: "bypass", text: "Bypass permission checks" });
+			permissionSelect.value = config?.workerPermissions?.[id] ?? "";
+			workerPermissions[id] = permissionSelect.value as "prompt" | "bypass" | "";
+			permissionSelect.addEventListener("change", () => {
+				workerPermissions[id] = permissionSelect.value as "prompt" | "bypass" | "";
+			});
+		}
+
 		let inactiveChecked = config?.inactive ?? false;
 		if (isEdit) {
 			const inactiveRow = form.createDiv({ cls: "co-sm-form-row" });
@@ -1365,11 +1405,15 @@ export class SessionManagerView extends ItemView {
 				}
 			}
 
+			const configuredWorkerPermissions = Object.fromEntries(
+				Object.entries(workerPermissions).filter(([, value]) => value !== ""),
+			) as ProjectConfig["workerPermissions"];
 			const newConfig: ProjectConfig = {
 				vaultFolder,
 				workingDirectory,
 				inactive: inactiveChecked || undefined,
 				defaultEngine: engineSelect.value || undefined,
+				workerPermissions: Object.keys(configuredWorkerPermissions ?? {}).length > 0 ? configuredWorkerPermissions : undefined,
 			};
 
 			if (isEdit) {
