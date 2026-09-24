@@ -147,6 +147,40 @@ describe("launchWorkerSession", () => {
 		assert.deepEqual(failed.deleted, ["Demo-1.md"]);
 		assert.ok(failed.calls.some((a) => a[0] === "kill-session"));
 	});
+
+	it("launches an interactive Claude session without worker tags or capacity reuse", async () => {
+		const interactive = rig();
+		const result = await launchWorkerSession({
+			project: "Demo", engine: "claude", sessionName: "Demo-1", cwd: "/work/tree",
+			binary: "/bin/claude", permission: "prompt", maxConcurrent: 0,
+			notePath: "Demo-1.md", noteContent: "engine: claude", kind: "interactive",
+		}, { ...interactive, cwdExists: true, binaryExists: true });
+		assert.deepEqual(result, { kind: "created", sessionName: "Demo-1" });
+		const create = interactive.calls.find((args) => args[0] === "new-session");
+		assert.ok(create);
+		assert.ok(create.join(" ").includes("--add-dir /work/tree"));
+		assert.ok(!create.join(" ").includes("@co_worker"));
+	});
+
+	it("launches interactive Codex in prompt mode and never restarts an existing attach", async () => {
+		const interactive = rig();
+		const result = await launchWorkerSession({
+			project: "Demo", engine: "codex", sessionName: "Demo-1", cwd: "/work/tree",
+			binary: "/bin/codex", permission: "prompt", maxConcurrent: 0,
+			notePath: "Demo-1.md", noteContent: "engine: codex", kind: "interactive",
+		}, { ...interactive, cwdExists: true, binaryExists: true });
+		assert.deepEqual(result, { kind: "created", sessionName: "Demo-1" });
+		assert.ok(interactive.calls.some((args) => args[0] === "new-session" && args.join(" ").includes("-a on-request -s workspace-write")));
+
+		const existing = rig({ list: "Demo-1\t0\tDemo\tcodex\n" });
+		const attached = await launchWorkerSession({
+			project: "Demo", engine: "codex", sessionName: "Demo-1", cwd: "/work/tree",
+			binary: "/bin/codex", permission: "prompt", maxConcurrent: 0,
+			notePath: "Demo-1.md", noteContent: "engine: codex", kind: "interactive",
+		}, { ...existing, cwdExists: true, binaryExists: true });
+		assert.deepEqual(attached, { kind: "existing", sessionName: "Demo-1" });
+		assert.equal(existing.calls.filter((args) => args[0] === "new-session").length, 0);
+	});
 });
 
 describe("worker tmux discovery", () => {
