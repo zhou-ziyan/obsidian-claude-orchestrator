@@ -9,6 +9,8 @@
 import type { EngineId } from "./engines.ts";
 import type { WorkerPermissionMode } from "./projects.ts";
 
+export type WorkerLaunchKind = "worker" | "interactive";
+
 export interface WorkerLaunchPreflightInput {
 	engine: string;
 	permission: WorkerPermissionMode | undefined;
@@ -29,6 +31,10 @@ export interface WorkerLaunchRequest {
 	notePath: string;
 	noteContent: string;
 	vaultId?: string;
+	/** Worker mode is the legacy default; interactive mode is for an explicitly selected new session. */
+	kind?: WorkerLaunchKind;
+	/** Interactive sessions never reuse by project/engine, but attach still reuses their exact name. */
+	reuseExisting?: boolean;
 }
 
 export interface WorkerSession {
@@ -123,10 +129,11 @@ function allSessionNames(output: string): Set<string> {
 }
 
 function workerTmuxArgs(request: WorkerLaunchRequest): string[] {
+	const isWorker = (request.kind ?? "worker") === "worker";
 	return [
 		"new-session", "-d", "-s", request.sessionName, "-c", request.cwd,
 		buildWorkerLaunchLine(request.engine, request.binary, request.permission!, request.cwd),
-		";", "set-option", "-t", request.sessionName, "@co_worker", "1",
+		...(isWorker ? [";", "set-option", "-t", request.sessionName, "@co_worker", "1"] : []),
 		";", "set-option", "-t", request.sessionName, "@co_project", request.project,
 		";", "set-option", "-t", request.sessionName, "@co_engine", request.engine,
 		...(request.vaultId ? [";", "set-option", "-t", request.sessionName, "@co_vault", request.vaultId] : []),
@@ -138,9 +145,10 @@ function killArgs(sessionName: string): string[] {
 }
 
 /**
- * Create or find one tagged worker. The caller serializes requests per
- * project/engine; this function also rechecks tmux state immediately before
- * creating anything, so an existing worker is never launched twice.
+ * Create or find one worker or explicitly selected interactive session. The
+ * caller serializes requests per project/engine; this function also rechecks
+ * tmux state immediately before creating anything, so an existing session is
+ * never launched twice.
  */
 export async function launchWorkerSession(
 	request: WorkerLaunchRequest,
@@ -148,10 +156,13 @@ export async function launchWorkerSession(
 ): Promise<WorkerLaunchResult> {
 	const listing = await deps.exec(["list-sessions", "-F", "#{session_name}\t#{@co_worker}\t#{@co_project}\t#{@co_engine}"]);
 	const names = allSessionNames(listing);
+	const kind = request.kind ?? "worker";
 	const existingWorker = parseWorkerSessions(listing).find(
 		(worker) => worker.project === request.project && worker.engine === request.engine,
 	);
-	if (existingWorker) return { kind: "existing", sessionName: existingWorker.sessionName };
+	if (kind === "worker" && (request.reuseExisting ?? true) && existingWorker) {
+		return { kind: "existing", sessionName: existingWorker.sessionName };
+	}
 	if (names.has(request.sessionName)) return { kind: "existing", sessionName: request.sessionName };
 
 	const preflight = workerLaunchPreflight({
@@ -163,8 +174,8 @@ export async function launchWorkerSession(
 		binaryExists: deps.binaryExists,
 	});
 	if (preflight) throw new Error(preflight);
-	if (request.maxConcurrent < 1) throw new Error("capacity limit disables worker launch");
-	if (parseWorkerSessions(listing).length >= request.maxConcurrent) {
+	if (kind === "worker" && request.maxConcurrent < 1) throw new Error("capacity limit disables worker launch");
+	if (kind === "worker" && parseWorkerSessions(listing).length >= request.maxConcurrent) {
 		throw new Error(`worker capacity limit reached (${request.maxConcurrent})`);
 	}
 

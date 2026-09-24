@@ -1,7 +1,7 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, collectNoteNamesFromFiles, migrateSettings, parseTmuxSessionsForProject, parseAllTmuxSessions, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, createDefaultSessionNote, ensureEngineHookConfig, materializeHookScripts, hookScriptsDir, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, StopSignalLedger, stopSignalKey, availableEngineIds, engineCreatesHookFile, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, newSessionEngine, isEngineId, ENGINE_IDS, getEngineDefinition, DEFAULT_ENGINE_ID, computeSessionCwd, resolveEngineBinary, launchWorkerSession, shellQuote } from "./utils";
+import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, parseAllTmuxSessions, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, createDefaultSessionNote, ensureEngineHookConfig, materializeHookScripts, hookScriptsDir, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, StopSignalLedger, stopSignalKey, availableEngineIds, engineCreatesHookFile, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, newSessionEngine, isEngineId, ENGINE_IDS, getEngineDefinition, DEFAULT_ENGINE_ID, computeSessionCwd, resolveEngineBinary, launchWorkerSession, shellQuote } from "./utils";
 import type { EngineId, HookScriptFs, ProjectRegistry, QueueMode, SessionNote, SlashCommandEntry, StopReason, ThemeName } from "./utils";
 import { QUEUE_MODES, queueModeLabel } from "./utils";
 import { QueueEngine } from "./queue-engine";
@@ -310,21 +310,30 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		return collectOpenSessionNames(this.app.workspace);
 	}
 
-	private workerLaunches = new Map<string, Promise<{ kind: "created" | "existing"; sessionName: string }>>();
+	private engineLaunches = new Map<string, Promise<{ kind: "created" | "existing"; sessionName: string }>>();
 
 	/** Launch one explicitly configured Claude/Codex worker without opening a panel. */
 	async launchWorkerForProject(project: string, engine: EngineId): Promise<{ kind: "created" | "existing"; sessionName: string }> {
-		const key = `${project}:${engine}`;
-		const pending = this.workerLaunches.get(key);
+		const key = `worker:${project}:${engine}`;
+		const pending = this.engineLaunches.get(key);
 		if (pending) return pending;
-		const operation = this.launchWorkerForProjectOnce(project, engine).finally(() => {
-			if (this.workerLaunches.get(key) === operation) this.workerLaunches.delete(key);
+		const operation = this.launchEngineSessionForProject(project, engine, "worker").then((result) => {
+			new Notice(result.kind === "created"
+				? `Launched ${engine} worker ${result.sessionName}`
+				: `Worker already running: ${result.sessionName}`);
+			return result;
+		}).finally(() => {
+			if (this.engineLaunches.get(key) === operation) this.engineLaunches.delete(key);
 		});
-		this.workerLaunches.set(key, operation);
+		this.engineLaunches.set(key, operation);
 		return operation;
 	}
 
-	private async launchWorkerForProjectOnce(project: string, engine: EngineId): Promise<{ kind: "created" | "existing"; sessionName: string }> {
+	private async launchEngineSessionForProject(
+		project: string,
+		engine: EngineId,
+		kind: "worker" | "interactive",
+	): Promise<{ kind: "created" | "existing"; sessionName: string }> {
 		const config = this.settings.projects[project];
 		if (!config) throw new Error(`Unknown project: ${project}`);
 		if (config.inactive) throw new Error(`Project is inactive: ${project}`);
@@ -352,8 +361,10 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		const noteContent = createDefaultSessionNote(sessionName, this.settings.defaultQueueMode, engine);
 		const result = await launchWorkerSession({
 			project, engine, sessionName, cwd, binary, permission,
-			maxConcurrent: this.settings.maxWorkerSessions,
+			maxConcurrent: kind === "worker" ? this.settings.maxWorkerSessions : 0,
 			notePath, noteContent, vaultId: this.app.vault.getName(),
+			kind,
+			reuseExisting: kind === "worker",
 		}, {
 			exec: execTmux,
 			cwdExists,
@@ -367,9 +378,6 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 				if (file) await this.app.fileManager.trashFile(file);
 			},
 		});
-		new Notice(result.kind === "created"
-			? `Launched ${engine} worker ${result.sessionName}`
-			: `Worker already running: ${result.sessionName}`);
 		return result;
 	}
 
@@ -500,37 +508,22 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 	 */
 	async createNewTerminalForProject(project: string, engine?: EngineId) {
 		const chosen = engine ?? this.defaultEngineForProject(project);
-		const openNames = this.collectSessionNames();
-		const config = this.settings.projects[project];
-		if (config) {
-			const dir = sessionDirPath(config.vaultFolder);
-			const folder = this.app.vault.getAbstractFileByPath(dir);
-			if (folder instanceof TFolder) {
-				const fileNames = folder.children
-					.filter((c): c is TFile => c instanceof TFile)
-					.map((f) => f.name);
-				for (const n of collectNoteNamesFromFiles(fileNames)) {
-					openNames.add(n);
-				}
-			}
+		const key = `interactive:${project}:${chosen}`;
+		const pending = this.engineLaunches.get(key);
+		const operation = pending ?? this.launchEngineSessionForProject(project, chosen, "interactive");
+		if (!pending) {
+			this.engineLaunches.set(key, operation);
+			void operation.finally(() => {
+				if (this.engineLaunches.get(key) === operation) this.engineLaunches.delete(key);
+			});
 		}
-		const sessionName = generateSessionName(project, openNames);
-		if (config) {
-			const dirPath = sessionDirPath(config.vaultFolder);
-			const notePath = sessionNotePath(config.vaultFolder, sessionName);
-			if (!this.app.vault.getAbstractFileByPath(notePath)) {
-				try {
-					if (!this.app.vault.getAbstractFileByPath(dirPath)) {
-						await this.app.vault.createFolder(dirPath);
-					}
-					await this.app.vault.create(
-						notePath,
-						createDefaultSessionNote(sessionName, this.settings.defaultQueueMode, chosen),
-					);
-				} catch { /* a view may have created it first; its engine stands */ }
-			}
+		try {
+			const result = await operation;
+			await this.createTerminalLeaf(project, result.sessionName);
+			new Notice(`Started ${chosen} session ${result.sessionName}`);
+		} catch (error) {
+			new Notice(`Session start failed: ${error instanceof Error ? error.message : String(error)}`);
 		}
-		await this.createTerminalLeaf(project, sessionName);
 	}
 
 	async gatherProjectTerminals(project: string): Promise<void> {
