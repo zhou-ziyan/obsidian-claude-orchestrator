@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Configured worker launch**: Session Manager can launch tagged Claude Code or Codex CLI workers for a project, with per-engine permission policy, explicit target directory, idempotent reuse, bounded capacity, startup rollback, and Lighthouse-discoverable tmux metadata.
+- **Worker launch verification**: Added policy/unit coverage and an isolated real-tmux smoke test without real credentials or agent quota.
+
 ### Changed
 - **Session Manager status distinction**: Running, idle, waiting for input, error, and no-panel states now have static labels/icons and distinct theme-aware colors; idle no longer relies on orange animation.
 - **Keyboard and motion accessibility**: Session cards are keyboard-operable with visible focus rings, and reduced-motion preferences suppress status animations and transitions.

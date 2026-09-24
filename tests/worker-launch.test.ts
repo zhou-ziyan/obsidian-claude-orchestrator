@@ -44,6 +44,10 @@ describe("worker launch policy", () => {
 			engine: "unknown", permission: "bypass", cwd: "/work", binary: "/bin/unknown",
 			cwdExists: true, binaryExists: true,
 		}), "unknown engine is not launchable");
+		assert.equal(workerLaunchPreflight({
+			engine: "codex", permission: "unexpected" as never, cwd: "/work", binary: "/bin/codex",
+			cwdExists: true, binaryExists: true,
+		}), "explicit permission policy is required for codex");
 	});
 });
 

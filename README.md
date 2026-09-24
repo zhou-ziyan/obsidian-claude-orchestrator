@@ -38,6 +38,11 @@ The sidebar also shows each engine's remaining allowance, with the source and re
 ### Flexible project setup
 Register any folder as a project — not limited to any particular vault structure. Each project gets its own tmux sessions, task queues, and session notes.
 
+### Configured worker launch
+Session Manager can launch a real Claude Code or Codex CLI worker directly in a project's configured working directory. The project settings must explicitly choose **Ask for permissions** or **Bypass permission checks** for each engine; missing or unknown policies fail closed. Workers are tagged in tmux and recorded as session notes so Lighthouse can discover them. A global maximum (default 2) prevents unbounded creation, and repeated requests reuse an existing tagged worker.
+
+Claude uses the measured `--dangerously-skip-permissions` flag for bypass mode. Codex uses `--dangerously-bypass-approvals-and-sandbox` plus `--dangerously-bypass-hook-trust`. Bypass mode is intended only for a dedicated, trusted project worktree; credentials are inherited by the CLI process and are never written to notes or logs.
+
 ## Installation
 
 ### Via BRAT (recommended)
@@ -98,6 +103,7 @@ To wire it up by hand instead, add the Stop hook to your project's `.claude/sett
 |---------|-------------|
 | Open terminal for current project | Reveal existing terminal or create one |
 | Create new terminal for current project | Always create a fresh session |
+| Launch worker session for current project | Launch the configured default engine in the project worktree |
 | Restore all terminals for current project | Reattach sessions that lost their tab |
 | Toggle simple mode | Hide/show queue and history panels |
 | Open session manager | Open the dashboard in the left sidebar |
@@ -110,6 +116,7 @@ cd obsidian-claude-orchestrator
 npm install
 npm run dev       # watch mode
 npm run check     # lint + typecheck + unit tests + tmux e2e
+npm run test:e2e:worker  # isolated tmux worker-launch smoke test (no real agent quota)
 ```
 
 The dual-engine acceptance tests drive the real Claude and Codex CLIs, so
