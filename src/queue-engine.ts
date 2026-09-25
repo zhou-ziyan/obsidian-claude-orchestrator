@@ -338,7 +338,8 @@ export class QueueEngine {
 	}
 
 	/** Prompt/health evidence is only a contradiction detector. It can mark a
-	 * missing completion signal stale, but never infer idle or authorize send. */
+	 * missing completion signal stale, but never infer idle or authorize an
+	 * automatic send. */
 	async reportLifecycleSuspicion(
 		sessionName: string,
 		reason: "cli-prompt-without-done" | "health-idle-without-done",
@@ -375,7 +376,7 @@ export class QueueEngine {
 	}
 
 	async sendNext(sessionName: string): Promise<void> {
-		await this.attemptSendNext(sessionName, true);
+		await this.attemptSendNext(sessionName, true, false);
 	}
 
 	/** Persist an inline queue edit without entering the send pipeline. Both
@@ -390,26 +391,36 @@ export class QueueEngine {
 		this.onUpdate(sessionName);
 	}
 
-	private async attemptSendNext(sessionName: string, notifyWhenBlocked: boolean): Promise<void> {
+	private async attemptSendNext(
+		sessionName: string,
+		notifyWhenBlocked: boolean,
+		enforceLifecycleGate: boolean = true,
+	): Promise<void> {
 		const revision = this.revisions.get(sessionName) ?? 0;
 		const note = await this.store.read(sessionName);
 		if (!note || note.queue.length === 0) return;
 		const provider = resolveEngineRef(note.engine).id;
-		const firstBlock = this.sendBlockedReason(sessionName, revision, provider, note.status);
-		// Second validation happens after the async read and immediately before
-		// claiming the item. A turn-start or non-completion signal increments the
-		// revision synchronously, so it wins this race without consuming Queue.
+		const firstBlock = enforceLifecycleGate
+			? this.sendBlockedReason(sessionName, revision, provider, note.status)
+			: null;
+		// Automatic sends validate again after the async read and immediately
+		// before claiming the item. A turn-start or non-completion signal bumps the
+		// revision synchronously, so it wins this race. Explicit sends deliberately
+		// bypass lifecycle state because the user's click is authoritative.
 		if (firstBlock) {
 			this.recordBlocked(sessionName, firstBlock, notifyWhenBlocked);
 			return;
 		}
+		if (!enforceLifecycleGate) this.diagnosticsFor(sessionName).lastBlockedReason = null;
 
 		const previousStatus = note.status;
 		note.status = "running";
 		const task = note.queue.shift()!;
 		note.history.push({ text: task, completed: false });
 		await this.writeNote(sessionName, note);
-		const secondBlock = this.sendBlockedReason(sessionName, revision, provider, note.status);
+		const secondBlock = enforceLifecycleGate
+			? this.sendBlockedReason(sessionName, revision, provider, note.status)
+			: null;
 		if (secondBlock) {
 			await this.restoreUnsentTask(sessionName, task, previousStatus);
 			this.recordBlocked(sessionName, secondBlock, notifyWhenBlocked);

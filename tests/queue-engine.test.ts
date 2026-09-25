@@ -94,24 +94,25 @@ describe("QueueEngine strict serial send gate", () => {
 		assert.equal(h.execs.length, 0);
 	});
 
-	it("holds explicit Send Next while the current turn is busy", async () => {
+	it("allows explicit Send Next while the current turn is busy", async () => {
 		const h = makeHarness(makeNote({ engine: "codex", status: "idle", queueMode: "manual", queue: ["next"] }));
 		await h.engine.onLifecycleSignal("P-1", "started", "codex", "turn-1:start");
 		await h.engine.sendNext("P-1");
-		assert.deepStrictEqual(h.notes.get("P-1")!.queue, ["next"]);
-		assert.equal(h.execs.length, 0);
-		assert.match(h.notifications.at(-1) ?? "", /held/i);
+		assert.deepStrictEqual(h.notes.get("P-1")!.queue, []);
+		assert.equal(h.notes.get("P-1")!.history.at(-1)?.text, "next");
+		assert.equal(h.execs.filter(isLiteralSend).length, 1);
+		assert.equal(h.notifications.length, 0);
 	});
 
-	it("fails closed after startup when persisted idle has no current lifecycle completion", async () => {
+	it("allows the first explicit send before any lifecycle completion", async () => {
 		const h = makeHarness(makeNote({ engine: "claude", status: "idle", queueMode: "manual", queue: ["first"] }));
 		await h.engine.sendNext("P-1");
-		assert.deepStrictEqual(h.notes.get("P-1")!.queue, ["first"]);
-		assert.equal(h.execs.filter(isLiteralSend).length, 0);
-		assert.equal(h.engine.getDiagnostics("P-1").lastBlockedReason, "lifecycle-unknown");
+		assert.deepStrictEqual(h.notes.get("P-1")!.queue, []);
+		assert.equal(h.execs.filter(isLiteralSend).length, 1);
+		assert.equal(h.engine.getDiagnostics("P-1").lastBlockedReason, null);
 	});
 
-	it("Auto and explicit Send Next share the same readiness gate and blocked reason", async (t) => {
+	it("keeps Auto gated by readiness while explicit Send Next remains available", async (t) => {
 		timers(t).enable({ apis: ["setInterval", "setTimeout"] });
 		const h = makeHarness(makeNote({ engine: "codex", queueMode: "auto", queue: ["next"] }), {
 			countdownSeconds: 0,
@@ -124,8 +125,8 @@ describe("QueueEngine strict serial send gate", () => {
 		assert.equal(h.execs.filter(isLiteralSend).length, 0);
 		assert.equal(h.engine.getDiagnostics("P-1").lastBlockedReason, "hook-reload-required");
 		await h.engine.sendNext("P-1");
-		assert.equal(h.execs.filter(isLiteralSend).length, 0);
-		assert.equal(h.engine.getDiagnostics("P-1").lastBlockedReason, "hook-reload-required");
+		assert.equal(h.execs.filter(isLiteralSend).length, 1);
+		assert.equal(h.engine.getDiagnostics("P-1").lastBlockedReason, null);
 	});
 
 	it("moves a turn with no completion signal to stale and never sends", async (t) => {
@@ -204,7 +205,7 @@ describe("QueueEngine strict serial send gate", () => {
 		});
 	}
 
-	it("revalidates after an async read and does not claim when a new turn starts", async () => {
+	it("honors an explicit send even when a new turn starts during its async read", async () => {
 		let releaseRead: (() => void) | null = null;
 		let blockReads = false;
 		const note = makeNote({ engine: "codex", status: "idle", queue: ["must stay queued"] });
@@ -234,8 +235,8 @@ describe("QueueEngine strict serial send gate", () => {
 		const started = engine.onLifecycleSignal("P-1", "started", "codex", "turn-2:start");
 		releaseRead?.();
 		await Promise.all([send, started]);
-		assert.deepStrictEqual(notes.get("P-1")!.queue, ["must stay queued"]);
-		assert.equal(execs.filter(isLiteralSend).length, 0);
+		assert.deepStrictEqual(notes.get("P-1")!.queue, []);
+		assert.equal(execs.filter(isLiteralSend).length, 1);
 	});
 });
 
@@ -491,11 +492,11 @@ describe("QueueEngine engine capability", () => {
 		assert.equal(saved.history[0]!.completed, false);
 	});
 
-	it("holds explicit sendNext for an undrivable engine because idle cannot be verified", async () => {
+	it("allows explicit sendNext for an engine without lifecycle support", async () => {
 		const h = makeHarness(makeNote({ engine: "gpt-5-turbo", queueMode: "manual", queue: ["do it"] }));
 		await h.engine.sendNext("P-1");
-		assert.equal(h.notes.get("P-1")!.queue.length, 1);
-		assert.equal(h.execs.length, 0);
+		assert.equal(h.notes.get("P-1")!.queue.length, 0);
+		assert.equal(h.execs.filter(isLiteralSend).length, 1);
 	});
 
 	it("ignores a note edit that would auto-send for an undrivable engine", async () => {

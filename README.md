@@ -25,7 +25,7 @@ Line up tasks in a queue below the terminal. When you're ready, send the next on
 ### Auto-send on completion
 The plugin installs structured start/completion hooks for Claude Code and Codex. A matching `Stop` event must follow the turn start and remain stably idle before the next queued item can be sent. Three modes: **Auto** (send automatically), **Listen** (notify only), or **Manual** (full control).
 
-Auto and explicit **Send next** use the same fail-closed gate. If the running Obsidian plugin is older than `main.js`, a required hook/script is missing, or a turn never produces `Stop`, the session shows **reload required**, **repair required**, or **stale** and nothing is sent. A terminal prompt is useful diagnostic evidence, but is never treated as proof that a turn completed.
+Auto-send uses a fail-closed completion gate. If the running Obsidian plugin is older than `main.js`, a required hook/script is missing, or a turn never produces `Stop`, the session shows **reload required**, **repair required**, or **stale** and Auto does not advance. A terminal prompt is useful diagnostic evidence, but is never treated as proof that a turn completed. Explicit **Send next** is a user override: it sends immediately even while the agent is running, waiting, stale, or has not emitted its first lifecycle event.
 
 ### Session Manager dashboard
 A sidebar panel showing all your sessions at a glance — grouped by project, with status indicators, queue counts, and activity timestamps. Quick-reply buttons for common responses. Idle detection flags sessions that haven't been active in 24+ hours. Hide sessions you don't need without killing them.
