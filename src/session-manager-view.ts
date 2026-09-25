@@ -54,7 +54,7 @@ import {
 	isEngineId,
 } from "./utils";
 import { findTerminalLeafBySession, collectOpenSessionNames } from "./workspace-helpers";
-import type { EngineUsage, ProjectConfig, PtyLevel } from "./utils";
+import type { EngineUsage, ProjectConfig, PtyLevel, WorkerPermissionSetting } from "./utils";
 import type ClaudeOrchestratorPlugin from "./main";
 import { existsSync } from "fs";
 import { homedir } from "os";
@@ -1374,20 +1374,20 @@ export class SessionManagerView extends ItemView {
 		}
 		engineSelect.value = config?.defaultEngine && isEngineId(config.defaultEngine) ? config.defaultEngine : "";
 
-		const workerPermissions: Record<string, "prompt" | "bypass" | ""> = {};
+		const workerPermissions: Record<string, WorkerPermissionSetting> = {};
 		for (const id of ENGINE_IDS) {
 			const def = getEngineDefinition(id);
 			if (!def) continue;
 			const permissionRow = form.createDiv({ cls: "co-sm-form-row" });
 			permissionRow.createSpan({ cls: "co-sm-form-label", text: `${def.label} worker` });
 			const permissionSelect = permissionRow.createEl("select", { cls: "co-sm-form-input co-select" });
-			permissionSelect.createEl("option", { value: "", text: "Disabled" });
+			permissionSelect.createEl("option", { value: "disabled", text: "Disabled" });
 			permissionSelect.createEl("option", { value: "prompt", text: "Ask for permissions" });
 			permissionSelect.createEl("option", { value: "bypass", text: "Bypass permission checks" });
-			permissionSelect.value = config?.workerPermissions?.[id] ?? "";
-			workerPermissions[id] = permissionSelect.value as "prompt" | "bypass" | "";
+			permissionSelect.value = config?.workerPermissions?.[id] ?? "prompt";
+			workerPermissions[id] = permissionSelect.value as WorkerPermissionSetting;
 			permissionSelect.addEventListener("change", () => {
-				workerPermissions[id] = permissionSelect.value as "prompt" | "bypass" | "";
+				workerPermissions[id] = permissionSelect.value as WorkerPermissionSetting;
 			});
 		}
 
@@ -1461,15 +1461,12 @@ export class SessionManagerView extends ItemView {
 				}
 			}
 
-			const configuredWorkerPermissions = Object.fromEntries(
-				Object.entries(workerPermissions).filter(([, value]) => value !== ""),
-			) as ProjectConfig["workerPermissions"];
 			const newConfig: ProjectConfig = {
 				vaultFolder,
 				workingDirectory,
 				inactive: inactiveChecked || undefined,
 				defaultEngine: engineSelect.value || undefined,
-				workerPermissions: Object.keys(configuredWorkerPermissions ?? {}).length > 0 ? configuredWorkerPermissions : undefined,
+				workerPermissions,
 			};
 
 			if (isEdit) {

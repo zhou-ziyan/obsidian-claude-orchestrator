@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Keyboard and motion accessibility**: Session cards are keyboard-operable with visible focus rings, and reduced-motion preferences suppress status animations and transitions.
 
 ### Fixed
+- **Worker launch blocked by missing legacy policy**: Clicking Launch Claude Code/Codex Worker now safely defaults missing project policy to prompt mode. Disabled is stored as an explicit setting and still blocks workers; bypass remains opt-in.
 - **Session note filename collisions**: New engine sessions now reserve names already used by persisted session notes as well as open tabs and live tmux sessions, preventing repeated `File already exists` failures after a prior session disappeared.
 - **New Codex/Claude session permission failure**: Interactive sessions now default to the safe prompt policy when a project has no worker permission policy, while unattended worker launch remains explicitly opt-in and fail-closed.
 - **Auto Queue after an inactive plugin update**: Detects when Obsidian is still running an older bundle or actual start/stop hooks/scripts are incomplete, requires reload/repair, and prevents both automatic and explicit queue consumption.

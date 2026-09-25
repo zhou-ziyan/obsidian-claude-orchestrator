@@ -7,7 +7,7 @@
  * requests and Lighthouse's tmux discovery can find the same worker.
  */
 import type { EngineId } from "./engines.ts";
-import type { WorkerPermissionMode } from "./projects.ts";
+import type { WorkerPermissionMode, WorkerPermissionSetting } from "./projects.ts";
 
 export type WorkerLaunchKind = "worker" | "interactive";
 
@@ -57,16 +57,18 @@ export interface WorkerLaunchResult {
 }
 
 /**
- * Interactive sessions have a human at the terminal, so they can safely use
- * the least-privileged prompt policy when the project has not opted into an
- * unattended-worker policy. Workers remain fail-closed without an explicit
- * project setting.
+ * Clicking either launch action is explicit authorization to start the CLI.
+ * Missing legacy settings therefore use the least-privileged prompt policy.
+ * A persisted disabled value still blocks workers, but never blocks a normal
+ * interactive session.
  */
 export function resolveLaunchPermission(
 	kind: WorkerLaunchKind,
-	configured: WorkerPermissionMode | undefined,
+	configured: WorkerPermissionSetting | undefined,
 ): WorkerPermissionMode | undefined {
-	return configured ?? (kind === "interactive" ? "prompt" : undefined);
+	if (configured === "prompt" || configured === "bypass") return configured;
+	if (configured === undefined || kind === "interactive") return "prompt";
+	return undefined;
 }
 
 /** Quote one argument for the interactive POSIX shell inside tmux. */

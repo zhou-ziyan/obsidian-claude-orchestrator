@@ -11,11 +11,12 @@ export interface ProjectConfig {
 	/** Engine new sessions in this project start on. Absent means fall
 	 * through to the global default (which is Claude). */
 	defaultEngine?: string;
-	/** Permission policy for Manager-launched workers. Missing means disabled. */
-	workerPermissions?: Partial<Record<"claude" | "codex", WorkerPermissionMode>>;
+	/** Permission policy for Manager-launched workers. Missing defaults to prompt. */
+	workerPermissions?: Partial<Record<"claude" | "codex", WorkerPermissionSetting>>;
 }
 
 export type WorkerPermissionMode = "prompt" | "bypass";
+export type WorkerPermissionSetting = WorkerPermissionMode | "disabled";
 
 export type ProjectRegistry = Record<string, ProjectConfig>;
 
