@@ -129,6 +129,8 @@ import {
 	stopSignalKey,
 	StopSignalLedger,
 	newSessionEngine,
+	newSessionQueueMode,
+	DEFAULT_QUEUE_MODE,
 	engineQueueModes,
 	CARD_DRAG_IGNORE_SELECTOR,
 	selectorCoversTag,
@@ -722,7 +724,7 @@ describe("restoreSessionNote", () => {
 		const result = restoreSessionNote(archive, "new-session-1");
 		assert.equal(result.session, "new-session-1");
 		assert.equal(result.status, "idle");
-		assert.equal(result.queueMode, "manual");
+		assert.equal(result.queueMode, "auto");
 		assert.equal(result.displayName, "");
 		assert.equal(result.summary, "");
 		assert.equal(result.notes, "some notes");
@@ -1397,9 +1399,18 @@ describe("migrateSettings", () => {
 		assert.equal("queuePanel" in result, true);
 	});
 
-	it("returns empty object unchanged", () => {
+	it("migrates legacy settings with no queue choice to the new auto default", () => {
 		const result = migrateSettings({});
-		assert.deepEqual(result, {});
+		assert.deepEqual(result, { defaultQueueMode: "auto" });
+	});
+
+	it("preserves an explicit user queue-mode override", () => {
+		assert.equal(migrateSettings({ defaultQueueMode: "manual" }).defaultQueueMode, "manual");
+		assert.equal(migrateSettings({ defaultQueueMode: "listen" }).defaultQueueMode, "listen");
+	});
+
+	it("repairs an invalid persisted queue mode to auto", () => {
+		assert.equal(migrateSettings({ defaultQueueMode: "turbo" }).defaultQueueMode, "auto");
 	});
 
 	it("preserves other fields during migration", () => {
@@ -1916,14 +1927,19 @@ describe("parseSessionNote queueMode", () => {
 		const reparsed = parseSessionNote(serialized);
 		assert.equal(reparsed.queueMode, "listen");
 	});
+
+	it("preserves an existing session's explicit manual choice", () => {
+		const note = parseSessionNote("---\nsession: existing\nstatus: idle\nqueueMode: manual\n---\n\n## History\n\n## Queue\n");
+		assert.match(serializeSessionNote(note), /queueMode: manual/);
+	});
 });
 
 describe("createDefaultSessionNote queueMode", () => {
-	it("includes queueMode: manual in default note", () => {
+	it("includes queueMode: auto in default note", () => {
 		const content = createDefaultSessionNote("test-session");
-		assert.ok(content.includes("queueMode: manual"));
+		assert.ok(content.includes("queueMode: auto"));
 		const parsed = parseSessionNote(content);
-		assert.equal(parsed.queueMode, "manual");
+		assert.equal(parsed.queueMode, "auto");
 	});
 
 	it("uses custom queueMode when provided", () => {
@@ -1939,10 +1955,10 @@ describe("createDefaultSessionNote queueMode", () => {
 		assert.equal(parsed.queueMode, "listen");
 	});
 
-	it("defaults to manual when queueMode omitted", () => {
+	it("defaults to auto when queueMode omitted", () => {
 		const content = createDefaultSessionNote("test-session");
 		const parsed = parseSessionNote(content);
-		assert.equal(parsed.queueMode, "manual");
+		assert.equal(parsed.queueMode, "auto");
 	});
 });
 
@@ -5597,6 +5613,37 @@ describe("stale session status", () => {
 			dataStatus: "stale",
 			label: "Stale",
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// New-session queue-mode defaults and overrides
+// ---------------------------------------------------------------------------
+
+describe("new session queue mode", () => {
+	it("defaults unconfigured new sessions to auto", () => {
+		assert.equal(DEFAULT_QUEUE_MODE, "auto");
+		assert.equal(newSessionQueueMode(undefined, undefined), "auto");
+	});
+
+	it("preserves an explicit global user override", () => {
+		assert.equal(newSessionQueueMode(undefined, "manual"), "manual");
+		assert.equal(newSessionQueueMode(undefined, "listen"), "listen");
+	});
+
+	it("prefers a project override over the global user setting", () => {
+		assert.equal(newSessionQueueMode("listen", "manual"), "listen");
+	});
+
+	it("falls back safely when persisted values are invalid", () => {
+		assert.equal(newSessionQueueMode("turbo", "manual"), "manual");
+		assert.equal(newSessionQueueMode("turbo", "also-bad"), "auto");
+	});
+
+	it("persists a project override through unrelated edits", () => {
+		let reg = addProject({}, "P", { vaultFolder: "f", defaultQueueMode: "manual" });
+		reg = updateProjectConfig(reg, "P", { workingDirectory: "/code/p" });
+		assert.equal(reg.P?.defaultQueueMode, "manual");
 	});
 });
 
