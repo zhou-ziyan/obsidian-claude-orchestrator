@@ -5435,6 +5435,17 @@ describe("StopSignalLedger", () => {
 		timestamp: 100, stopReason: "done", vault: null, provider: "codex", turnId: "t1", ...over,
 	});
 
+	it("returns diagnostic reasons for duplicate and out-of-order rejection", () => {
+		const ledger = new StopSignalLedger();
+		const newest = sig({ timestamp: 200, turnId: "t2" });
+		assert.deepStrictEqual(ledger.evaluate(newest), { accepted: true, reason: null });
+		assert.deepStrictEqual(ledger.evaluate(newest), { accepted: false, reason: "duplicate" });
+		assert.deepStrictEqual(
+			ledger.evaluate(sig({ timestamp: 100, turnId: "t1" })),
+			{ accepted: false, reason: "out-of-order" },
+		);
+	});
+
 	it("accepts a signal the first time", () => {
 		assert.equal(new StopSignalLedger().accept(sig()), true);
 	});
