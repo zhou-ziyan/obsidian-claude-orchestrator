@@ -48,9 +48,11 @@ describe("StopHookWatcher polling and vault isolation", () => {
 		const workSeen: string[] = [];
 		const lifeSeen: string[] = [];
 		const noWatch = { signalDir: dir, pollMs: 10, watch: () => ({ close() {} }) };
+		const diagnostics: string[] = [];
 		const work = new StopHookWatcher(() => ({ P: { vaultFolder: "P" } }), () => "Work", noWatch);
 		const life = new StopHookWatcher(() => ({ P: { vaultFolder: "P" } }), () => "Life", noWatch);
 		work.onSignal((signal) => workSeen.push(signal.tmuxSession));
+		work.onDiagnostic((diagnostic) => diagnostics.push(diagnostic.reason));
 		life.onSignal((signal) => lifeSeen.push(signal.tmuxSession));
 		work.start();
 		try {
@@ -59,12 +61,37 @@ describe("StopHookWatcher polling and vault isolation", () => {
 			}));
 			await new Promise((resolve) => setTimeout(resolve, 30));
 			assert.deepStrictEqual(workSeen, []);
+			assert.ok(diagnostics.includes("vault-mismatch"));
 			life.start();
 			await waitFor(() => lifeSeen.length === 1);
 			assert.deepStrictEqual(lifeSeen, ["P-1"]);
 		} finally {
 			work.stop();
 			life.stop();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("records why an invalid signal was discarded without retaining its contents", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "co-watch-invalid-"));
+		const diagnostics: { reason: string; tmuxSession: string | null }[] = [];
+		const watcher = new StopHookWatcher(
+			() => ({ P: { vaultFolder: "P" } }),
+			() => "Work",
+			{ signalDir: dir, pollMs: 10, watch: () => ({ close() {} }) },
+		);
+		watcher.onDiagnostic((diagnostic) => diagnostics.push({
+			reason: diagnostic.reason,
+			tmuxSession: diagnostic.tmuxSession,
+		}));
+		watcher.start();
+		try {
+			writeFileSync(join(dir, "invalid.json"), "prompt正文与token不应进入诊断");
+			await waitFor(() => diagnostics.length === 1);
+			assert.deepStrictEqual(diagnostics, [{ reason: "invalid-signal", tmuxSession: null }]);
+			assert.doesNotMatch(JSON.stringify(diagnostics), /prompt正文|token/);
+		} finally {
+			watcher.stop();
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
