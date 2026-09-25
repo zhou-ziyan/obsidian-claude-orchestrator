@@ -23,7 +23,9 @@ Open a project note and the terminal auto-attaches to that project's tmux sessio
 Line up tasks in a queue below the terminal. When you're ready, send the next one — or let auto-send handle it. Everything you've sent is logged in a history panel with timestamps and completion status. Pin a vault note to any session for quick reference.
 
 ### Auto-send on completion
-Connect Claude Code's [Stop hook](https://docs.anthropic.com/en/docs/claude-code/hooks) to the plugin. When Claude finishes a task, the plugin detects it and auto-sends the next queued item after a 3-second countdown (cancelable). Three modes: **Auto** (send automatically), **Listen** (notify only), or **Manual** (full control).
+The plugin installs structured start/completion hooks for Claude Code and Codex. A matching `Stop` event must follow the turn start and remain stably idle before the next queued item can be sent. Three modes: **Auto** (send automatically), **Listen** (notify only), or **Manual** (full control).
+
+Auto and explicit **Send next** use the same fail-closed gate. If the running Obsidian plugin is older than `main.js`, a required hook/script is missing, or a turn never produces `Stop`, the session shows **reload required**, **repair required**, or **stale** and nothing is sent. A terminal prompt is useful diagnostic evidence, but is never treated as proof that a turn completed.
 
 ### Session Manager dashboard
 A sidebar panel showing all your sessions at a glance — grouped by project, with status indicators, queue counts, and activity timestamps. Quick-reply buttons for common responses. Idle detection flags sessions that haven't been active in 24+ hours. Hide sessions you don't need without killing them.
@@ -73,31 +75,29 @@ bash install.sh "<vault>"
 
 ### Auto-send setup (optional)
 
-The plugin registers the hooks it needs on load — Claude Code's `Stop` and
-`Notification` in `~/.claude/settings.json`, and Codex's `Stop`,
-`PermissionRequest` and `Interrupt` in `~/.codex/hooks.json`. Codex requires
-you to trust a hook script before it will run it, so approve the prompt the
-first time (and again if the scripts change with a plugin update).
+The plugin registers the hooks it needs on load — Claude Code's
+`UserPromptSubmit`, `Stop`, and `Notification` in
+`~/.claude/settings.json`; Codex's `UserPromptSubmit`, `Stop`,
+`PermissionRequest`, and `Interrupt` in `~/.codex/hooks.json`. Scripts are
+materialized at the stable, vault-independent path
+`~/.claude-orchestrator/scripts/`. Existing unrelated hooks, including
+`SessionEnd`, are preserved.
 
-To wire it up by hand instead, add the Stop hook to your project's `.claude/settings.json`:
+Readiness checks the running/disk bundle generation, declared events, exact
+script paths and bodies, executable bits, and provider ownership. Session
+Manager and plugin settings show the last lifecycle event, signal age, and
+the most recent rejection/block reason without recording prompts, tokens, or
+agent output. After updating a development build, reload safely with:
 
-```json
-{
-  "hooks": {
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash scripts/co-stop-hook.sh"
-          }
-        ]
-      }
-    ]
-  }
-}
+```bash
+obsidian plugin:reload id=claude-orchestrator vault="Work"
 ```
+
+Codex requires you to trust a hook script before it will run it, so approve
+the prompt the first time (and again if the scripts change with a plugin
+update). Do not hand-edit hook paths unless diagnosing a failed automatic
+repair; reload the plugin first so it can materialize and register the exact
+version it is running.
 
 ## Commands
 

@@ -7,15 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Runtime hook readiness and lifecycle diagnostics**: Session Manager and settings now expose provider-scoped hook readiness, runtime/bundle generation drift, last lifecycle transition, signal age, and privacy-safe rejection/block reasons.
 - **Automatic engine start for new sessions**: Explicit New Claude Code/Codex actions now start the selected CLI through the shared launch path, while attach/restore remains idempotent and unattended worker limits stay separate.
 - **Configured worker launch**: Session Manager can launch tagged Claude Code or Codex CLI workers for a project, with per-engine permission policy, explicit target directory, idempotent reuse, bounded capacity, startup rollback, and Lighthouse-discoverable tmux metadata.
 - **Worker launch verification**: Added policy/unit coverage and an isolated real-tmux smoke test without real credentials or agent quota.
 
 ### Changed
+- **Fail-closed Queue gate**: Auto and explicit Send next now require the same provider-matched completion, 750 ms stable-idle, current hook readiness, and final revision check. A CLI prompt never authorizes sending.
+- **Missing completion becomes stale**: A started turn without a terminal lifecycle event transitions to `stale` and remains blocked instead of leaving an apparently usable persisted status forever.
 - **Session Manager status distinction**: Running, idle, waiting for input, error, and no-panel states now have static labels/icons and distinct theme-aware colors; idle no longer relies on orange animation.
 - **Keyboard and motion accessibility**: Session cards are keyboard-operable with visible focus rings, and reduced-motion preferences suppress status animations and transitions.
 
 ### Fixed
+- **Auto Queue after an inactive plugin update**: Detects when Obsidian is still running an older bundle or actual start/stop hooks/scripts are incomplete, requires reload/repair, and prevents both automatic and explicit queue consumption.
+- **Lifecycle signal races**: Duplicate, out-of-order, vault/provider/session/turn-mismatched signals are rejected with bounded diagnostics; polling recovers files missed by `fs.watch` without letting one vault consume another's signal.
 - **Silent status mapping**: Unknown and `silent` session statuses remain idle instead of being presented as busy/running.
 
 ## [0.0.96] - 2026-04-20
