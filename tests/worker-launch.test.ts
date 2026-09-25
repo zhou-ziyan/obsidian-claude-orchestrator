@@ -5,10 +5,18 @@ import {
 	buildWorkerLaunchLine,
 	launchWorkerSession,
 	parseWorkerSessions,
+	resolveLaunchPermission,
 	workerLaunchPreflight,
 } from "../src/worker-launch.ts";
 
 describe("worker launch policy", () => {
+	it("defaults interactive sessions to prompt mode without enabling unattended workers", () => {
+		assert.equal(resolveLaunchPermission("interactive", undefined), "prompt");
+		assert.equal(resolveLaunchPermission("interactive", "bypass"), "bypass");
+		assert.equal(resolveLaunchPermission("worker", undefined), undefined);
+		assert.equal(resolveLaunchPermission("worker", "prompt"), "prompt");
+	});
+
 	it("uses the measured explicit bypass flags per engine", () => {
 		assert.deepEqual(
 			buildWorkerLaunchArgs("claude", "/opt/homebrew/bin/claude", "bypass", "/work/tree"),

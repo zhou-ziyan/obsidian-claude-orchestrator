@@ -1,7 +1,7 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, parseAllTmuxSessions, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, createDefaultSessionNote, ensureEngineHookConfig, materializeHookScripts, hookScriptsDir, HOOK_SCRIPT_SOURCES, bundleGeneration, inspectHookReadiness, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, StopSignalLedger, stopSignalKey, availableEngineIds, engineCreatesHookFile, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, newSessionEngine, isEngineId, ENGINE_IDS, getEngineDefinition, DEFAULT_ENGINE_ID, computeSessionCwd, resolveEngineBinary, launchWorkerSession, shellQuote } from "./utils";
+import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, parseAllTmuxSessions, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, createDefaultSessionNote, ensureEngineHookConfig, materializeHookScripts, hookScriptsDir, HOOK_SCRIPT_SOURCES, bundleGeneration, inspectHookReadiness, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, StopSignalLedger, stopSignalKey, availableEngineIds, engineCreatesHookFile, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, newSessionEngine, isEngineId, ENGINE_IDS, getEngineDefinition, DEFAULT_ENGINE_ID, computeSessionCwd, resolveEngineBinary, launchWorkerSession, resolveLaunchPermission, shellQuote } from "./utils";
 import type { EngineId, HookReadinessSnapshot, HookScriptFs, ProjectRegistry, ProviderHookReadiness, QueueMode, SessionNote, SlashCommandEntry, StopReason, ThemeName } from "./utils";
 import { QUEUE_MODES, queueModeLabel } from "./utils";
 import { QueueEngine } from "./queue-engine";
@@ -370,7 +370,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		const config = this.settings.projects[project];
 		if (!config) throw new Error(`Unknown project: ${project}`);
 		if (config.inactive) throw new Error(`Project is inactive: ${project}`);
-		const permission = config.workerPermissions?.[engine];
+		const permission = resolveLaunchPermission(kind, config.workerPermissions?.[engine]);
 		const adapter = this.app.vault.adapter;
 		const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : null;
 		const cwd = computeSessionCwd(config.workingDirectory, config.vaultFolder, basePath, homedir());

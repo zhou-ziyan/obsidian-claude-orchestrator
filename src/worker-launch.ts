@@ -56,6 +56,19 @@ export interface WorkerLaunchResult {
 	sessionName: string;
 }
 
+/**
+ * Interactive sessions have a human at the terminal, so they can safely use
+ * the least-privileged prompt policy when the project has not opted into an
+ * unattended-worker policy. Workers remain fail-closed without an explicit
+ * project setting.
+ */
+export function resolveLaunchPermission(
+	kind: WorkerLaunchKind,
+	configured: WorkerPermissionMode | undefined,
+): WorkerPermissionMode | undefined {
+	return configured ?? (kind === "interactive" ? "prompt" : undefined);
+}
+
 /** Quote one argument for the interactive POSIX shell inside tmux. */
 export function shellQuote(token: string): string {
 	return /^[A-Za-z0-9_@%+=:,./-]+$/.test(token)
