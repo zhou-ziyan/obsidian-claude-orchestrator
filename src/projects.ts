@@ -54,6 +54,17 @@ export function collectNoteNamesFromFiles(fileNames: string[]): Set<string> {
 	return names;
 }
 
+/** Pick the next name while treating persisted session notes as occupied. */
+export function generateSessionNameWithNotes(
+	project: string,
+	existingNames: Set<string>,
+	noteFileNames: string[],
+): string {
+	const occupied = new Set(existingNames);
+	for (const name of collectNoteNamesFromFiles(noteFileNames)) occupied.add(name);
+	return generateSessionName(project, occupied);
+}
+
 export function normalizeVaultFolder(raw: string): string {
 	const trimmed = raw.replace(/^\/+|\/+$/g, "");
 	return trimmed === "." ? "" : trimmed;

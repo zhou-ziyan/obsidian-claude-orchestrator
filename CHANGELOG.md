@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Keyboard and motion accessibility**: Session cards are keyboard-operable with visible focus rings, and reduced-motion preferences suppress status animations and transitions.
 
 ### Fixed
+- **Session note filename collisions**: New engine sessions now reserve names already used by persisted session notes as well as open tabs and live tmux sessions, preventing repeated `File already exists` failures after a prior session disappeared.
 - **New Codex/Claude session permission failure**: Interactive sessions now default to the safe prompt policy when a project has no worker permission policy, while unattended worker launch remains explicitly opt-in and fail-closed.
 - **Auto Queue after an inactive plugin update**: Detects when Obsidian is still running an older bundle or actual start/stop hooks/scripts are incomplete, requires reload/repair, and prevents both automatic and explicit queue consumption.
 - **Lifecycle signal races**: Duplicate, out-of-order, vault/provider/session/turn-mismatched signals are rejected with bounded diagnostics; polling recovers files missed by `fs.watch` without letting one vault consume another's signal.

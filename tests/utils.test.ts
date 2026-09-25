@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	generateSessionName,
+	generateSessionNameWithNotes,
 	resolveProjectFromPath,
 	normalizeViewState,
 	parseTmuxSessionsForProject,
@@ -259,6 +260,17 @@ describe("collectNoteNamesFromFiles", () => {
 // --- generateSessionName with disk note dedup ---
 
 describe("generateSessionName with disk note names", () => {
+	it("combines live sessions and persisted note files for the launch path", () => {
+		assert.equal(
+			generateSessionNameWithNotes(
+				"15_Claude_Orchestrator",
+				new Set(["15_Claude_Orchestrator-1"]),
+				["15_Claude_Orchestrator-2.md", "notes.txt"],
+			),
+			"15_Claude_Orchestrator-3",
+		);
+	});
+
 	it("skips numbers used by disk notes even when no tabs are open", () => {
 		const diskNotes = collectNoteNamesFromFiles([
 			"15_Claude_Orchestrator-1.md",
