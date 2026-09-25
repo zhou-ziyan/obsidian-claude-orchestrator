@@ -5538,6 +5538,22 @@ describe("error session status", () => {
 	});
 });
 
+describe("stale session status", () => {
+	it("round-trips through the session note", () => {
+		const note = parseSessionNote("---\nsession: P-1\nstatus: stale\nqueueMode: auto\n---\n\n## Notes\n\n## History\n\n## Queue\n");
+		assert.equal(note.status, "stale");
+		assert.match(serializeSessionNote(note), /status: stale/);
+	});
+
+	it("shows a distinct unknown/stale status instead of idle", () => {
+		assert.deepStrictEqual(sessionStatusDisplay(true, "stale"), {
+			cls: "co-sm-status co-sm-status-stale",
+			dataStatus: "stale",
+			label: "Stale",
+		});
+	});
+});
+
 // ---------------------------------------------------------------------------
 // Per-project default engine persistence
 // ---------------------------------------------------------------------------

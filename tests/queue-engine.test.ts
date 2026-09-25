@@ -39,7 +39,7 @@ interface Harness {
 	updates: string[];
 }
 
-function makeHarness(note: SessionNote, opts: { countdownSeconds?: number; idleStabilityMs?: number; playSoundOnAsking?: boolean } = {}): Harness {
+function makeHarness(note: SessionNote, opts: { countdownSeconds?: number; idleStabilityMs?: number; lifecycleStaleMs?: number; playSoundOnAsking?: boolean; readiness?: "ready" | "reload-required" | "repair-required" } = {}): Harness {
 	const notes = new Map<string, SessionNote>([[note.session, note]]);
 	const writes: { session: string; note: SessionNote }[] = [];
 	const execs: string[][] = [];
@@ -62,6 +62,13 @@ function makeHarness(note: SessionNote, opts: { countdownSeconds?: number; idleS
 		},
 		getCountdownSeconds: () => opts.countdownSeconds ?? 3,
 		idleStabilityMs: opts.idleStabilityMs ?? 0,
+		lifecycleStaleMs: opts.lifecycleStaleMs ?? 60_000,
+		getHookReadiness: (provider) => ({
+			provider,
+			ready: (opts.readiness ?? "ready") === "ready",
+			state: opts.readiness ?? "ready",
+			reason: opts.readiness === "reload-required" ? "Reload required" : opts.readiness === "repair-required" ? "Repair required" : null,
+		}),
 		playSoundOnAsking: () => opts.playSoundOnAsking ?? false,
 		onUpdate: (s) => { updates.push(s); },
 		sendKeyDelayMs: 0,
@@ -96,11 +103,74 @@ describe("QueueEngine strict serial send gate", () => {
 		assert.match(h.notifications.at(-1) ?? "", /held/i);
 	});
 
-	it("keeps explicit Send Next usable for a stably idle startup session", async () => {
+	it("fails closed after startup when persisted idle has no current lifecycle completion", async () => {
 		const h = makeHarness(makeNote({ engine: "claude", status: "idle", queueMode: "manual", queue: ["first"] }));
 		await h.engine.sendNext("P-1");
-		assert.deepStrictEqual(h.notes.get("P-1")!.queue, []);
-		assert.equal(h.execs.filter(isLiteralSend).length, 1);
+		assert.deepStrictEqual(h.notes.get("P-1")!.queue, ["first"]);
+		assert.equal(h.execs.filter(isLiteralSend).length, 0);
+		assert.equal(h.engine.getDiagnostics("P-1").lastBlockedReason, "lifecycle-unknown");
+	});
+
+	it("Auto and explicit Send Next share the same readiness gate and blocked reason", async (t) => {
+		timers(t).enable({ apis: ["setInterval", "setTimeout"] });
+		const h = makeHarness(makeNote({ engine: "codex", queueMode: "auto", queue: ["next"] }), {
+			countdownSeconds: 0,
+			readiness: "reload-required",
+		});
+		await h.engine.onLifecycleSignal("P-1", "started", "codex", "turn-1:start", { sessionId: "session-1", turnId: "turn-1", timestamp: 10, source: "hook" });
+		await h.engine.onLifecycleSignal("P-1", "done", "codex", "turn-1:done", { sessionId: "session-1", turnId: "turn-1", timestamp: 11, source: "hook" });
+		timers(t).tick(5_000);
+		await h.engine.flush();
+		assert.equal(h.execs.filter(isLiteralSend).length, 0);
+		assert.equal(h.engine.getDiagnostics("P-1").lastBlockedReason, "hook-reload-required");
+		await h.engine.sendNext("P-1");
+		assert.equal(h.execs.filter(isLiteralSend).length, 0);
+		assert.equal(h.engine.getDiagnostics("P-1").lastBlockedReason, "hook-reload-required");
+	});
+
+	it("moves a turn with no completion signal to stale and never sends", async (t) => {
+		timers(t).enable({ apis: ["setInterval", "setTimeout"] });
+		const h = makeHarness(makeNote({ engine: "claude", queueMode: "auto", queue: ["must stay"] }), {
+			countdownSeconds: 0,
+			lifecycleStaleMs: 500,
+		});
+		await h.engine.onLifecycleSignal("P-1", "started", "claude", "turn-1:start", { sessionId: "session-1", turnId: null, timestamp: 10, source: "hook" });
+		timers(t).tick(500);
+		await h.engine.flush();
+		assert.equal(h.notes.get("P-1")!.status, "stale");
+		assert.deepStrictEqual(h.notes.get("P-1")!.queue, ["must stay"]);
+		assert.equal(h.execs.filter(isLiteralSend).length, 0);
+		assert.equal(h.engine.getDiagnostics("P-1").lastBlockedReason, "completion-signal-missing");
+	});
+
+	it("CLI prompt evidence without done marks stale but never authorizes idle or send", async () => {
+		const h = makeHarness(makeNote({ engine: "codex", queueMode: "auto", queue: ["must stay"] }));
+		await h.engine.onLifecycleSignal("P-1", "started", "codex", "turn-1:start", { sessionId: "session-1", turnId: "turn-1", timestamp: 10, source: "hook" });
+		await h.engine.reportLifecycleSuspicion("P-1", "cli-prompt-without-done");
+		assert.equal(h.notes.get("P-1")!.status, "stale");
+		assert.equal(h.engine.isIdle("P-1"), false);
+		assert.equal(h.execs.filter(isLiteralSend).length, 0);
+	});
+
+	it("rejects turn and provider mismatch with a diagnostic reason", async () => {
+		const h = makeHarness(makeNote({ engine: "codex", queueMode: "auto", queue: ["must stay"] }));
+		await h.engine.onLifecycleSignal("P-1", "started", "codex", "turn-1:start", { sessionId: "session-1", turnId: "turn-1", timestamp: 10, source: "hook" });
+		await h.engine.onLifecycleSignal("P-1", "done", "codex", "turn-2:done", { sessionId: "session-1", turnId: "turn-2", timestamp: 11, source: "hook" });
+		assert.equal(h.engine.getDiagnostics("P-1").lastRejectedReason, "turn-mismatch");
+		await h.engine.onLifecycleSignal("P-1", "done", "claude", "wrong-provider", { sessionId: "session-1", turnId: null, timestamp: 12, source: "hook" });
+		assert.equal(h.engine.getDiagnostics("P-1").lastRejectedReason, "provider-mismatch");
+		assert.equal(h.engine.isIdle("P-1"), false);
+	});
+
+	it("exposes only minimal lifecycle observability and signal age", async () => {
+		const h = makeHarness(makeNote({ engine: "codex" }));
+		await h.engine.onLifecycleSignal("P-1", "started", "codex", "turn-1:start", { sessionId: "session-1", turnId: "turn-1", timestamp: 10, source: "hook" });
+		const diagnostic = h.engine.getDiagnostics("P-1", 15_000);
+		assert.deepStrictEqual(diagnostic.lastEvent, {
+			provider: "codex", sessionId: "session-1", turnId: "turn-1", kind: "started", timestamp: 10, source: "hook",
+		});
+		assert.equal(diagnostic.signalAgeMs, 5_000);
+		assert.doesNotMatch(JSON.stringify(diagnostic), /prompt|token|assistant/i);
 	});
 
 	it("sends exactly once after a matching completion and stable idle window", async (t) => {
