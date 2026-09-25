@@ -196,6 +196,26 @@ function typeLine(session: string, line: string): void {
 	tmux(["send-keys", "-t", session, "Enter"]);
 }
 
+/**
+ * A fresh QueueEngine intentionally distrusts persisted `status: idle`.
+ * Prime the isolated harness with one provider-scoped lifecycle before using
+ * Send next; the real CLI turn that follows still has to produce its own
+ * start/end hooks. In Auto mode the completion also sends the first item.
+ */
+async function primeLifecycleGate(rig: Rig, provider: "claude" | "codex"): Promise<void> {
+	const timestamp = Math.floor(Date.now() / 1000);
+	const sessionId = `e2e-bootstrap-${RUN_TAG}`;
+	const turnId = provider === "codex" ? `e2e-turn-${RUN_TAG}` : null;
+	await rig.engine.onLifecycleSignal(rig.session, "started", provider, `${provider}:bootstrap:start`, {
+		sessionId, turnId, timestamp, source: "internal",
+	});
+	await rig.engine.onLifecycleSignal(rig.session, "done", provider, `${provider}:bootstrap:done`, {
+		sessionId, turnId, timestamp: timestamp + 1, source: "internal",
+	});
+	await sleep(150);
+	await rig.engine.flush();
+}
+
 /** Isolated CODEX_HOME carrying only auth plus the hooks under test. */
 function setupCodexHome(): string {
 	const home = mkdtempSync(join(tmpdir(), "co-e2e-codex-home-"));
@@ -261,7 +281,7 @@ describe("e2e: Codex through the queue engine", { skip: !CODEX_READY, concurrenc
 			await launchCodex(session, "-s read-only");
 
 			// --- item 1 ---
-			await rig.engine.sendNext(session);
+			await primeLifecycleGate(rig, "codex");
 			assert.equal(rig.notes.get(session)!.queue.length, 1, "one item left queued");
 
 			const firstStart = await awaitSignal(rig.signals, 30_000, "started");
@@ -406,6 +426,7 @@ describe("e2e: Claude through the queue engine", { skip: !CLAUDE_READY, concurre
 			// starts honoring the submit keystroke.
 			await sleep(3000);
 
+			await primeLifecycleGate(rig, "claude");
 			await rig.engine.sendNext(session);
 			assert.deepStrictEqual(rig.notes.get(session)!.queue, [], "task left the queue");
 
@@ -413,7 +434,7 @@ describe("e2e: Claude through the queue engine", { skip: !CLAUDE_READY, concurre
 			assert.equal(started?.stopReason, "started", "Claude UserPromptSubmit disarms Queue");
 			await rig.engine.onLifecycleSignal(session, "started", "claude", stopSignalKey(started));
 			const signal = await awaitSignal(rig.signals, 180_000, "done");
-			assert.notEqual(signal, null, "Claude's Stop hook produced a signal");
+			assert.notEqual(signal, null, `Claude's Stop hook produced a signal. Pane was:\n${pane(session)}`);
 			assert.equal(signal!.provider, "claude", "untagged signals are attributed to Claude");
 			assert.equal(signal!.turnId, null, "Claude supplies no turn id — correlation falls back to session id");
 
