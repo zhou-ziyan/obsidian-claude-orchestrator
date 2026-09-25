@@ -11,7 +11,7 @@ export interface ProjectConfig {
 	/** Engine new sessions in this project start on. Absent means fall
 	 * through to the global default (which is Claude). */
 	defaultEngine?: string;
-	/** Permission policy for Manager-launched workers. Missing defaults to prompt. */
+	/** Permission policy for Manager-launched workers. Missing defaults to full access. */
 	workerPermissions?: Partial<Record<"claude" | "codex", WorkerPermissionSetting>>;
 }
 

@@ -10,12 +10,13 @@ import {
 } from "../src/worker-launch.ts";
 
 describe("worker launch policy", () => {
-	it("defaults explicit launch actions to prompt mode and honors a persisted disabled worker", () => {
+	it("defaults workers to full access while keeping interactive sessions in prompt mode", () => {
 		assert.equal(resolveLaunchPermission("interactive", undefined), "prompt");
-		assert.equal(resolveLaunchPermission("interactive", "bypass"), "bypass");
+		assert.equal(resolveLaunchPermission("interactive", "bypass"), "prompt");
 		assert.equal(resolveLaunchPermission("interactive", "disabled"), "prompt");
-		assert.equal(resolveLaunchPermission("worker", undefined), "prompt");
+		assert.equal(resolveLaunchPermission("worker", undefined), "bypass");
 		assert.equal(resolveLaunchPermission("worker", "prompt"), "prompt");
+		assert.equal(resolveLaunchPermission("worker", "bypass"), "bypass");
 		assert.equal(resolveLaunchPermission("worker", "disabled"), undefined);
 	});
 

@@ -1383,8 +1383,8 @@ export class SessionManagerView extends ItemView {
 			const permissionSelect = permissionRow.createEl("select", { cls: "co-sm-form-input co-select" });
 			permissionSelect.createEl("option", { value: "disabled", text: "Disabled" });
 			permissionSelect.createEl("option", { value: "prompt", text: "Ask for permissions" });
-			permissionSelect.createEl("option", { value: "bypass", text: "Bypass permission checks" });
-			permissionSelect.value = config?.workerPermissions?.[id] ?? "prompt";
+			permissionSelect.createEl("option", { value: "bypass", text: "Full access (bypass checks)" });
+			permissionSelect.value = config?.workerPermissions?.[id] ?? "bypass";
 			workerPermissions[id] = permissionSelect.value as WorkerPermissionSetting;
 			permissionSelect.addEventListener("change", () => {
 				workerPermissions[id] = permissionSelect.value as WorkerPermissionSetting;

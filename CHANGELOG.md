@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Worker launch verification**: Added policy/unit coverage and an isolated real-tmux smoke test without real credentials or agent quota.
 
 ### Changed
+- **Full-access worker default**: Explicit Launch Claude Code/Codex Worker actions now default missing project policy to full access for autonomous operation. Ordinary interactive sessions remain in prompt mode, while explicit Disabled/Ask/Full access worker settings are still honored.
 - **Fail-closed Queue gate**: Auto and explicit Send next now require the same provider-matched completion, 750 ms stable-idle, current hook readiness, and final revision check. A CLI prompt never authorizes sending.
 - **Missing completion becomes stale**: A started turn without a terminal lifecycle event transitions to `stale` and remains blocked instead of leaving an apparently usable persisted status forever.
 - **Session Manager status distinction**: Running, idle, waiting for input, error, and no-panel states now have static labels/icons and distinct theme-aware colors; idle no longer relies on orange animation.

@@ -28,7 +28,9 @@ describe("e2e: isolated tmux worker launch", () => {
 		try {
 			const result = await launchWorkerSession({
 				project: "E2E", engine: "claude", sessionName: session, cwd,
-				binary: fakeCli, permission: "bypass", maxConcurrent: 1,
+				// Capacity behavior is unit-tested. Keep this launch smoke test
+				// independent of real tagged workers already running on the host.
+				binary: fakeCli, permission: "bypass", maxConcurrent: 100,
 				notePath: join(cwd, "session.md"), noteContent: "engine: claude",
 			}, {
 				exec,

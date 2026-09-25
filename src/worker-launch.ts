@@ -57,17 +57,18 @@ export interface WorkerLaunchResult {
 }
 
 /**
- * Clicking either launch action is explicit authorization to start the CLI.
- * Missing legacy settings therefore use the least-privileged prompt policy.
- * A persisted disabled value still blocks workers, but never blocks a normal
- * interactive session.
+ * Interactive sessions always retain permission prompts. A worker launch is
+ * an explicit request for an autonomous agent, so missing legacy settings use
+ * full access. Persisted prompt/bypass choices are honored and disabled still
+ * blocks workers.
  */
 export function resolveLaunchPermission(
 	kind: WorkerLaunchKind,
 	configured: WorkerPermissionSetting | undefined,
 ): WorkerPermissionMode | undefined {
+	if (kind === "interactive") return "prompt";
 	if (configured === "prompt" || configured === "bypass") return configured;
-	if (configured === undefined || kind === "interactive") return "prompt";
+	if (configured === undefined) return "bypass";
 	return undefined;
 }
 
