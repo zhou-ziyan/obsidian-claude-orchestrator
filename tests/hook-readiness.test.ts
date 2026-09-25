@@ -83,7 +83,7 @@ describe("runtime hook readiness", () => {
 		assert.ok(codes.includes("hook-path-mismatch"));
 		assert.ok(codes.includes("script-content-mismatch"));
 		assert.ok(codes.includes("script-not-executable"));
-		assert.doesNotMatch(JSON.stringify(result), /hooks\"|matcher|old\"/);
+		assert.doesNotMatch(JSON.stringify(result), /hooks"|matcher|old"/);
 	});
 
 	it("keeps provider failures isolated while the global gate remains fail-closed", () => {

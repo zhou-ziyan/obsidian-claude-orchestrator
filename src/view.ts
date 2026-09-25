@@ -1134,6 +1134,11 @@ export class TerminalView extends ItemView {
 			strong.appendText(" Claude is waiting for your reply.");
 			textEl.appendText(" Use Quick Reply or type below.");
 		}
+		if (this.sessionNote.status === "stale") {
+			const banner = this.queueList.createDiv({ cls: "co-stale-banner" });
+			banner.createEl("strong", { text: "Lifecycle signal missing." });
+			banner.appendText(" Auto and Send Next are blocked; tmux prompt/health evidence cannot authorize a send.");
+		}
 	}
 
 	private renderQueueItem(parent: HTMLElement, text: string, idx: number): void {

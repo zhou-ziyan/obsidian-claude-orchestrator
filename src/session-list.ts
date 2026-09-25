@@ -138,11 +138,17 @@ export function sessionStatusDisplay(
 	if (!hasPanel) return { cls: "co-sm-status-dot", dataStatus: "off", label: "No panel" };
 	const dataStatus = status === "running" ? "running"
 		: status === "waiting_for_user" ? "waiting_for_user"
-			: status === "error" ? "error" : "idle";
+			: status === "error" ? "error"
+				: status === "stale" ? "stale" : "idle";
 	const label = dataStatus === "running" ? "Running"
 		: dataStatus === "waiting_for_user" ? "Waiting for input"
-			: dataStatus === "error" ? "Error" : "Idle";
-	return { cls: "co-sm-status-dot", dataStatus, label };
+			: dataStatus === "error" ? "Error"
+				: dataStatus === "stale" ? "Stale" : "Idle";
+	return {
+		cls: dataStatus === "stale" ? "co-sm-status co-sm-status-stale" : "co-sm-status-dot",
+		dataStatus,
+		label,
+	};
 }
 
 export function restorableSessionNames(group: SessionGroup): string[] {

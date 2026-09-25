@@ -18,6 +18,8 @@ export default tseslint.config(
 						'manifest.json',
 						'tests/utils.test.ts',
 					'tests/queue-engine.test.ts',
+					'tests/hook-readiness.test.ts',
+					'tests/stop-hook-watcher.test.ts',
 					'tests/engines.test.ts',
 					'tests/engine-usage.test.ts',
 					'tests/sync-codex-config.test.ts',

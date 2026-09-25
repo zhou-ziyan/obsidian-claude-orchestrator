@@ -119,12 +119,16 @@ export class StopSignalLedger {
 	}
 
 	accept(signal: StopSignal): boolean {
+		return this.evaluate(signal).accepted;
+	}
+
+	evaluate(signal: StopSignal): { accepted: boolean; reason: "duplicate" | "out-of-order" | null } {
 		const key = stopSignalKey(signal);
-		if (this.seen.has(key)) return false;
+		if (this.seen.has(key)) return { accepted: false, reason: "duplicate" };
 
 		const lane = `${signal.provider}|${signal.tmuxSession}`;
 		const newest = this.latest.get(lane);
-		if (newest !== undefined && signal.timestamp < newest) return false;
+		if (newest !== undefined && signal.timestamp < newest) return { accepted: false, reason: "out-of-order" };
 		if (signal.stopReason === "started") {
 			for (const reason of ["done", "asking", "error"]) {
 				this.latestKind.delete(`${lane}|${reason}`);
@@ -136,7 +140,7 @@ export class StopSignalLedger {
 		const newestKind = this.latestKind.get(kindLane);
 		if (!signal.turnId && newestKind !== undefined
 			&& signal.timestamp >= newestKind
-			&& signal.timestamp - newestKind <= this.debounceSeconds) return false;
+			&& signal.timestamp - newestKind <= this.debounceSeconds) return { accepted: false, reason: "duplicate" };
 
 		this.seen.add(key);
 		this.order.push(key);
@@ -146,7 +150,7 @@ export class StopSignalLedger {
 			const evicted = this.order.shift();
 			if (evicted !== undefined) this.seen.delete(evicted);
 		}
-		return true;
+		return { accepted: true, reason: null };
 	}
 }
 

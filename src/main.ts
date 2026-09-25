@@ -1,15 +1,15 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, parseAllTmuxSessions, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, createDefaultSessionNote, ensureEngineHookConfig, materializeHookScripts, hookScriptsDir, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, StopSignalLedger, stopSignalKey, availableEngineIds, engineCreatesHookFile, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, newSessionEngine, isEngineId, ENGINE_IDS, getEngineDefinition, DEFAULT_ENGINE_ID, computeSessionCwd, resolveEngineBinary, launchWorkerSession, shellQuote } from "./utils";
-import type { EngineId, HookScriptFs, ProjectRegistry, QueueMode, SessionNote, SlashCommandEntry, StopReason, ThemeName } from "./utils";
+import { generateSessionName, migrateSettings, parseTmuxSessionsForProject, parseAllTmuxSessions, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, createDefaultSessionNote, ensureEngineHookConfig, materializeHookScripts, hookScriptsDir, HOOK_SCRIPT_SOURCES, bundleGeneration, inspectHookReadiness, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, StopSignalLedger, stopSignalKey, availableEngineIds, engineCreatesHookFile, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, newSessionEngine, isEngineId, ENGINE_IDS, getEngineDefinition, DEFAULT_ENGINE_ID, computeSessionCwd, resolveEngineBinary, launchWorkerSession, shellQuote } from "./utils";
+import type { EngineId, HookReadinessSnapshot, HookScriptFs, ProjectRegistry, ProviderHookReadiness, QueueMode, SessionNote, SlashCommandEntry, StopReason, ThemeName } from "./utils";
 import { QUEUE_MODES, queueModeLabel } from "./utils";
 import { QueueEngine } from "./queue-engine";
 import { StopHookWatcher } from "./stop-hook-watcher";
 import { findTerminalLeafBySession, findTerminalLeafByProject, collectOpenSessionNames } from "./workspace-helpers";
 import { accessSync, chmodSync, constants as fsConstants, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { execFileSync } from "child_process";
-import { dirname } from "path";
+import { dirname, join } from "path";
 import { homedir } from "os";
 
 export interface OrchestratorSettings {
@@ -77,13 +77,23 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 	// Hooks can fire more than once and the signal dir is polled as well as
 	// watched; without this a single turn-end could advance the queue twice.
 	private signalLedger = new StopSignalLedger();
+	private loadedRuntimeGeneration = "unavailable";
+	private hookReadiness: HookReadinessSnapshot = {
+		state: "repair-required",
+		checkedAt: 0,
+		loadedRuntimeGeneration: "unavailable",
+		diskBundleGeneration: null,
+		providers: {},
+	};
 
 	async onload() {
 		await this.loadSettings();
 		await this.autoDiscoverProjects();
 
 		const pluginDir = this.resolvePluginDir();
+		this.loadedRuntimeGeneration = this.readBundleGeneration(pluginDir) ?? "unavailable";
 		this.ensureEngineHooksRegistered();
+		this.refreshHookReadiness(pluginDir, true);
 
 		// Headless queue engine — owns the stop-signal → status/history →
 		// auto-send pipeline for every managed session, panel or not.
@@ -99,6 +109,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			},
 			getCountdownSeconds: () => this.settings.autoSendCountdownSeconds,
 			playSoundOnAsking: () => this.settings.playSoundOnAsking,
+			getHookReadiness: (provider) => this.providerHookReadiness(provider),
 			onUpdate: () => {
 				/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument -- custom workspace event */
 				this.app.workspace.trigger("claude-orchestrator:countdown-tick" as any);
@@ -230,7 +241,11 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			() => this.app.vault.getName(),
 		);
 		this.stopHookWatcher.onSignal((signal) => {
-			if (!this.signalLedger.accept(signal)) return;
+			const ledger = this.signalLedger.evaluate(signal);
+			if (!ledger.accepted) {
+				this.queueEngine.recordRejectedSignal(signal.tmuxSession, ledger.reason ?? "duplicate");
+				return;
+			}
 			const reason = signal.stopReason;
 			if (!reason) return;
 			void this.queueEngine.onLifecycleSignal(
@@ -238,11 +253,26 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 				reason,
 				signal.provider,
 				stopSignalKey(signal),
+				{
+					sessionId: signal.sessionId,
+					turnId: signal.turnId,
+					timestamp: signal.timestamp,
+					source: "hook",
+				},
 			);
 			this.routeStopSignalToView(signal.tmuxSession, reason);
 			this.refreshSessionManager();
 		});
+		this.stopHookWatcher.onDiagnostic((diagnostic) => {
+			if (diagnostic.tmuxSession) {
+				this.queueEngine.recordRejectedSignal(diagnostic.tmuxSession, diagnostic.reason);
+			}
+			this.refreshSessionManager();
+		});
 		this.stopHookWatcher.start();
+		this.registerInterval(window.setInterval(() => {
+			this.refreshHookReadiness(pluginDir, false);
+		}, 5_000));
 	}
 
 	onunload() {
@@ -715,6 +745,82 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		if (Object.keys(this.settings.projects).length > 0) {
 			await this.saveSettings();
 		}
+	}
+
+	getHookReadinessSnapshot(): HookReadinessSnapshot {
+		return this.hookReadiness;
+	}
+
+	getProviderHookReadiness(provider: string): ProviderHookReadiness {
+		return this.providerHookReadiness(provider);
+	}
+
+	private providerHookReadiness(provider: string): ProviderHookReadiness {
+		return this.hookReadiness.providers[provider] ?? {
+			provider,
+			ready: false,
+			state: "repair-required",
+			reason: "Hook repair required: provider readiness is unavailable",
+			issues: [{ code: "settings-unreadable" }],
+		};
+	}
+
+	private readBundleGeneration(pluginDir: string): string | null {
+		try {
+			return bundleGeneration(readFileSync(join(pluginDir, "main.js"), "utf-8"));
+		} catch {
+			return null;
+		}
+	}
+
+	private refreshHookReadiness(pluginDir: string, announce: boolean): void {
+		const home = homedir();
+		const scriptsDir = hookScriptsDir(home);
+		const providerInputs = availableEngineIds().map((id) => {
+			const ref = resolveEngineRef(id);
+			const settingsPath = engineSettingsPath(ref, home);
+			let settingsJson: string | null = null;
+			if (settingsPath) {
+				try { settingsJson = readFileSync(settingsPath, "utf-8"); } catch { /* diagnosed below */ }
+			}
+			const registrations = engineHookRegistrations(ref, scriptsDir).map((registration) => {
+				let actualSource: string | null = null;
+				let executable = false;
+				try { actualSource = readFileSync(registration.scriptPath, "utf-8"); } catch { /* diagnosed below */ }
+				try {
+					executable = statSync(registration.scriptPath).isFile();
+					accessSync(registration.scriptPath, fsConstants.X_OK);
+				} catch { executable = false; }
+				return {
+					role: registration.role,
+					event: registration.event,
+					scriptName: registration.scriptName,
+					expectedPath: registration.scriptPath,
+					expectedSource: HOOK_SCRIPT_SOURCES[registration.scriptName] ?? "",
+					actualSource,
+					executable,
+				};
+			});
+			return { provider: id, settingsJson, registrations };
+		});
+
+		const previousState = this.hookReadiness.state;
+		this.hookReadiness = inspectHookReadiness({
+			checkedAt: Date.now(),
+			loadedRuntimeGeneration: this.loadedRuntimeGeneration,
+			diskBundleGeneration: this.readBundleGeneration(pluginDir),
+			providers: providerInputs,
+		});
+		if (announce || previousState !== this.hookReadiness.state) {
+			if (this.hookReadiness.state === "reload-required") {
+				new Notice("Claude Orchestrator Auto Queue is blocked: reload Obsidian to activate the current bundle.", 10000);
+			} else if (this.hookReadiness.state === "repair-required") {
+				new Notice("Claude Orchestrator Auto Queue is blocked: lifecycle hook repair is required. Open Session Manager for details.", 10000);
+			} else if (previousState !== "ready") {
+				new Notice("Claude Orchestrator lifecycle hooks are ready.", 5000);
+			}
+		}
+		this.refreshSessionManager();
 	}
 
 	/**

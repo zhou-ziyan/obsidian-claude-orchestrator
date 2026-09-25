@@ -39,6 +39,74 @@ export interface QueueEngineOptions {
 	/** A completion must remain uncontested for this long before any send is
 	 * eligible. This is separate from the visible Auto countdown. */
 	idleStabilityMs?: number;
+	/** A started turn that never produces a terminal lifecycle event becomes
+	 * stale. This is diagnostic/fail-closed only; it never infers idle. */
+	lifecycleStaleMs?: number;
+	/** Live readiness for the provider's hooks and runtime generation. */
+	getHookReadiness?: (provider: string) => HookGateReadiness;
+}
+
+export interface HookGateReadiness {
+	provider: string;
+	ready: boolean;
+	state: "ready" | "reload-required" | "repair-required";
+	reason: string | null;
+}
+
+export interface LifecycleEventMetadata {
+	sessionId: string | null;
+	turnId: string | null;
+	/** Unix seconds, matching hook signal payloads. */
+	timestamp: number;
+	source: "hook" | "watch" | "poll" | "health" | "internal";
+}
+
+export interface LifecycleEventRecord extends LifecycleEventMetadata {
+	provider: string;
+	kind: StopReason;
+}
+
+export type SendBlockedReason =
+	| "hook-reload-required"
+	| "hook-repair-required"
+	| "lifecycle-unknown"
+	| "session-running"
+	| "session-waiting"
+	| "session-error"
+	| "session-stale"
+	| "completion-signal-missing"
+	| "unstable-idle"
+	| "revision-changed";
+
+export type LifecycleRejectedReason =
+	| "duplicate"
+	| "out-of-order"
+	| "provider-mismatch"
+	| "vault-mismatch"
+	| "session-mismatch"
+	| "turn-mismatch"
+	| "invalid-signal"
+	| "unclaimed-session"
+	| "stale-signal"
+	| "already-consumed"
+	| "unknown-provider";
+
+export interface LifecycleDiagnostics {
+	lastEvent: LifecycleEventRecord | null;
+	signalAgeMs: number | null;
+	lastTransition: string | null;
+	lastSource: LifecycleEventMetadata["source"] | null;
+	lastRejectedReason: LifecycleRejectedReason | null;
+	lastBlockedReason: SendBlockedReason | null;
+	hookReadiness: HookGateReadiness | null;
+}
+
+interface MutableLifecycleDiagnostics {
+	lastEvent: LifecycleEventRecord | null;
+	lastTransition: string | null;
+	lastSource: LifecycleEventMetadata["source"] | null;
+	lastRejectedReason: LifecycleRejectedReason | null;
+	lastBlockedReason: SendBlockedReason | null;
 }
 
 /** How far a send got, so a failure can be recovered without re-running
@@ -69,6 +137,8 @@ export class QueueEngine {
 	private onUpdate: (sessionName: string) => void;
 	private sendKeyDelayMs: number;
 	private idleStabilityMs: number;
+	private lifecycleStaleMs: number;
+	private getHookReadiness: (provider: string) => HookGateReadiness;
 
 	private idle = new Map<string, boolean>();
 	private stableIdle = new Set<string>();
@@ -76,7 +146,9 @@ export class QueueEngine {
 	private providers = new Map<string, string>();
 	private countdowns = new Map<string, Countdown>();
 	private stabilityTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	private staleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 	private lifecycleEvents = new Set<string>();
+	private lifecycle = new Map<string, MutableLifecycleDiagnostics>();
 	private writing = new Set<string>();
 	private pending: Promise<void> = Promise.resolve();
 
@@ -89,6 +161,13 @@ export class QueueEngine {
 		this.onUpdate = opts.onUpdate ?? (() => {});
 		this.sendKeyDelayMs = opts.sendKeyDelayMs ?? 150;
 		this.idleStabilityMs = opts.idleStabilityMs ?? 750;
+		this.lifecycleStaleMs = opts.lifecycleStaleMs ?? 5 * 60 * 1000;
+		this.getHookReadiness = opts.getHookReadiness ?? ((provider) => ({
+			provider,
+			ready: true,
+			state: "ready",
+			reason: null,
+		}));
 	}
 
 	/** True while the engine itself is writing this session's note — lets the
@@ -105,6 +184,26 @@ export class QueueEngine {
 		return this.countdowns.get(sessionName)?.remaining ?? 0;
 	}
 
+	getDiagnostics(sessionName: string, nowMs: number = Date.now()): LifecycleDiagnostics {
+		const current = this.lifecycle.get(sessionName);
+		const lastEvent = current?.lastEvent ?? null;
+		const provider = this.providers.get(sessionName) ?? lastEvent?.provider ?? null;
+		return {
+			lastEvent,
+			signalAgeMs: lastEvent ? Math.max(0, nowMs - lastEvent.timestamp * 1000) : null,
+			lastTransition: current?.lastTransition ?? null,
+			lastSource: current?.lastSource ?? null,
+			lastRejectedReason: current?.lastRejectedReason ?? null,
+			lastBlockedReason: current?.lastBlockedReason ?? null,
+			hookReadiness: provider ? this.getHookReadiness(provider) : null,
+		};
+	}
+
+	recordRejectedSignal(sessionName: string, reason: LifecycleRejectedReason): void {
+		this.diagnosticsFor(sessionName).lastRejectedReason = reason;
+		this.onUpdate(sessionName);
+	}
+
 	/** Await in-flight sends (tests, plugin unload). */
 	async flush(): Promise<void> {
 		await this.pending;
@@ -114,6 +213,8 @@ export class QueueEngine {
 		for (const name of [...this.countdowns.keys()]) this.cancelCountdown(name);
 		for (const timer of this.stabilityTimers.values()) clearTimeout(timer);
 		this.stabilityTimers.clear();
+		for (const timer of this.staleTimers.values()) clearTimeout(timer);
+		this.staleTimers.clear();
 	}
 
 	async onStopSignal(sessionName: string, reason: StopReason): Promise<void> {
@@ -131,10 +232,17 @@ export class QueueEngine {
 		reason: StopReason,
 		provider: string,
 		eventId?: string,
+		metadata?: LifecycleEventMetadata,
 	): Promise<void> {
-		if (eventId && this.lifecycleEvents.has(eventId)) return;
+		if (eventId && this.lifecycleEvents.has(eventId)) {
+			this.recordRejectedSignal(sessionName, "duplicate");
+			return;
+		}
 		const knownProvider = this.providers.get(sessionName);
-		if (knownProvider !== undefined && knownProvider !== provider) return;
+		if (knownProvider !== undefined && knownProvider !== provider) {
+			this.recordRejectedSignal(sessionName, "provider-mismatch");
+			return;
+		}
 		// Busy / waiting / interrupted signals fail closed immediately, before
 		// the note read. This closes the race where a gated send is itself
 		// awaiting storage while a new turn begins.
@@ -148,7 +256,25 @@ export class QueueEngine {
 		const note = await this.store.read(sessionName);
 		if (!note) return;
 		const configuredProvider = resolveEngineRef(note.engine).id;
-		if (configuredProvider !== provider) return;
+		if (!configuredProvider) {
+			this.recordRejectedSignal(sessionName, "unknown-provider");
+			return;
+		}
+		if (configuredProvider !== provider) {
+			this.recordRejectedSignal(sessionName, "provider-mismatch");
+			return;
+		}
+		const previousEvent = this.lifecycle.get(sessionName)?.lastEvent ?? null;
+		if (reason !== "started" && previousEvent?.kind === "started") {
+			if (previousEvent.sessionId && metadata?.sessionId && previousEvent.sessionId !== metadata.sessionId) {
+				this.recordRejectedSignal(sessionName, "session-mismatch");
+				return;
+			}
+			if (previousEvent.turnId && metadata?.turnId && previousEvent.turnId !== metadata.turnId) {
+				this.recordRejectedSignal(sessionName, "turn-mismatch");
+				return;
+			}
+		}
 		this.providers.set(sessionName, provider);
 		if (eventId) {
 			this.lifecycleEvents.add(eventId);
@@ -160,13 +286,39 @@ export class QueueEngine {
 
 		this.cancelCountdown(sessionName);
 		this.cancelStability(sessionName);
+		this.cancelStaleTimer(sessionName);
 		this.stableIdle.delete(sessionName);
 		this.bumpRevision(sessionName);
+		const event: LifecycleEventRecord = {
+			provider,
+			sessionId: metadata?.sessionId ?? null,
+			turnId: metadata?.turnId ?? null,
+			kind: reason,
+			timestamp: metadata?.timestamp ?? Math.floor(Date.now() / 1000),
+			source: metadata?.source ?? "internal",
+		};
+		const diagnostics = this.diagnosticsFor(sessionName);
+		diagnostics.lastEvent = event;
+		diagnostics.lastTransition = `${previousEvent?.kind ?? "unknown"}->${reason}`;
+		diagnostics.lastSource = event.source;
+		diagnostics.lastRejectedReason = null;
 
 		if (reason === "started") {
 			this.cancelCountdown(sessionName);
 			this.idle.set(sessionName, false);
 			note.status = "running";
+			await this.writeNote(sessionName, note);
+			this.beginStaleWatch(sessionName);
+			this.onUpdate(sessionName);
+			return;
+		}
+
+		const readiness = this.getHookReadiness(provider);
+		if (!readiness.ready) {
+			this.idle.set(sessionName, false);
+			note.status = "stale";
+			diagnostics.lastBlockedReason = readiness.state === "reload-required"
+				? "hook-reload-required" : "hook-repair-required";
 			await this.writeNote(sessionName, note);
 			this.onUpdate(sessionName);
 			return;
@@ -183,6 +335,16 @@ export class QueueEngine {
 		}
 		if (reason === "done") this.beginStableIdle(sessionName, note);
 		this.onUpdate(sessionName);
+	}
+
+	/** Prompt/health evidence is only a contradiction detector. It can mark a
+	 * missing completion signal stale, but never infer idle or authorize send. */
+	async reportLifecycleSuspicion(
+		sessionName: string,
+		reason: "cli-prompt-without-done" | "health-idle-without-done",
+	): Promise<void> {
+		void reason;
+		await this.markStale(sessionName, "completion-signal-missing");
 	}
 
 	/** Vault-modify entry: a session note changed outside the engine (view
@@ -230,33 +392,15 @@ export class QueueEngine {
 
 	private async attemptSendNext(sessionName: string, notifyWhenBlocked: boolean): Promise<void> {
 		const revision = this.revisions.get(sessionName) ?? 0;
-		let note = await this.store.read(sessionName);
+		const note = await this.store.read(sessionName);
 		if (!note || note.queue.length === 0) return;
-
-		// A deliberate Send Next must remain usable after plugin startup, when
-		// no lifecycle event has occurred in this process yet. In that one case,
-		// require the persisted idle state to remain unchanged for the same
-		// stability window, then read it again. Auto-send never uses this path.
-		if (!this.sendGateOpen(sessionName, revision)
-			&& notifyWhenBlocked
-			&& !this.idle.has(sessionName)
-			&& note.status === "idle"
-			&& resolveEngineRef(note.engine).id !== null) {
-			await this.wait(this.idleStabilityMs);
-			const confirmed = await this.store.read(sessionName);
-			if (confirmed?.status === "idle"
-				&& confirmed.queue.length > 0
-				&& (this.revisions.get(sessionName) ?? 0) === revision) {
-				this.idle.set(sessionName, true);
-				this.stableIdle.add(sessionName);
-				note = confirmed;
-			}
-		}
+		const provider = resolveEngineRef(note.engine).id;
+		const firstBlock = this.sendBlockedReason(sessionName, revision, provider, note.status);
 		// Second validation happens after the async read and immediately before
 		// claiming the item. A turn-start or non-completion signal increments the
 		// revision synchronously, so it wins this race without consuming Queue.
-		if (!this.sendGateOpen(sessionName, revision)) {
-			if (notifyWhenBlocked) this.notifier.notify("Send held — session became busy");
+		if (firstBlock) {
+			this.recordBlocked(sessionName, firstBlock, notifyWhenBlocked);
 			return;
 		}
 
@@ -265,9 +409,10 @@ export class QueueEngine {
 		const task = note.queue.shift()!;
 		note.history.push({ text: task, completed: false });
 		await this.writeNote(sessionName, note);
-		if (!this.sendGateOpen(sessionName, revision)) {
+		const secondBlock = this.sendBlockedReason(sessionName, revision, provider, note.status);
+		if (secondBlock) {
 			await this.restoreUnsentTask(sessionName, task, previousStatus);
-			if (notifyWhenBlocked) this.notifier.notify("Send held — session became busy");
+			this.recordBlocked(sessionName, secondBlock, notifyWhenBlocked);
 			return;
 		}
 
@@ -359,6 +504,16 @@ export class QueueEngine {
 		const settle = () => {
 			this.stabilityTimers.delete(sessionName);
 			if (!this.idle.get(sessionName) || (this.revisions.get(sessionName) ?? 0) !== revision) return;
+			const provider = resolveEngineRef(note.engine).id;
+			const readiness = provider ? this.getHookReadiness(provider) : null;
+			if (!readiness?.ready) {
+				this.recordBlocked(
+					sessionName,
+					readiness?.state === "reload-required" ? "hook-reload-required" : "hook-repair-required",
+					false,
+				);
+				return;
+			}
 			this.stableIdle.add(sessionName);
 			const action = autoSendAction(this.queueModeFor(note), "done", note.queue.length);
 			if (action === "send") {
@@ -381,16 +536,99 @@ export class QueueEngine {
 		this.stabilityTimers.delete(sessionName);
 	}
 
+	private beginStaleWatch(sessionName: string): void {
+		this.cancelStaleTimer(sessionName);
+		if (this.lifecycleStaleMs <= 0) return;
+		const revision = this.revisions.get(sessionName) ?? 0;
+		const timer = setTimeout(() => {
+			this.staleTimers.delete(sessionName);
+			if ((this.revisions.get(sessionName) ?? 0) !== revision || this.idle.get(sessionName)) return;
+			this.track(this.markStale(sessionName, "completion-signal-missing"));
+		}, this.lifecycleStaleMs);
+		(timer as ReturnType<typeof setTimeout> & { unref?: () => void }).unref?.();
+		this.staleTimers.set(sessionName, timer);
+	}
+
+	private cancelStaleTimer(sessionName: string): void {
+		const timer = this.staleTimers.get(sessionName);
+		if (timer) clearTimeout(timer);
+		this.staleTimers.delete(sessionName);
+	}
+
+	private async markStale(sessionName: string, reason: SendBlockedReason): Promise<void> {
+		this.cancelCountdown(sessionName);
+		this.cancelStability(sessionName);
+		this.cancelStaleTimer(sessionName);
+		this.stableIdle.delete(sessionName);
+		this.idle.set(sessionName, false);
+		this.bumpRevision(sessionName);
+		this.diagnosticsFor(sessionName).lastBlockedReason = reason;
+		const note = await this.store.read(sessionName);
+		if (note) {
+			note.status = "stale";
+			await this.writeNote(sessionName, note);
+		}
+		this.onUpdate(sessionName);
+	}
+
 	private bumpRevision(sessionName: string): number {
 		const next = (this.revisions.get(sessionName) ?? 0) + 1;
 		this.revisions.set(sessionName, next);
 		return next;
 	}
 
-	private sendGateOpen(sessionName: string, revision: number): boolean {
-		return this.idle.get(sessionName) === true
-			&& this.stableIdle.has(sessionName)
-			&& (this.revisions.get(sessionName) ?? 0) === revision;
+	private sendBlockedReason(
+		sessionName: string,
+		revision: number,
+		provider: string | null,
+		status: SessionNote["status"],
+	): SendBlockedReason | null {
+		if (!provider) return "hook-repair-required";
+		const readiness = this.getHookReadiness(provider);
+		if (!readiness.ready) {
+			return readiness.state === "reload-required" ? "hook-reload-required" : "hook-repair-required";
+		}
+		if ((this.revisions.get(sessionName) ?? 0) !== revision) return "revision-changed";
+		if (this.idle.get(sessionName) !== true) {
+			if (!this.idle.has(sessionName)) return "lifecycle-unknown";
+			if (status === "waiting_for_user") return "session-waiting";
+			if (status === "error") return "session-error";
+			if (status === "stale") return "session-stale";
+			return "session-running";
+		}
+		if (!this.stableIdle.has(sessionName)) return "unstable-idle";
+		return null;
+	}
+
+	private recordBlocked(sessionName: string, reason: SendBlockedReason, notify: boolean): void {
+		this.diagnosticsFor(sessionName).lastBlockedReason = reason;
+		if (notify) this.notifier.notify(this.blockedMessage(reason));
+		this.onUpdate(sessionName);
+	}
+
+	private blockedMessage(reason: SendBlockedReason): string {
+		if (reason === "hook-reload-required") return "Send blocked — reload Obsidian to activate the current hook runtime";
+		if (reason === "hook-repair-required") return "Send blocked — lifecycle hook repair is required";
+		if (reason === "lifecycle-unknown") return "Send blocked — no completion signal has been observed by this runtime";
+		if (reason === "completion-signal-missing" || reason === "session-stale") return "Send blocked — completion signal is missing; session is stale";
+		if (reason === "session-waiting") return "Send blocked — the agent is waiting for input";
+		if (reason === "session-error") return "Send blocked — the previous turn was interrupted";
+		return "Send held — session became busy";
+	}
+
+	private diagnosticsFor(sessionName: string): MutableLifecycleDiagnostics {
+		let diagnostics = this.lifecycle.get(sessionName);
+		if (!diagnostics) {
+			diagnostics = {
+				lastEvent: null,
+				lastTransition: null,
+				lastSource: null,
+				lastRejectedReason: null,
+				lastBlockedReason: null,
+			};
+			this.lifecycle.set(sessionName, diagnostics);
+		}
+		return diagnostics;
 	}
 
 	private async restoreUnsentTask(sessionName: string, task: string, previousStatus: SessionNote["status"]): Promise<void> {

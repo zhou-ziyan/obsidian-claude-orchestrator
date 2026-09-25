@@ -369,6 +369,22 @@ export class SessionManagerView extends ItemView {
 		if (!this.listEl) return;
 		this.listEl.empty();
 		this.sendBtns.clear();
+		const readiness = this.plugin.getHookReadinessSnapshot();
+		if (readiness.state !== "ready") {
+			const banner = this.listEl.createDiv({ cls: "co-sm-hook-readiness" });
+			banner.dataset.state = readiness.state;
+			banner.createEl("strong", {
+				text: readiness.state === "reload-required" ? "Reload required" : "Hook repair required",
+			});
+			banner.createDiv({
+				text: readiness.state === "reload-required"
+					? "Auto and Send Next are blocked until this plugin reloads the bundle on disk."
+					: "Auto and Send Next are blocked until lifecycle hooks and scripts are ready.",
+			});
+			banner.title = Object.values(readiness.providers)
+				.flatMap((provider) => provider.issues.map((issue) => `${provider.provider}: ${issue.code}${issue.event ? ` (${issue.event})` : ""}`))
+				.join("\n");
+		}
 
 		if (this.groups.length === 0 && Object.keys(this.plugin.settings.projects).length === 0) {
 			this.listEl.createDiv({
@@ -742,6 +758,15 @@ export class SessionManagerView extends ItemView {
 				? `Engine: ${engineDisplayLabel(engineRef)}${session.model ? ` · model ${session.model}` : ""}`
 				: `Engine not recorded on the note — treated as ${engineDisplayLabel(engineRef)}`;
 			if (!session.engine) engineEl.dataset.implicit = "true";
+			const readiness = this.plugin.getProviderHookReadiness(engineRef.id ?? "unknown");
+			if (!readiness.ready) {
+				const hookBadge = metaRow.createSpan({
+					cls: "co-sm-card-hook-readiness",
+					text: readiness.state === "reload-required" ? "RELOAD" : "HOOK REPAIR",
+				});
+				hookBadge.dataset.state = readiness.state;
+				hookBadge.title = readiness.reason ?? "Lifecycle hooks are not ready";
+			}
 
 			metaRow.createSpan({ cls: "co-sm-card-dot-sep", text: "·" });
 
@@ -831,6 +856,37 @@ export class SessionManagerView extends ItemView {
 		const value = row.createSpan({ cls: "co-sm-settings-value" });
 		value.dataset.engine = current.id ?? "unknown";
 		value.textContent = engineDisplayLabel(current);
+		const readiness = this.plugin.getProviderHookReadiness(current.id ?? "unknown");
+		const readinessRow = panel.createDiv({ cls: "co-sm-settings-row" });
+		readinessRow.createSpan({ cls: "co-sm-settings-label", text: "Hooks:" });
+		const readinessValue = readinessRow.createSpan({
+			cls: "co-sm-settings-value",
+			text: readiness.ready ? "Ready" : readiness.state === "reload-required" ? "Reload required" : "Repair required",
+		});
+		readinessValue.dataset.state = readiness.state;
+		readinessRow.title = readiness.issues.map((issue) => `${issue.code}${issue.event ? ` (${issue.event})` : ""}`).join("\n");
+
+		const diagnostics = this.plugin.queueEngine.getDiagnostics(session.name);
+		const event = diagnostics.lastEvent;
+		const lifecycleRow = panel.createDiv({ cls: "co-sm-settings-row co-sm-lifecycle-diagnostics" });
+		lifecycleRow.createSpan({ cls: "co-sm-settings-label", text: "Lifecycle:" });
+		lifecycleRow.createSpan({
+			cls: "co-sm-settings-value",
+			text: event
+				? `${event.provider} ${event.kind} · ${diagnostics.signalAgeMs === null ? "—" : `${Math.round(diagnostics.signalAgeMs / 1000)}s ago`}`
+				: "No event in this runtime",
+		});
+		lifecycleRow.title = event
+			? [
+				`provider=${event.provider}`,
+				`sessionId=${event.sessionId ?? "—"}`,
+				`turnId=${event.turnId ?? "—"}`,
+				`transition=${diagnostics.lastTransition ?? "—"}`,
+				`source=${diagnostics.lastSource ?? "—"}`,
+				`lastRejected=${diagnostics.lastRejectedReason ?? "—"}`,
+				`lastBlocked=${diagnostics.lastBlockedReason ?? "—"}`,
+			].join("\n")
+			: `lastRejected=${diagnostics.lastRejectedReason ?? "—"}\nlastBlocked=${diagnostics.lastBlockedReason ?? "—"}`;
 
 		const hint = panel.createDiv({ cls: "co-sm-settings-hint" });
 		if (!session.engine) {
