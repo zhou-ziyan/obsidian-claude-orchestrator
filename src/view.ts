@@ -41,6 +41,7 @@ import {
 	computeSessionCwd,
 	countdownText,
 	newSessionEngine,
+	newSessionQueueMode,
 } from "./utils";
 import type { EngineId, ProjectRegistry, QueueMode, StopReason, SlashCommandEntry, ThemeName } from "./utils";
 import type { QueueEngine } from "./queue-engine";
@@ -988,9 +989,13 @@ export class TerminalView extends ItemView {
 				this.project ? settings?.projects[this.project]?.defaultEngine : null,
 				settings?.defaultEngine,
 			);
+			const queueMode = newSessionQueueMode(
+				this.project ? settings?.projects[this.project]?.defaultQueueMode : null,
+				settings?.defaultQueueMode,
+			);
 			await this.app.vault.create(
 				notePath,
-				createDefaultSessionNote(this.sessionName, settings?.defaultQueueMode, engine),
+				createDefaultSessionNote(this.sessionName, queueMode, engine),
 			);
 		}
 	}

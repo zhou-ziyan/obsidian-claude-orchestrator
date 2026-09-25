@@ -22,6 +22,7 @@ import {
 	isSessionIdle,
 	execTmux,
 	queueModeLabel,
+	QUEUE_MODES,
 	applySortOrder,
 	SessionGroup,
 	SessionInfo,
@@ -313,10 +314,9 @@ export class SessionManagerView extends ItemView {
 				if (!this.app.vault.getAbstractFileByPath(m.dirPath)) {
 					await this.app.vault.createFolder(m.dirPath);
 				}
-				const engine = this.plugin.defaultEngineForProject(
-					projectFromSessionName(m.sessionName, projects),
-				);
-				await this.app.vault.create(m.notePath, createDefaultSessionNote(m.sessionName, this.plugin.settings.defaultQueueMode, engine));
+				const project = projectFromSessionName(m.sessionName, projects);
+				const engine = this.plugin.defaultEngineForProject(project);
+				await this.app.vault.create(m.notePath, createDefaultSessionNote(m.sessionName, this.plugin.defaultQueueModeForProject(project), engine));
 			} catch { /* race: another view may have created it */ }
 		}
 
@@ -1276,7 +1276,7 @@ export class SessionManagerView extends ItemView {
 			}
 			await this.app.vault.create(
 				target.notePath,
-				createDefaultSessionNote(target.newSessionName, this.plugin.settings.defaultQueueMode),
+				createDefaultSessionNote(target.newSessionName, this.plugin.defaultQueueModeForProject(project)),
 			);
 		} catch (err) {
 			new Notice(`Session renamed but note creation failed: ${(err as Error).message}`);
@@ -1374,6 +1374,15 @@ export class SessionManagerView extends ItemView {
 		}
 		engineSelect.value = config?.defaultEngine && isEngineId(config.defaultEngine) ? config.defaultEngine : "";
 
+		const queueModeRow = form.createDiv({ cls: "co-sm-form-row" });
+		queueModeRow.createSpan({ cls: "co-sm-form-label", text: "Queue mode" });
+		const queueModeSelect = queueModeRow.createEl("select", { cls: "co-sm-form-input co-select" });
+		queueModeSelect.createEl("option", { value: "", text: "Use global default" });
+		for (const mode of QUEUE_MODES) {
+			queueModeSelect.createEl("option", { value: mode, text: queueModeLabel(mode) });
+		}
+		queueModeSelect.value = config?.defaultQueueMode ?? "";
+
 		const workerPermissions: Record<string, WorkerPermissionSetting> = {};
 		for (const id of ENGINE_IDS) {
 			const def = getEngineDefinition(id);
@@ -1465,6 +1474,9 @@ export class SessionManagerView extends ItemView {
 				vaultFolder,
 				workingDirectory,
 				inactive: inactiveChecked || undefined,
+				defaultQueueMode: queueModeSelect.value
+					? queueModeSelect.value as ProjectConfig["defaultQueueMode"]
+					: undefined,
 				defaultEngine: engineSelect.value || undefined,
 				workerPermissions,
 			};
@@ -1560,7 +1572,7 @@ export class SessionManagerView extends ItemView {
 		}
 		const newSessionName = generateSessionName(project, openNames);
 
-		const defaultMode = this.plugin.settings.defaultQueueMode ?? "manual";
+		const defaultMode = this.plugin.defaultQueueModeForProject(project);
 		const restored = restoreSessionNote(archive, newSessionName, defaultMode);
 		const notePath = sessionNotePath(config.vaultFolder, newSessionName);
 		await this.app.vault.create(notePath, serializeSessionNote(restored));

@@ -8,6 +8,9 @@ export interface ProjectConfig {
 	workingDirectory?: string;
 	mainNote?: string;
 	inactive?: boolean;
+	/** Queue mode stamped on newly created sessions. Absent means use the
+	 * user's global default. Existing session notes are never consulted here. */
+	defaultQueueMode?: "manual" | "listen" | "auto";
 	/** Engine new sessions in this project start on. Absent means fall
 	 * through to the global default (which is Claude). */
 	defaultEngine?: string;
@@ -170,6 +173,9 @@ export function migrateSettings(data: Record<string, unknown>): Record<string, u
 	if ("queuePanel" in out && !("simpleMode" in out)) {
 		out.simpleMode = !out.queuePanel;
 		delete out.queuePanel;
+	}
+	if (out.defaultQueueMode !== "manual" && out.defaultQueueMode !== "listen" && out.defaultQueueMode !== "auto") {
+		out.defaultQueueMode = "auto";
 	}
 	return out;
 }

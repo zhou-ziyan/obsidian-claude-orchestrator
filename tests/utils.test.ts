@@ -5645,6 +5645,17 @@ describe("new session queue mode", () => {
 		reg = updateProjectConfig(reg, "P", { workingDirectory: "/code/p" });
 		assert.equal(reg.P?.defaultQueueMode, "manual");
 	});
+
+	it("routes every session-note creation path through the override resolver", () => {
+		const main = readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
+		const view = readFileSync(new URL("../src/view.ts", import.meta.url), "utf8");
+		const manager = readFileSync(new URL("../src/session-manager-view.ts", import.meta.url), "utf8");
+		assert.match(main, /createDefaultSessionNote\(sessionName, this\.defaultQueueModeForProject\(project\), engine\)/);
+		assert.match(view, /newSessionQueueMode\([\s\S]*?defaultQueueMode[\s\S]*?createDefaultSessionNote\(this\.sessionName, queueMode, engine\)/);
+		assert.match(manager, /createDefaultSessionNote\(m\.sessionName, this\.plugin\.defaultQueueModeForProject\(project\), engine\)/);
+		assert.match(manager, /createDefaultSessionNote\(target\.newSessionName, this\.plugin\.defaultQueueModeForProject\(project\)\)/);
+		assert.match(manager, /defaultMode = this\.plugin\.defaultQueueModeForProject\(project\)/);
+	});
 });
 
 // ---------------------------------------------------------------------------

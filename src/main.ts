@@ -1,7 +1,7 @@
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
-import { generateSessionNameWithNotes, migrateSettings, parseTmuxSessionsForProject, parseAllTmuxSessions, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, createDefaultSessionNote, ensureEngineHookConfig, materializeHookScripts, hookScriptsDir, HOOK_SCRIPT_SOURCES, bundleGeneration, inspectHookReadiness, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, StopSignalLedger, stopSignalKey, availableEngineIds, engineCreatesHookFile, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, newSessionEngine, isEngineId, ENGINE_IDS, getEngineDefinition, DEFAULT_ENGINE_ID, computeSessionCwd, resolveEngineBinary, launchWorkerSession, resolveLaunchPermission, shellQuote } from "./utils";
+import { generateSessionNameWithNotes, migrateSettings, parseTmuxSessionsForProject, parseAllTmuxSessions, resolveProjectFromPath, tmuxLs, fetchPtyUsage, getPtyStatus, ptyStatusMessage, sessionNotePath, sessionDirPath, sessionNameFromNotePath, projectFromSessionName, parseSessionNote, serializeSessionNote, createDefaultSessionNote, ensureEngineHookConfig, materializeHookScripts, hookScriptsDir, HOOK_SCRIPT_SOURCES, bundleGeneration, inspectHookReadiness, QUICK_REPLY_KEYS, parseQuickReplyKeys, BUILTIN_SLASH_COMMANDS, migrateThemeName, execTmux, StopSignalLedger, stopSignalKey, availableEngineIds, engineCreatesHookFile, engineHookRegistrations, engineSettingsPath, loadSlashCommandsFor, resolveEngineRef, newSessionEngine, newSessionQueueMode, isEngineId, ENGINE_IDS, getEngineDefinition, DEFAULT_ENGINE_ID, DEFAULT_QUEUE_MODE, computeSessionCwd, resolveEngineBinary, launchWorkerSession, resolveLaunchPermission, shellQuote } from "./utils";
 import type { EngineId, HookReadinessSnapshot, HookScriptFs, ProjectRegistry, ProviderHookReadiness, QueueMode, SessionNote, SlashCommandEntry, StopReason, ThemeName } from "./utils";
 import { QUEUE_MODES, queueModeLabel } from "./utils";
 import { QueueEngine } from "./queue-engine";
@@ -35,7 +35,7 @@ const DEFAULT_SETTINGS: OrchestratorSettings = {
 	playSoundOnAsking: true,
 	theme: "obsidian",
 	autoSendCountdownSeconds: 3,
-	defaultQueueMode: "manual",
+	defaultQueueMode: DEFAULT_QUEUE_MODE,
 	defaultEngine: DEFAULT_ENGINE_ID,
 	maxWorkerSessions: 2,
 };
@@ -324,6 +324,13 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		return newSessionEngine(config?.defaultEngine, this.settings.defaultEngine);
 	}
 
+	/** Queue mode to stamp on a session being created now. Existing sessions
+	 * keep the mode stored in their own note. */
+	defaultQueueModeForProject(project: string | null): QueueMode {
+		const config = project ? this.settings.projects[project] : undefined;
+		return newSessionQueueMode(config?.defaultQueueMode, this.settings.defaultQueueMode);
+	}
+
 	applyThemeToAllViews(): void {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
 			const view = leaf.view;
@@ -395,7 +402,7 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 			: [];
 		const sessionName = generateSessionNameWithNotes(project, openNames, noteFileNames);
 		const notePath = sessionNotePath(config.vaultFolder, sessionName);
-		const noteContent = createDefaultSessionNote(sessionName, this.settings.defaultQueueMode, engine);
+		const noteContent = createDefaultSessionNote(sessionName, this.defaultQueueModeForProject(project), engine);
 		const result = await launchWorkerSession({
 			project, engine, sessionName, cwd, binary, permission,
 			maxConcurrent: kind === "worker" ? this.settings.maxWorkerSessions : 0,

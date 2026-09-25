@@ -21,6 +21,7 @@ export type SessionStatus = "idle" | "running" | "waiting_for_user" | "error" | 
 export type QueueMode = "manual" | "listen" | "auto";
 
 export const QUEUE_MODES: readonly QueueMode[] = ["manual", "listen", "auto"] as const;
+export const DEFAULT_QUEUE_MODE: QueueMode = "auto";
 
 export function queueModeLabel(mode: QueueMode): string {
 	switch (mode) {
@@ -51,8 +52,20 @@ export function sessionNameFromNotePath(
 	return null;
 }
 
-function isQueueMode(s: string): s is QueueMode {
+function isQueueMode(s: unknown): s is QueueMode {
 	return s === "manual" || s === "listen" || s === "auto";
+}
+
+/** Resolve the mode to stamp on a session note at creation time. Defaults
+ * never participate when reading an existing note; its frontmatter remains
+ * the source of truth. */
+export function newSessionQueueMode(
+	projectMode: unknown,
+	globalMode: unknown,
+): QueueMode {
+	if (isQueueMode(projectMode)) return projectMode;
+	if (isQueueMode(globalMode)) return globalMode;
+	return DEFAULT_QUEUE_MODE;
 }
 
 export interface HistoryItem {
@@ -143,7 +156,7 @@ export function renamedSessionNotePath(
  */
 export function createDefaultSessionNote(
 	sessionName: string,
-	queueMode: QueueMode = "manual",
+	queueMode: QueueMode = DEFAULT_QUEUE_MODE,
 	engine = "",
 	model = "",
 ): string {
@@ -168,7 +181,7 @@ export function createDefaultSessionNote(
 export function restoreSessionNote(
 	archive: SessionNote,
 	newSessionName: string,
-	queueMode: QueueMode = "manual",
+	queueMode: QueueMode = DEFAULT_QUEUE_MODE,
 ): SessionNote {
 	return {
 		session: newSessionName,
