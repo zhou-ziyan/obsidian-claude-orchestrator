@@ -93,7 +93,6 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		const pluginDir = this.resolvePluginDir();
 		this.loadedRuntimeGeneration = this.readBundleGeneration(pluginDir) ?? "unavailable";
 		this.ensureEngineHooksRegistered();
-		this.refreshHookReadiness(pluginDir, true);
 
 		// Headless queue engine — owns the stop-signal → status/history →
 		// auto-send pipeline for every managed session, panel or not.
@@ -116,6 +115,10 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 				/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument */
 			},
 		});
+		// A reload can preserve Session Manager leaves. Readiness refresh asks
+		// those leaves to rerender, so it must run only after their queue engine
+		// dependency exists.
+		this.refreshHookReadiness(pluginDir, true);
 
 		// Engine reacts to session note edits (view saves, external agents,
 		// hand edits) — replaces the old view-level auto-send checks.
