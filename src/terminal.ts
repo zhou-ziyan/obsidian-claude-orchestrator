@@ -98,9 +98,13 @@ export interface TerminalPageKeyResult {
 	action: { target: "tmux" | "local"; direction: "up" | "down" } | null;
 }
 
-/** Empty Enter is a terminal keystroke; text Enter adds a Queue item. */
-export function queueComposerEnterAction(value: string): "terminal-enter" | "add-to-queue" {
-	return value.trim() === "" ? "terminal-enter" : "add-to-queue";
+/** Text is queued; empty Enter sends Queue first, then falls back to the terminal. */
+export function queueComposerEnterAction(
+	value: string,
+	queueLength: number,
+): "send-next" | "terminal-enter" | "add-to-queue" {
+	if (value.trim() !== "") return "add-to-queue";
+	return queueLength > 0 ? "send-next" : "terminal-enter";
 }
 
 /**

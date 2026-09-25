@@ -4006,20 +4006,24 @@ describe("buildQuickReplyTmuxArgs key sequences", () => {
 });
 
 describe("queueComposerEnterAction", () => {
-	it("routes an empty composer Enter directly to the terminal", () => {
-		assert.equal(queueComposerEnterAction(""), "terminal-enter");
-		assert.equal(queueComposerEnterAction("   \n"), "terminal-enter");
+	it("sends the Queue head when the composer is empty and Queue has an item", () => {
+		assert.equal(queueComposerEnterAction("", 1), "send-next");
+		assert.equal(queueComposerEnterAction("   \n", 2), "send-next");
+	});
+
+	it("routes empty Enter to the terminal only when Queue is empty", () => {
+		assert.equal(queueComposerEnterAction("", 0), "terminal-enter");
 	});
 
 	it("adds non-empty text to Queue", () => {
-		assert.equal(queueComposerEnterAction("follow up"), "add-to-queue");
+		assert.equal(queueComposerEnterAction("follow up", 1), "add-to-queue");
 	});
 
-	it("writes empty Enter to the panel PTY instead of consuming Queue", () => {
+	it("wires Queue-first empty Enter before the terminal fallback", () => {
 		const source = readFileSync(new URL("../src/view.ts", import.meta.url), "utf8");
-		const branch = source.match(/if \(queueComposerEnterAction\(input\.value\) === "terminal-enter"\) \{([\s\S]*?)\n\s*\}/)?.[1] ?? "";
-		assert.match(branch, /this\.ptyProcess\?\.write\("\\r"\)/);
-		assert.doesNotMatch(branch, /sendNext|sendQuickReply/);
+		assert.match(source, /queueComposerEnterAction\(input\.value, this\.sessionNote\?\.queue\.length \?\? 0\)/);
+		assert.match(source, /if \(action === "send-next"\)[\s\S]*?this\.sendNext\(\)/);
+		assert.match(source, /if \(action === "terminal-enter"\)[\s\S]*?this\.ptyProcess\?\.write\("\\r"\)/);
 	});
 });
 

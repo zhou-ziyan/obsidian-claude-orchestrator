@@ -712,10 +712,16 @@ export class TerminalView extends ItemView {
 			}
 			if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
 				e.preventDefault();
-				if (queueComposerEnterAction(input.value) === "terminal-enter") {
+				const action = queueComposerEnterAction(input.value, this.sessionNote?.queue.length ?? 0);
+				if (action === "send-next") {
+					closeAc();
+					void this.sendNext();
+					return;
+				}
+				if (action === "terminal-enter") {
 					closeAc();
 					// Match pressing Enter in the xterm above exactly: write the raw
-					// carriage return to this panel's PTY without touching Queue state.
+					// carriage return when there is no Queue item to send.
 					this.ptyProcess?.write("\r");
 					return;
 				}
