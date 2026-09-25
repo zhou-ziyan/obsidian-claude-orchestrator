@@ -22,6 +22,8 @@ Open a project note and the terminal auto-attaches to that project's tmux sessio
 ### Task queue and history
 Line up tasks in a queue below the terminal. When you're ready, send the next one — or let auto-send handle it. Everything you've sent is logged in a history panel with timestamps and completion status. Pin a vault note to any session for quick reference.
 
+In the Queue composer, Enter with text adds that text to the queue. Enter on an empty composer is a direct terminal Enter keystroke, exactly like pressing Enter in the terminal above; use **Send next** to consume the queue head.
+
 ### Auto-send on completion
 The plugin installs structured start/completion hooks for Claude Code and Codex. A matching `Stop` event must follow the turn start and remain stably idle before the next queued item can be sent. Three modes: **Auto** (send automatically), **Listen** (notify only), or **Manual** (full control).
 

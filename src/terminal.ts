@@ -98,6 +98,11 @@ export interface TerminalPageKeyResult {
 	action: { target: "tmux" | "local"; direction: "up" | "down" } | null;
 }
 
+/** Empty Enter is a terminal keystroke; text Enter adds a Queue item. */
+export function queueComposerEnterAction(value: string): "terminal-enter" | "add-to-queue" {
+	return value.trim() === "" ? "terminal-enter" : "add-to-queue";
+}
+
 /**
  * Routing for PageUp/PageDown. xterm's local scrollback is empty while tmux
  * holds the alternate screen, so tmux sessions page via copy-mode instead.

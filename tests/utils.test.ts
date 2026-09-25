@@ -88,6 +88,7 @@ import {
 	BUILTIN_SLASH_COMMANDS,
 	stripTimestamp,
 	terminalPageKey,
+	queueComposerEnterAction,
 	tmuxPageArgs,
 	parseOsc52Clipboard,
 	classifyAcKey,
@@ -4001,6 +4002,24 @@ describe("buildQuickReplyTmuxArgs key sequences", () => {
 		const result = buildQuickReplyTmuxArgs("session", "Y");
 		assert.ok(result.textArgs.includes("-l"));
 		assert.deepEqual(result.enterArgs, ["send-keys", "-t", "session", "Enter"]);
+	});
+});
+
+describe("queueComposerEnterAction", () => {
+	it("routes an empty composer Enter directly to the terminal", () => {
+		assert.equal(queueComposerEnterAction(""), "terminal-enter");
+		assert.equal(queueComposerEnterAction("   \n"), "terminal-enter");
+	});
+
+	it("adds non-empty text to Queue", () => {
+		assert.equal(queueComposerEnterAction("follow up"), "add-to-queue");
+	});
+
+	it("writes empty Enter to the panel PTY instead of consuming Queue", () => {
+		const source = readFileSync(new URL("../src/view.ts", import.meta.url), "utf8");
+		const branch = source.match(/if \(queueComposerEnterAction\(input\.value\) === "terminal-enter"\) \{([\s\S]*?)\n\s*\}/)?.[1] ?? "";
+		assert.match(branch, /this\.ptyProcess\?\.write\("\\r"\)/);
+		assert.doesNotMatch(branch, /sendNext|sendQuickReply/);
 	});
 });
 

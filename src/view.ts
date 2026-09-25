@@ -18,6 +18,7 @@ import {
 	ensureTmuxUtf8Locale,
 	computeTerminalFit,
 	terminalPageKey,
+	queueComposerEnterAction,
 	tmuxPageArgs,
 	parseOsc52Clipboard,
 	queueModeLabel,
@@ -629,12 +630,7 @@ export class TerminalView extends ItemView {
 		const doAdd = () => {
 			closeAc();
 			const text = input.value.trim();
-			if (!text) {
-				if (this.sessionNote && this.sessionNote.queue.length > 0) {
-					void this.sendNext();
-				}
-				return;
-			}
+			if (!text) return;
 			if (!this.sessionNote) return;
 			this.sessionNote.queue.push(`[${nowStamp()}] ${text}`);
 			input.value = "";
@@ -714,7 +710,17 @@ export class TerminalView extends ItemView {
 			if (e.key === "ArrowDown" && !e.shiftKey) {
 				if (historyPrefill("down")) { e.preventDefault(); return; }
 			}
-			if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); doAdd(); }
+			if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+				e.preventDefault();
+				if (queueComposerEnterAction(input.value) === "terminal-enter") {
+					closeAc();
+					// Match pressing Enter in the xterm above exactly: write the raw
+					// carriage return to this panel's PTY without touching Queue state.
+					this.ptyProcess?.write("\r");
+					return;
+				}
+				doAdd();
+			}
 		});
 		input.addEventListener("blur", () => { setTimeout(closeAc, 150); });
 	}

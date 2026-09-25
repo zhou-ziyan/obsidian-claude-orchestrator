@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Keyboard and motion accessibility**: Session cards are keyboard-operable with visible focus rings, and reduced-motion preferences suppress status animations and transitions.
 
 ### Fixed
+- **Intermittent Queue composer Enter**: Pressing Enter in an empty Queue composer now always writes a raw Enter to the current terminal, independent of whether Queue has items. Text + Enter still adds an item, and Send next remains the explicit action that consumes Queue.
 - **Worker launch blocked by missing legacy policy**: Clicking Launch Claude Code/Codex Worker now safely defaults missing project policy to prompt mode. Disabled is stored as an explicit setting and still blocks workers; bypass remains opt-in.
 - **Session note filename collisions**: New engine sessions now reserve names already used by persisted session notes as well as open tabs and live tmux sessions, preventing repeated `File already exists` failures after a prior session disappeared.
 - **New Codex/Claude session permission failure**: Interactive sessions now default to the safe prompt policy when a project has no worker permission policy, while unattended worker launch remains explicitly opt-in and fail-closed.
