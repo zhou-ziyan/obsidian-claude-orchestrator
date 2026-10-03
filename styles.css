@@ -1295,22 +1295,12 @@
     line-height: 1;
     text-transform: uppercase;
 }
-.co-sm-status-label::before {
-    font-size: 11px;
-    line-height: 1;
-}
 .co-sm-status-label[data-s="running"] { color: var(--s-running); }
-.co-sm-status-label[data-s="running"]::before { content: "●"; }
 .co-sm-status-label[data-s="idle"] { color: var(--s-idle); }
-.co-sm-status-label[data-s="idle"]::before { content: "○"; }
 .co-sm-status-label[data-s="waiting_for_user"] { color: var(--s-ask); }
-.co-sm-status-label[data-s="waiting_for_user"]::before { content: "!"; }
 .co-sm-status-label[data-s="error"] { color: var(--s-error); }
-.co-sm-status-label[data-s="error"]::before { content: "×"; }
 .co-sm-status-label[data-s="stale"] { color: var(--s-ask); }
-.co-sm-status-label[data-s="stale"]::before { content: "?"; }
 .co-sm-status-label[data-s="off"] { color: var(--co-text-muted); }
-.co-sm-status-label[data-s="off"]::before { content: "—"; }
 .co-sm-status-dot[data-s="running"] {
     background: var(--s-running);
     box-shadow: 0 0 0 3px var(--s-running-halo);
