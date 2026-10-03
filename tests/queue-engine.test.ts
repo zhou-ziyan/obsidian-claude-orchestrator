@@ -680,3 +680,22 @@ describe("Queue image-first delivery", () => {
 		);
 	}
 });
+
+
+describe("Terminal queue isolation", () => {
+	it("never auto-sends shell commands even if the note requests auto and AI hooks fire", async (t) => {
+		timers(t).enable({ apis: ["setInterval", "setTimeout"] });
+		const h = makeHarness(makeNote({ engine: "terminal", status: "idle", queueMode: "auto", queue: ["echo shell-only"] }), { countdownSeconds: 0 });
+		await h.engine.onNoteChanged("P-1");
+		for (const provider of ["claude", "codex"]) {
+			await h.engine.onLifecycleSignal("P-1", "started", provider);
+			await h.engine.onLifecycleSignal("P-1", "done", provider);
+		}
+		timers(t).tick(10_000);
+		await h.engine.flush();
+		assert.equal(h.execs.length, 0);
+		assert.deepEqual(h.notes.get("P-1")!.queue, ["echo shell-only"]);
+		assert.equal(h.engine.getCountdownRemaining("P-1"), 0);
+		h.engine.dispose();
+	});
+});

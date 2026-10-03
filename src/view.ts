@@ -42,6 +42,9 @@ import {
 	countdownText,
 	newSessionEngine,
 	newSessionQueueMode,
+	resolveEngineRef,
+	engineQueueModes,
+	effectiveQueueMode,
 } from "./utils";
 import type { EngineId, ProjectRegistry, QueueMode, StopReason, SlashCommandEntry, ThemeName } from "./utils";
 import type { QueueEngine } from "./queue-engine";
@@ -476,7 +479,7 @@ export class TerminalView extends ItemView {
 			btn.setAttribute("role", "tab");
 			btn.dataset.value = m;
 			btn.addEventListener("click", () => {
-				if (!this.sessionNote) return;
+				if (!this.sessionNote || !engineQueueModes(resolveEngineRef(this.sessionNote.engine)).includes(m)) return;
 				this.sessionNote.queueMode = m;
 				if (this.sessionName) this.engine()?.cancelCountdown(this.sessionName);
 				this.updateModeBtn();
@@ -604,7 +607,7 @@ export class TerminalView extends ItemView {
 
 		const updateAc = () => {
 			const text = input.value;
-			if (!text.startsWith("/") || text.includes(" ")) {
+			if (resolveEngineRef(this.sessionNote?.engine).status === "terminal" || !text.startsWith("/") || text.includes(" ")) {
 				closeAc();
 				return;
 			}
@@ -1113,10 +1116,13 @@ export class TerminalView extends ItemView {
 
 	private updateModeBtn(): void {
 		if (!this.modeBtn) return;
-		const mode: QueueMode = this.sessionNote?.queueMode ?? "manual";
+		const ref = resolveEngineRef(this.sessionNote?.engine);
+		const mode = effectiveQueueMode(ref, this.sessionNote?.queueMode ?? "manual");
 		this.modeBtn.dataset.value = mode;
 		const buttons = Array.from(this.modeBtn.querySelectorAll("button"));
 		for (const b of buttons) {
+			b.disabled = !engineQueueModes(ref).includes(b.dataset.value as QueueMode);
+			b.title = b.disabled ? "This session supports manual queue mode only" : "";
 			if (b.dataset.value === mode) {
 				b.dataset.active = "true";
 			} else {

@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+
+- Unified project session creation under the robot button: Claude Code, Codex, or a plain Terminal. Terminal sessions persist their mode and support manual queue delivery only. Background worker launch is now in the project settings menu.
 - **Runtime hook readiness and lifecycle diagnostics**: Session Manager and settings now expose provider-scoped hook readiness, runtime/bundle generation drift, last lifecycle transition, signal age, and privacy-safe rejection/block reasons.
 - **Automatic engine start for new sessions**: Explicit New Claude Code/Codex actions now start the selected CLI through the shared launch path, while attach/restore remains idempotent and unattended worker limits stay separate.
 - **Configured worker launch**: Session Manager can launch tagged Claude Code or Codex CLI workers for a project, with per-engine permission policy, explicit target directory, idempotent reuse, bounded capacity, startup rollback, and Lighthouse-discoverable tmux metadata.

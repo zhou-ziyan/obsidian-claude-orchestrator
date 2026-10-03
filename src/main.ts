@@ -1,3 +1,4 @@
+import { launchTerminalSession } from "./terminal-launch";
 import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./view";
 import { SessionManagerView, VIEW_TYPE_SESSION_MANAGER } from "./session-manager-view";
@@ -568,6 +569,58 @@ export default class ClaudeOrchestratorPlugin extends Plugin {
 		} catch (error) {
 			new Notice(`Session start failed: ${error instanceof Error ? error.message : String(error)}`);
 		}
+	}
+
+	/** Open a project shell without launching or registering an AI worker. */
+	async createPlainTerminalForProject(project: string): Promise<void> {
+		const key = `terminal:${project}`;
+		const pending = this.engineLaunches.get(key);
+		const operation = pending ?? this.launchPlainTerminalForProject(project);
+		if (!pending) this.engineLaunches.set(key, operation);
+		try {
+			const result = await operation;
+			if (!pending) {
+				await this.createTerminalLeaf(project, result.sessionName);
+				new Notice(`Started Terminal session ${result.sessionName}`);
+			}
+		} catch (error) {
+			new Notice(`Terminal start failed: ${error instanceof Error ? error.message : String(error)}`);
+		} finally {
+			if (!pending && this.engineLaunches.get(key) === operation) this.engineLaunches.delete(key);
+		}
+	}
+
+	private async launchPlainTerminalForProject(project: string) {
+		const config = this.settings.projects[project];
+		if (!config || config.inactive) throw new Error(`Project is unavailable: ${project}`);
+		const adapter = this.app.vault.adapter;
+		const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : null;
+		const cwd = computeSessionCwd(config.workingDirectory, config.vaultFolder, basePath, homedir());
+		const openNames = this.collectSessionNames();
+		for (const session of parseAllTmuxSessions(await tmuxLs())) openNames.add(session.name);
+		const dirPath = sessionDirPath(config.vaultFolder);
+		const dir = this.app.vault.getAbstractFileByPath(dirPath);
+		const noteNames = dir instanceof TFolder
+			? dir.children.filter((file): file is TFile => file instanceof TFile).map(file => file.name)
+			: [];
+		const sessionName = generateSessionNameWithNotes(project, openNames, noteNames);
+		const shell = process.env.SHELL || "/bin/zsh";
+		return launchTerminalSession({
+			project, sessionName, cwd, shell,
+			notePath: sessionNotePath(config.vaultFolder, sessionName), vaultId: this.app.vault.getName(),
+		}, {
+			exec: execTmux,
+			cwdExists: existsSync(cwd) && statSync(cwd).isDirectory(),
+			binaryExists: existsSync(shell) && statSync(shell).isFile(),
+			createNote: async (path, content) => {
+				if (!this.app.vault.getAbstractFileByPath(dirPath)) await this.app.vault.createFolder(dirPath);
+				await this.app.vault.create(path, content);
+			},
+			deleteNote: async (path) => {
+				const file = this.app.vault.getAbstractFileByPath(path);
+				if (file) await this.app.fileManager.trashFile(file);
+			},
+		});
 	}
 
 	async gatherProjectTerminals(project: string): Promise<void> {

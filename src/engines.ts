@@ -166,7 +166,7 @@ export function availableEngineIds(): EngineId[] {
 	return ENGINE_IDS.filter((id) => ENGINE_DEFINITIONS[id] !== undefined);
 }
 
-export type EngineRefStatus = "default" | "known" | "unavailable";
+export type EngineRefStatus = "default" | "known" | "unavailable" | "terminal";
 
 export interface EngineRef {
 	/** Recognized engine id, or null when the raw value matches none. */
@@ -187,6 +187,9 @@ export function resolveEngineRef(raw?: string | null): EngineRef {
 		return { id: DEFAULT_ENGINE_ID, raw: null, definition: getEngineDefinition(DEFAULT_ENGINE_ID), status: "default" };
 	}
 	const normalized = trimmed.toLowerCase();
+	if (normalized === "terminal") {
+		return { id: null, raw: trimmed, definition: null, status: "terminal" };
+	}
 	if (isEngineId(normalized)) {
 		const definition = getEngineDefinition(normalized);
 		return definition
@@ -197,6 +200,7 @@ export function resolveEngineRef(raw?: string | null): EngineRef {
 }
 
 export function engineDisplayLabel(ref: EngineRef): string {
+	if (ref.status === "terminal") return "Terminal";
 	if (ref.definition) return ref.definition.label;
 	return `Unknown engine (${ref.raw ?? "?"})`;
 }

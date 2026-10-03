@@ -16,7 +16,7 @@ import {
 	parseStopSignal,
 	tmuxPageArgs,
 } from "../src/utils.ts";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 
 const require = createRequire(import.meta.url);
@@ -328,5 +328,49 @@ describe("e2e: pbcopy round-trip", {
 
 		await ensureTmuxUtf8Locale((args) => Promise.resolve(onSocket(args)), {});
 		assert.equal(pipeThroughPbcopy(), CJK, "clipboard now round-trips UTF-8");
+	});
+});
+
+
+describe("e2e: Terminal mode", { skip: !TMUX }, () => {
+	it("opens a real shell in the project directory, persists Terminal mode, and rejects name collisions", async () => {
+		const { launchTerminalSession } = await import("../src/terminal-launch.ts");
+		const { parseSessionNote } = await import("../src/session-note.ts");
+		const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "co-terminal-mode-")));
+		const session = `co-e2e-terminal-${RUN_TAG}`;
+		// A separate server prevents test shell options from touching user sessions.
+		const tmux = (args: string[]) => execFileSync(TMUX!, ["-L", session, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+		const notePath = path.join(dir, "session.md");
+		const request = { project: "Demo", sessionName: session, cwd: dir, shell: "/bin/sh", notePath, vaultId: "test" };
+		const deps = {
+			cwdExists: true, binaryExists: true,
+			exec: async (args: string[]) => tmux(args),
+			createNote: async (file: string, content: string) => { writeFileSync(file, content); },
+			deleteNote: async (file: string) => { rmSync(file); },
+		};
+		try {
+			await launchTerminalSession(request, deps);
+			assert.equal(tmux(["display-message", "-p", "-t", session, "#{pane_current_path}"]), dir);
+			assert.equal(tmux(["show-options", "-qv", "-t", session, "@co_engine"]), "terminal");
+			assert.equal(tmux(["show-options", "-qv", "-t", session, "@co_worker"]), "");
+			tmux(["send-keys", "-t", session, "-l", "printf terminal-ok > terminal-proof"]);
+			tmux(["send-keys", "-t", session, "Enter"]);
+			let proof = "";
+			for (let attempt = 0; attempt < 40; attempt++) {
+				try { proof = readFileSync(path.join(dir, "terminal-proof"), "utf8"); } catch { /* wait for shell */ }
+				if (proof === "terminal-ok") break;
+				await sleep(50);
+			}
+			assert.equal(proof, "terminal-ok");
+			const note = parseSessionNote(readFileSync(notePath, "utf8"), session);
+			assert.equal(note.engine, "terminal");
+			assert.equal(note.queueMode, "manual");
+			await assert.rejects(launchTerminalSession(request, deps), /duplicate session/);
+			tmux(["has-session", "-t", session]);
+			assert.equal(readFileSync(notePath, "utf8").includes("engine: terminal"), true);
+		} finally {
+			try { tmux(["kill-server"]); } catch { /* startup failed */ }
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

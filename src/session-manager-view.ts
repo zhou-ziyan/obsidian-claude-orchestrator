@@ -46,6 +46,7 @@ import {
 	availableEngineIds,
 	engineDisplayLabel,
 	resolveEngineRef,
+	effectiveQueueMode,
 	describeUsageSource,
 	usageHeadroom,
 	claudeUsageUnavailable,
@@ -557,7 +558,7 @@ export class SessionManagerView extends ItemView {
 			const newBtn = groupHeader.createEl("button", {
 				cls: "icon-btn co-sm-gear",
 			});
-			setIcon(newBtn, "plus");
+			setIcon(newBtn, "bot");
 			newBtn.title = "New session";
 			newBtn.addEventListener("click", (e) => {
 				e.stopPropagation();
@@ -569,7 +570,7 @@ export class SessionManagerView extends ItemView {
 					const def = getEngineDefinition(id);
 					if (!def) continue;
 					menu.addItem((item) => {
-						item.setTitle(`New ${def.label} session`);
+						item.setTitle(def.label);
 						item.onClick(() => {
 							void this.plugin.createNewTerminalForProject(group.project, id).then(() => {
 								setTimeout(() => { void this.refresh(); }, 500);
@@ -577,29 +578,12 @@ export class SessionManagerView extends ItemView {
 						});
 					});
 				}
-				menu.showAtMouseEvent(e);
-			});
-
-			const workerBtn = groupHeader.createEl("button", {
-				cls: "icon-btn co-sm-gear",
-			});
-			setIcon(workerBtn, "bot");
-			workerBtn.title = "Launch worker";
-			workerBtn.addEventListener("click", (e) => {
-				e.stopPropagation();
-				const menu = new Menu();
-				for (const id of availableEngineIds()) {
-					const def = getEngineDefinition(id);
-					if (!def) continue;
-					menu.addItem((item) => {
-						item.setTitle(`Launch ${def.label} worker`);
-						item.onClick(() => {
-							void this.plugin.launchWorkerForProject(group.project, id).catch((error) => {
-								new Notice(`Worker launch failed: ${error instanceof Error ? error.message : String(error)}`);
-							});
-						});
+				menu.addItem((item) => {
+					item.setTitle("Terminal").setIcon("terminal");
+					item.onClick(() => {
+						void this.plugin.createPlainTerminalForProject(group.project).then(() => { void this.refresh(); });
 					});
-				}
+				});
 				menu.showAtMouseEvent(e);
 			});
 
@@ -607,10 +591,10 @@ export class SessionManagerView extends ItemView {
 				cls: "icon-btn co-sm-gear",
 			});
 			setIcon(gearBtn, "settings");
-			gearBtn.title = "Edit project";
+			gearBtn.title = "Project menu";
 			gearBtn.addEventListener("click", (e) => {
 				e.stopPropagation();
-				this.showProjectForm(group.project);
+				this.showProjectMenu(group.project, e);
 			});
 		}
 
@@ -634,6 +618,28 @@ export class SessionManagerView extends ItemView {
 		for (const session of sorted) {
 			this.renderSessionCard(groupEl, session, group.project);
 		}
+	}
+
+	private showProjectMenu(project: string, event: MouseEvent): void {
+		const menu = new Menu();
+		menu.addItem(item => {
+			item.setTitle("Edit project").setIcon("settings");
+			item.onClick(() => this.showProjectForm(project));
+		});
+		menu.addSeparator();
+		for (const id of availableEngineIds()) {
+			const def = getEngineDefinition(id);
+			if (!def) continue;
+			menu.addItem(item => {
+				item.setTitle(`Launch ${def.label} worker`).setIcon("bot");
+				item.onClick(() => {
+					void this.plugin.launchWorkerForProject(project, id).then(() => { void this.refresh(); }).catch((error) => {
+						new Notice(`Worker launch failed: ${error instanceof Error ? error.message : String(error)}`);
+					});
+				});
+			});
+		}
+		menu.showAtMouseEvent(event);
 	}
 
 	private renderSessionCard(parent: HTMLElement, session: SessionInfo, project?: string) {
@@ -752,14 +758,14 @@ export class SessionManagerView extends ItemView {
 			// that the queue is still driving as Claude.
 			const engineRef = resolveEngineRef(session.engine);
 			const engineEl = metaRow.createSpan({ cls: "co-sm-card-engine" });
-			engineEl.dataset.engine = engineRef.id ?? "unknown";
+			engineEl.dataset.engine = engineRef.status === "terminal" ? "terminal" : engineRef.id ?? "unknown";
 			engineEl.textContent = engineRef.definition?.label ?? engineDisplayLabel(engineRef);
 			engineEl.title = session.engine
 				? `Engine: ${engineDisplayLabel(engineRef)}${session.model ? ` · model ${session.model}` : ""}`
 				: `Engine not recorded on the note — treated as ${engineDisplayLabel(engineRef)}`;
 			if (!session.engine) engineEl.dataset.implicit = "true";
 			const readiness = this.plugin.getProviderHookReadiness(engineRef.id ?? "unknown");
-			if (!readiness.ready) {
+			if (engineRef.status !== "terminal" && !readiness.ready) {
 				const hookBadge = metaRow.createSpan({
 					cls: "co-sm-card-hook-readiness",
 					text: readiness.state === "reload-required" ? "RELOAD" : "HOOK REPAIR",
@@ -771,8 +777,9 @@ export class SessionManagerView extends ItemView {
 			metaRow.createSpan({ cls: "co-sm-card-dot-sep", text: "·" });
 
 			const modeEl = metaRow.createSpan({ cls: "co-sm-card-mode" });
-			modeEl.dataset.mode = session.queueMode;
-			modeEl.textContent = queueModeLabel(session.queueMode).toUpperCase();
+			const mode = effectiveQueueMode(engineRef, session.queueMode);
+			modeEl.dataset.mode = mode;
+			modeEl.textContent = queueModeLabel(mode).toUpperCase();
 
 			metaRow.createSpan({ cls: "co-sm-card-dot-sep", text: "·" });
 
@@ -854,8 +861,9 @@ export class SessionManagerView extends ItemView {
 		const row = panel.createDiv({ cls: "co-sm-settings-row" });
 		row.createSpan({ cls: "co-sm-settings-label", text: "Engine:" });
 		const value = row.createSpan({ cls: "co-sm-settings-value" });
-		value.dataset.engine = current.id ?? "unknown";
+		value.dataset.engine = current.status === "terminal" ? "terminal" : current.id ?? "unknown";
 		value.textContent = engineDisplayLabel(current);
+		if (current.status === "terminal") return;
 		const readiness = this.plugin.getProviderHookReadiness(current.id ?? "unknown");
 		const readinessRow = panel.createDiv({ cls: "co-sm-settings-row" });
 		readinessRow.createSpan({ cls: "co-sm-settings-label", text: "Hooks:" });
