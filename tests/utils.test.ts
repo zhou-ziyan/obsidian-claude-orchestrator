@@ -3513,6 +3513,19 @@ describe("pickRecoverySession", () => {
 // --- sessionStatusDisplay ---
 
 describe("sessionStatusDisplay", () => {
+	for (const status of ["running", "idle", "waiting_for_user", "error", "stale", "off"]) {
+		it(`does not add a duplicate CSS icon to the ${status} label`, () => {
+			const css = readFileSync("styles.css", "utf8");
+			const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)];
+			const generatedLabelIcons = rules.filter(([, selector, body]) =>
+				selector?.includes(".co-sm-status-label") &&
+				/::?(before|after)/.test(selector) &&
+				(!selector.includes("[data-s=") || selector.includes(`[data-s="${status}"]`)) &&
+				/content\s*:\s*["'][^"']+["']/.test(body ?? ""));
+			assert.equal(generatedLabelIcons.length, 0, "The dedicated status indicator must be the only icon");
+		});
+	}
+
 	it("returns running dot when panel active and running", () => {
 		const r = sessionStatusDisplay(true, "running");
 		assert.equal(r.dataStatus, "running");
