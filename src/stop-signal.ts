@@ -267,6 +267,7 @@ export function ensureEngineHookConfig(
 	}
 
 	const expectedCommand = shellQuoteSingle(scriptPath);
+	const maxTimeout = hookEvent === "Interrupt" || hookEvent === "SessionEnd" ? 3 : 10;
 	const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
 	const matchers = (hooks[hookEvent] ?? []) as ClaudeHookMatcher[];
 
@@ -275,11 +276,14 @@ export function ensureEngineHookConfig(
 		.find((h) => h.command?.includes(scriptBaseName));
 
 	if (existing) {
-		if (existing.command === expectedCommand) {
+		const timeout = maxTimeout === 3 && existing.timeout !== undefined
+			? Math.min(existing.timeout, maxTimeout) : existing.timeout;
+		if (existing.command === expectedCommand && existing.timeout === timeout) {
 			return { updated: false, content: settingsJson };
 		}
 		// Wrong command (unquoted path, stale path, etc.) — repair in place.
 		existing.command = expectedCommand;
+		existing.timeout = timeout;
 		hooks[hookEvent] = matchers;
 		settings.hooks = hooks;
 		return { updated: true, content: JSON.stringify(settings, null, 2) };
@@ -290,7 +294,7 @@ export function ensureEngineHookConfig(
 		hooks: [{
 			type: "command",
 			command: expectedCommand,
-			timeout: 10,
+			timeout: maxTimeout,
 		}],
 	});
 

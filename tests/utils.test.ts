@@ -5340,6 +5340,26 @@ describe("engineHookRegistrations", () => {
 });
 
 describe("ensureEngineHookConfig", () => {
+	it("caps short lifecycle hooks and repairs old timeouts without touching other hooks", () => {
+		for (const event of ["Interrupt", "SessionEnd"]) {
+			const command = "'/p/co-end.sh'";
+			const original = JSON.stringify({ hooks: { [event]: [{ hooks: [
+				{ type: "command", command, timeout: 30 },
+				{ type: "command", command: "other-hook", timeout: 99 },
+			] }] } });
+			const fixed = ensureEngineHookConfig(original, event, "co-end.sh", "/p/co-end.sh");
+			assert.equal(fixed.updated, true);
+			const parsed = JSON.parse(fixed.content) as { hooks: Record<string, { hooks: { timeout: number }[] }[]> };
+			const entries = parsed.hooks[event]![0]!.hooks;
+			assert.equal(entries[0].timeout, 3);
+			assert.equal(entries[1].timeout, 99);
+			assert.equal(ensureEngineHookConfig(fixed.content, event, "co-end.sh", "/p/co-end.sh").updated, false);
+			const fresh = ensureEngineHookConfig("{}", event, "co-end.sh", "/p/co-end.sh");
+			const freshParsed = JSON.parse(fresh.content) as typeof parsed;
+			assert.equal(freshParsed.hooks[event]![0]!.hooks[0]!.timeout, 3);
+		}
+	});
+
 	it("matches the Claude-specific wrappers it generalizes", () => {
 		const viaGeneric = ensureEngineHookConfig("{}", "Stop", "co-stop-hook.sh", "/p/co-stop-hook.sh");
 		const viaWrapper = ensureStopHookConfig("{}", "/p/co-stop-hook.sh");

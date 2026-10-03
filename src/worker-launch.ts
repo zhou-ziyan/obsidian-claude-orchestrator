@@ -6,6 +6,8 @@
  * silently chooses an engine/policy. A tmux session is tagged so repeated
  * requests and Lighthouse's tmux discovery can find the same worker.
  */
+import { homedir } from "os";
+import { dirname, isAbsolute } from "path";
 import type { EngineId } from "./engines.ts";
 import type { WorkerPermissionMode, WorkerPermissionSetting } from "./projects.ts";
 
@@ -144,11 +146,22 @@ function allSessionNames(output: string): Set<string> {
 	return names;
 }
 
+/** Preserve caller precedence, then fill paths absent in Finder/launchd environments. */
+export function workerRuntimePath(binary: string, inherited = process.env.PATH, home = homedir()): string {
+	return [...new Set([
+		...(inherited ?? "").split(":"),
+		`${home}/bin`, `${home}/.local/bin`,
+		"/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin",
+		...(isAbsolute(binary) ? [dirname(binary)] : []),
+	].filter(Boolean))].join(":");
+}
+
 function workerTmuxArgs(request: WorkerLaunchRequest): string[] {
 	const isWorker = (request.kind ?? "worker") === "worker";
 	return [
 		"new-session", "-d", "-s", request.sessionName, "-c", request.cwd,
-		buildWorkerLaunchLine(request.engine, request.binary, request.permission!, request.cwd),
+		// tmux can rebuild PATH while spawning the pane; set it at the final exec boundary.
+		`/usr/bin/env ${shellQuote(`PATH=${workerRuntimePath(request.binary)}`)} ${buildWorkerLaunchLine(request.engine, request.binary, request.permission!, request.cwd)}`,
 		...(isWorker ? [";", "set-option", "-t", request.sessionName, "@co_worker", "1"] : []),
 		";", "set-option", "-t", request.sessionName, "@co_project", request.project,
 		";", "set-option", "-t", request.sessionName, "@co_engine", request.engine,

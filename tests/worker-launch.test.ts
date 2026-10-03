@@ -7,6 +7,7 @@ import {
 	parseWorkerSessions,
 	resolveLaunchPermission,
 	workerLaunchPreflight,
+	workerRuntimePath,
 } from "../src/worker-launch.ts";
 
 describe("worker launch policy", () => {
@@ -79,6 +80,22 @@ describe("launchWorkerSession", () => {
 			deleteNote: async (path: string) => { deleted.push(path); },
 		};
 	}
+
+	it("passes a complete PATH into tmux even when launched from a GUI", async () => {
+		const first = rig();
+		await launchWorkerSession({
+			project: "Demo", engine: "codex", sessionName: "Demo-1", cwd: "/work/tree",
+			binary: "/Applications/ChatGPT.app/Contents/Resources/codex", permission: "prompt", maxConcurrent: 2,
+			notePath: "Demo-1.md", noteContent: "engine: codex",
+		}, { ...first, cwdExists: true, binaryExists: true });
+		const create = first.calls.find((a) => a[0] === "new-session")!;
+		const command = create[create.indexOf("-c") + 2];
+		assert.ok(command.startsWith("/usr/bin/env "));
+		assert.ok(command.includes("PATH="));
+		for (const dir of ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]) {
+			assert.ok(command.includes(dir), `missing ${dir}`);
+		}
+	});
 
 	it("creates a tagged tmux worker and note, then is idempotent", async () => {
 		const first = rig();
@@ -202,5 +219,17 @@ describe("worker tmux discovery", () => {
 			{ sessionName: "worker-1", project: "Demo", engine: "codex" },
 			{ sessionName: "worker-2", project: "Demo", engine: "claude" },
 		]);
+	});
+});
+
+describe("worker runtime PATH", () => {
+	it("preserves custom precedence, deduplicates and fills missing GUI paths", () => {
+		const value = workerRuntimePath("/custom cli/codex", "/custom tools:/usr/bin:/custom tools", "/Users/test");
+		assert.ok(value.startsWith("/custom tools:/usr/bin:"));
+		assert.equal(value.split(":").filter((v) => v === "/custom tools").length, 1);
+		for (const dir of ["/custom cli", "/opt/homebrew/bin", "/Users/test/.local/bin", "/bin"]) {
+			assert.ok(value.split(":").includes(dir));
+		}
+		assert.ok(!workerRuntimePath("codex", "", "/Users/test").split(":").includes("."));
 	});
 });

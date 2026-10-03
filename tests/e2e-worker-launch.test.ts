@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findTmuxBinary } from "../src/tmux.ts";
@@ -44,6 +44,41 @@ describe("e2e: isolated tmux worker launch", () => {
 			assert.ok(calls.some((args) => args[0] === "new-session" && args.join(" ").includes("--dangerously-skip-permissions")));
 		} finally {
 			await run(tmux, ["kill-session", "-t", session]).catch(() => {});
+			await rm(cwd, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("e2e: worker PATH on a launchd-style tmux server", () => {
+	it("resolves Node inside a real worker even when server and caller lack Homebrew", async () => {
+		const tmux = findTmuxBinary();
+		const cwd = await mkdtemp(join(tmpdir(), "co-path-e2e-"));
+		const socket = join(cwd, "tmux.sock");
+		const exec = (args: string[]) => run(tmux, ["-S", socket, "-f", "/dev/null", ...args]);
+		const oldPath = process.env.PATH;
+		try {
+			await exec(["new-session", "-d", "-s", "seed", "/bin/sleep 60"]);
+			await exec(["set-environment", "-g", "PATH", "/usr/bin:/bin:/usr/sbin:/sbin"]);
+			const cli = join(cwd, "fake-codex");
+			await writeFile(cli, '#!/bin/sh\nnode --version > node-version 2> node-error\n/bin/sleep 30\n');
+			await chmod(cli, 0o755);
+			process.env.PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
+			await launchWorkerSession({
+				project: "Probe", engine: "codex", sessionName: "worker", cwd,
+				binary: cli, permission: "prompt", maxConcurrent: 1,
+				notePath: "probe.md", noteContent: "", vaultId: "Test",
+			}, { exec, cwdExists: true, binaryExists: true, createNote: async () => {} });
+			let version = "";
+			for (let i = 0; i < 50; i++) {
+				version = await readFile(join(cwd, "node-version"), "utf8").catch(() => "");
+				if (version) break;
+				await new Promise((resolve) => setTimeout(resolve, 20));
+			}
+			assert.match(version, /^v\d+\./, await readFile(join(cwd, "node-error"), "utf8").catch(() => "no output"));
+		} finally {
+			if (oldPath === undefined) delete process.env.PATH;
+			else process.env.PATH = oldPath;
+			await exec(["kill-server"]).catch(() => {});
 			await rm(cwd, { recursive: true, force: true });
 		}
 	});
