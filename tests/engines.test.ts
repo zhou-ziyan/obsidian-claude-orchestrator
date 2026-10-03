@@ -467,3 +467,26 @@ describe("creating one session per engine", () => {
 		}
 	});
 });
+
+
+describe("Terminal session mode", () => {
+	it("recognizes Terminal without advertising an AI engine or hooks", () => {
+		const ref = resolveEngineRef("terminal");
+		assert.equal(ref.status, "terminal");
+		assert.equal(engineDisplayLabel(ref), "Terminal");
+		assert.equal(ref.id, null);
+		assert.equal(ref.definition, null);
+		assert.deepEqual(engineQueueModes(ref), ["manual"]);
+		assert.equal(effectiveQueueMode(ref, "auto"), "manual");
+		assert.equal(effectiveQueueMode(ref, "listen"), "manual");
+		assert.deepEqual(loadSlashCommandsFor(ref, []), []);
+		assert.deepEqual(availableEngineIds(), ["claude", "codex"]);
+	});
+
+	it("round-trips a Terminal note without falling back to Claude", () => {
+		const note = parseSessionNote(createDefaultSessionNote("Demo-1", "manual", "terminal"), "Demo-1");
+		const restored = parseSessionNote(serializeSessionNote(note), "Demo-1");
+		assert.equal(engineDisplayLabel(resolveEngineRef(restored.engine)), "Terminal");
+		assert.equal(restored.queueMode, "manual");
+	});
+});

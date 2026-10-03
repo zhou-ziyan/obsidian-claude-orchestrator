@@ -6291,3 +6291,16 @@ describe("ensureTmuxUtf8Locale", () => {
 		assert.equal(await ensureTmuxUtf8Locale(exec, {}), false);
 	});
 });
+
+
+describe("unified session menu", () => {
+	it("uses one bot entry for new sessions and moves workers into the project menu", () => {
+		const source = readFileSync("src/session-manager-view.ts", "utf8");
+		assert.match(source, /setIcon\(newBtn, "bot"\)/);
+		assert.doesNotMatch(source, /const workerBtn =/);
+		assert.match(source, /setTitle\("Terminal"\)/);
+		assert.match(source, /createPlainTerminalForProject\(group.project\)/);
+		assert.match(source, /showProjectMenu\(group.project, e\)/);
+		assert.match(source, /Launch \$\{def.label\} worker/);
+	});
+});

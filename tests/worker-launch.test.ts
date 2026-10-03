@@ -233,3 +233,60 @@ describe("worker runtime PATH", () => {
 		assert.ok(!workerRuntimePath("codex", "", "/Users/test").split(":").includes("."));
 	});
 });
+
+describe("Terminal launch", () => {
+	const request = {
+		project: "Demo", sessionName: "Demo-2", cwd: "/work tree", shell: "/bin/zsh",
+		notePath: "Demo/sessions/Demo-2.md", vaultId: "Work",
+	};
+	function terminalRig(fail?: "note" | "health" | "launch") {
+		const calls: string[][] = [];
+		const notes: string[] = [];
+		const deleted: string[] = [];
+		return {
+			calls, notes, deleted, cwdExists: true, binaryExists: true,
+			exec: (args: string[]) => {
+				calls.push(args);
+				if ((fail === "launch" && args[0] === "new-session") || (fail === "health" && args[0] === "has-session")) return Promise.reject(new Error("tmux failed"));
+				return Promise.resolve("");
+			},
+			createNote: (_path: string, content: string) => {
+				if (fail === "note") return Promise.reject(new Error("note failed"));
+				notes.push(content);
+				return Promise.resolve();
+			},
+			deleteNote: (path: string) => { deleted.push(path); return Promise.resolve(); },
+		};
+	}
+	it("starts only a login shell in the project directory and persists manual Terminal mode", async () => {
+		const { launchTerminalSession } = await import("../src/terminal-launch.ts");
+		const r = terminalRig();
+		assert.deepEqual(await launchTerminalSession(request, r), { kind: "created", sessionName: "Demo-2" });
+		const command = r.calls.find(a => a[0] === "new-session")!;
+		assert.deepEqual(command.slice(0, 7), ["new-session", "-d", "-s", "Demo-2", "-c", "/work tree", "/bin/zsh -l"]);
+		assert.ok(command.includes("@co_engine"));
+		assert.ok(command.includes("terminal"));
+		assert.ok(command.includes("@co_vault"));
+		assert.ok(!command.includes("@co_worker"));
+		assert.match(r.notes[0]!, /engine: terminal/);
+		assert.match(r.notes[0]!, /queueMode: manual/);
+	});
+	for (const failure of ["note", "health", "launch"] as const) {
+		it(`cleans up only its own resources after ${failure} failure`, async () => {
+			const { launchTerminalSession } = await import("../src/terminal-launch.ts");
+			const r = terminalRig(failure);
+			await assert.rejects(launchTerminalSession(request, r), /failed/);
+			assert.equal(r.calls.some(a => a[0] === "kill-session"), failure !== "launch");
+			assert.deepEqual(r.deleted, failure === "health" ? [request.notePath] : []);
+		});
+	}
+	it("rejects missing directories or shells before creating resources", async () => {
+		const { launchTerminalSession } = await import("../src/terminal-launch.ts");
+		for (const key of ["cwdExists", "binaryExists"] as const) {
+			const r = terminalRig(); r[key] = false;
+			await assert.rejects(launchTerminalSession(request, r));
+			assert.equal(r.calls.length, 0);
+			assert.equal(r.notes.length, 0);
+		}
+	});
+});
